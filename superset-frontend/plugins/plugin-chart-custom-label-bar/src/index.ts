@@ -16,11 +16,5 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-// For individual deployments to add custom overrides
-
-import { CustomLabelBarPlugin } from '@superset-ui/plugin-chart-custom-label-bar';
-
-export default function setupPluginsExtra() {
-  new CustomLabelBarPlugin().configure({ key: 'custom_label_bar' }).register();
-}
+export { default as CustomLabelBarPlugin } from './plugin';
+export * from './types';

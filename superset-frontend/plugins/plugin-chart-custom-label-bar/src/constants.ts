@@ -17,10 +17,11 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// Comma grouped, no decimals - matches the design's "1,751" style.
+export const DEFAULT_NUMBER_FORMAT = ',d';
 
-import { CustomLabelBarPlugin } from '@superset-ui/plugin-chart-custom-label-bar';
+export const DEFAULT_ROW_LIMIT = 5;
 
-export default function setupPluginsExtra() {
-  new CustomLabelBarPlugin().configure({ key: 'custom_label_bar' }).register();
-}
+export const DEFAULT_BAR_HEIGHT = 12;
+
+export const DIMMED_OPACITY = 0.35;

@@ -142,10 +142,28 @@ Say so in `fidelity_loss` when you do it.
 
 ## Filter routing
 
+**Check `user_answers` first — it overrides everything below.** If the user
+said the dashboard is embedded with the chrome hidden, Superset's filter bar is
+not rendered, so a `native_filter` is *invisible*: the viewer sees a dashboard
+with no filter at all. In that case every filter is a `chart_widget`, whatever
+the design's layout suggests. The same goes for the page heading: with the
+dashboard title hidden, a `drop` deletes it from the page rather than deferring
+it to chrome, so it becomes a grid element instead.
+
+Only when the chrome is known to be visible does the design's own layout decide:
+
 - `role: filter` **and** `global.filter_bar.present` → `target: "native_filter"`; emit a `filterType` (`filter_select`, `filter_range`, `filter_time`, `filter_timegrain`, `filter_timecolumn`). **Not a chart.**
 - `role: filter` drawn inside the grid as a card → `target: "chart_widget"`. Reuse an existing filter plugin if the registry has one that matches; otherwise `new_plugin` with `plugin_archetype: "filter_widget"`. Do not demote an in-grid control to a filter-bar filter because no plugin exists — that moves it out of the design.
 
 Backwards here produces a dashboard whose filters don't cross-filter. Check `global.filter_bar` before deciding.
+
+## Dropping is deleting
+
+`drop` means the section will not exist on the dashboard. Use it for decoration
+only. Deferring a heading to "the dashboard title" is a `drop` plus an
+assumption that the title is rendered — and when the user has said the chrome is
+hidden, that assumption is wrong and the heading is simply gone. Make it a grid
+element instead, and say so in the plan.
 
 ## The user's answers are settled
 
