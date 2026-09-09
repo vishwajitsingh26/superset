@@ -19,7 +19,10 @@
 import { validateNonEmpty } from '@superset-ui/core';
 // In 6.x the translation helper `t` moved out of @superset-ui/core.
 import { t } from '@apache-superset/core/translation';
-import { ControlPanelConfig, sharedControls } from '@superset-ui/chart-controls';
+import {
+  ControlPanelConfig,
+  sharedControls,
+} from '@superset-ui/chart-controls';
 
 const config: ControlPanelConfig = {
   controlPanelSections: [
@@ -91,9 +94,11 @@ const config: ControlPanelConfig = {
             config: {
               type: 'TextControl',
               label: t('Bar colour'),
-              default: '#22a7c2',
               renderTrigger: true,
-              description: t('Fill colour of every bar, as a CSS colour'),
+              description: t(
+                'Fill colour of every bar, as a CSS colour. Defaults to the ' +
+                  'theme primary colour.',
+              ),
             },
           },
         ],

@@ -18,12 +18,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import pathlib
 import queue
 import tempfile
+from collections.abc import Iterator
 
 from flask import current_app, g, request, Response
 from flask_appbuilder.api import BaseApi, expose, protect, safe
@@ -31,6 +31,7 @@ from flask_appbuilder.api import BaseApi, expose, protect, safe
 from superset.design_to_dashboard import runner, session_store
 from superset.extensions import event_logger
 from superset.superset_typing import FlaskResponse
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +152,7 @@ class DesignToDashboardRestApi(BaseApi):
 
         listener = session.attach()
 
-        def stream():
+        def stream() -> Iterator[str]:
             try:
                 while True:
                     try:
@@ -162,8 +163,12 @@ class DesignToDashboardRestApi(BaseApi):
                         yield ": keepalive\n\n"
                         continue
                     yield f"data: {json.dumps(event)}\n\n"
-                    if event.get("type") in {"done", "error", "needs_input",
-                                             "needs_approval"}:
+                    if event.get("type") in {
+                        "done",
+                        "error",
+                        "needs_input",
+                        "needs_approval",
+                    }:
                         break
             finally:
                 session.detach(listener)

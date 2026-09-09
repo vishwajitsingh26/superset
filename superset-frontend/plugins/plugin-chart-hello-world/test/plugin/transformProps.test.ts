@@ -37,12 +37,14 @@ describe('SupersetPluginChartHelloWorld transformProps', () => {
     width: 800,
     height: 600,
     theme: supersetTheme,
-    queriesData: [{
-      data: [{ name: 'Hulk', sum__num: 1 }],
-    }],
+    queriesData: [
+      {
+        data: [{ name: 'Hulk', sum__num: 1 }],
+      },
+    ],
   });
 
-  it('should transform chart props for viz', () => {
+  test('should transform chart props for viz', () => {
     expect(transformProps(chartProps)).toEqual({
       width: 800,
       height: 600,

@@ -27,7 +27,7 @@ import logging
 import pathlib
 import sys
 import threading
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,10 @@ def _retry(session: Any, label: str, attempts: int, call: Any) -> Any:
                 )
     raise last  # type: ignore[misc]
 
-PROMPTS = pathlib.Path(__file__).resolve().parents[2] / "design-to-dashboard" / "prompts"
+
+PROMPTS = (
+    pathlib.Path(__file__).resolve().parents[2] / "design-to-dashboard" / "prompts"
+)
 REGISTRY = (
     pathlib.Path(__file__).resolve().parents[2]
     / "design-to-dashboard"
@@ -125,18 +128,18 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 raise RuntimeError(f"user {session.user_id} not found")
             g.user = user
 
+            from superset.design_to_dashboard import plugin_writer
             from superset.design_to_dashboard.applier import apply_plan, ApplyError
             from superset.design_to_dashboard.llm.factory import get_llm_provider
             from superset.design_to_dashboard.mcp.gateway import InProcessGateway
-            from superset.design_to_dashboard import plugin_writer
             from superset.design_to_dashboard.registry import (
                 chart_types,
                 load as load_registry,
             )
             from superset.design_to_dashboard.stages import (
                 b_bind,
-                clarify,
                 c_resolve,
+                clarify,
                 d_configure,
                 e_layout,
                 f_scaffold,
@@ -147,7 +150,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             session.status = "running"
             total_cost = 0.0
 
-            def _thinking_for(stage: str):
+            def _thinking_for(stage: str) -> Callable[[dict[str, Any]], None]:
                 """Route a stage's reasoning into the session's live buffer.
 
                 The buffer is replaceable rather than appended as events: a
@@ -156,9 +159,8 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 every reconnect.
                 """
 
-                def sink(update: dict) -> None:
-                    text = (update or {}).get("text") or ""
-                    if text:
+                def sink(update: dict[str, Any]) -> None:
+                    if text := (update or {}).get("text") or "":
                         session.set_thinking(stage, text)
 
                 return sink
@@ -200,11 +202,15 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
             # ---- B: bind -----------------------------------------------------
             session.publish("stage_start", stage="B", label="Finding your data")
-            def _tool_progress(tool: str, arguments: dict) -> None:
+
+            def _tool_progress(tool: str, arguments: dict[str, Any]) -> None:
                 session.publish("tool_call", tool=tool, arguments=arguments)
 
             binding = b_bind.run(
-                provider, gateway, design_analysis, PROMPTS,
+                provider,
+                gateway,
+                design_analysis,
+                PROMPTS,
                 on_progress=_tool_progress,
                 on_thinking=_thinking_for("B"),
             )
@@ -333,7 +339,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 session.publish(
                     "stage_start",
                     stage="F",
-                    label=f"Building {len(new_plugin_decisions)} custom chart plugin(s)",
+                    label=(
+                        f"Building {len(new_plugin_decisions)} custom chart plugin(s)"
+                    ),
                 )
                 built: list[str] = []
                 # Several regions can need the same plugin -- four identical KPI
@@ -366,16 +374,18 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         session,
                         f"Building the plugin for {region_id}",
                         2,
-                        lambda: f_scaffold.run_one(
-                            provider,
-                            regions.get(region_id, {}),
-                            bindings.get(region_id, {}),
-                            decision,
-                            plan.final.get("design_system", {}),
-                            PROMPTS,
-                            REPO_ROOT,
-                            known,
-                            on_thinking=_thinking_for("F"),
+                        lambda region_id=region_id, decision=decision: (
+                            f_scaffold.run_one(
+                                provider,
+                                regions.get(region_id, {}),
+                                bindings.get(region_id, {}),
+                                decision,
+                                plan.final.get("design_system", {}),
+                                PROMPTS,
+                                REPO_ROOT,
+                                known,
+                                on_thinking=_thinking_for("F"),
+                            )
                         ),
                     )
                     total_cost += scaffold.cost_usd
@@ -467,6 +477,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             session.publish(
                 "stage_start", stage="D", label=f"Configuring {len(jobs)} charts"
             )
+
             def _chart_done(ref: str, viz_type: str, ok: bool, done: int) -> None:
                 session.publish(
                     "chart_done",
@@ -520,7 +531,10 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "Laying out the dashboard",
                 2,
                 lambda: e_layout.run(
-                    provider, design_analysis, plan.final, PROMPTS,
+                    provider,
+                    design_analysis,
+                    plan.final,
+                    PROMPTS,
                     on_thinking=_thinking_for("E"),
                 ),
             )
@@ -543,7 +557,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 raise RuntimeError(f"layout failed validation: {problems}")
 
             # ---- apply -------------------------------------------------------
-            session.publish("stage_start", stage="apply", label="Creating the dashboard")
+            session.publish(
+                "stage_start", stage="apply", label="Creating the dashboard"
+            )
             try:
                 applied = apply_plan(
                     design_analysis=design_analysis,
@@ -560,6 +576,8 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             )
             from superset.design_to_dashboard.verify import verify as verify_dashboard
 
+            if applied.dashboard_id is None:
+                raise RuntimeError("apply succeeded without a dashboard id")
             checks = verify_dashboard(applied.dashboard_id, plan.final, design_analysis)
             session.publish(
                 "stage_complete",

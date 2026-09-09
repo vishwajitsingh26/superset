@@ -37,6 +37,7 @@ import json
 import pathlib
 import subprocess  # noqa: S404 - fixed argv, no shell
 import sys
+from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
@@ -46,7 +47,7 @@ CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CELL = 150
 
 
-def build_html(entries: list[dict], custom_only: bool) -> str:
+def build_html(entries: list[dict[str, Any]], custom_only: bool) -> str:
     cells = []
     for entry in entries:
         thumb = entry.get("thumbnail")
@@ -58,9 +59,9 @@ def build_html(entries: list[dict], custom_only: bool) -> str:
         badge = "custom" if entry.get("custom") else entry.get("category") or ""
         cells.append(
             f'<figure><img src="data:image/png;base64,{data}"/>'
-            f'<figcaption><b>{entry["viz_type"]}</b><br/>'
-            f'<span>{entry.get("name") or ""}</span><br/>'
-            f'<em>{badge}</em></figcaption></figure>'
+            f"<figcaption><b>{entry['viz_type']}</b><br/>"
+            f"<span>{entry.get('name') or ''}</span><br/>"
+            f"<em>{badge}</em></figcaption></figure>"
         )
     return f"""<!doctype html><meta charset="utf-8"><style>
       body {{ margin:0; padding:16px; background:#fff;
@@ -73,7 +74,7 @@ def build_html(entries: list[dict], custom_only: bool) -> str:
       figcaption {{ margin-top:5px; line-height:1.35; word-break:break-word; }}
       b {{ font-family:ui-monospace,Menlo,monospace; font-size:11px; }}
       span {{ color:#333; }} em {{ color:#8c8c8c; font-style:normal; }}
-    </style><div class="grid">{''.join(cells)}</div>"""
+    </style><div class="grid">{"".join(cells)}</div>"""
 
 
 def main() -> int:

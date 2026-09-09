@@ -30,12 +30,13 @@ Every step is idempotent, so re-running a plugin does not duplicate entries.
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 import re
 from dataclasses import dataclass, field
 from typing import Any
+
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,8 @@ def write(scaffold: dict[str, Any], repo_root: str | pathlib.Path) -> WriteResul
         thumbnail.parent.mkdir(parents=True, exist_ok=True)
         reference = (
             root
-            / "superset-frontend/plugins/plugin-chart-hello-world/src/images/thumbnail.png"
+            / "superset-frontend/plugins/plugin-chart-hello-world"
+            / "src/images/thumbnail.png"
         )
         if reference.exists():
             thumbnail.write_bytes(reference.read_bytes())
@@ -102,7 +104,7 @@ def write(scaffold: dict[str, Any], repo_root: str | pathlib.Path) -> WriteResul
             # one line rather than a reordering of the whole block.
             payload["dependencies"] = dict(sorted(deps.items()))
             pkg_path.write_text(
-                json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                json.dumps(payload, indent=2) + "\n",
                 encoding="utf-8",
             )
             result.dependency_added = True
@@ -166,5 +168,8 @@ def _insert_into_setup(source: str, register_line: str) -> str:
         raise PluginWriteError("setupPluginsExtra() body is unbalanced")
 
     body = source[open_brace + 1 : close_brace].rstrip()
-    new_body = f"{body}\n{register_line}\n" if body else f"\n{register_line}\n"
+    # Prettier runs over this file in pre-commit, and it expects the two-space
+    # indent of a function body. Writing the call flush left fails the hook.
+    call = f"  {register_line}"
+    new_body = f"{body}\n{call}\n" if body else f"\n{call}\n"
     return source[: open_brace + 1] + new_body + source[close_brace:]

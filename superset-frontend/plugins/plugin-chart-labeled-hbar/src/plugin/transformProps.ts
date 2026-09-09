@@ -30,7 +30,6 @@ import {
 } from '../types';
 
 const DEFAULT_NUMBER_FORMAT = ',.0f';
-const DEFAULT_BAR_COLOR = '#22A7C4';
 const DEFAULT_BAR_THICKNESS = 24;
 
 function toNumber(value: DataRecordValue): number {
@@ -53,13 +52,15 @@ function toLabel(value: DataRecordValue): string {
  * render. Row order and the top-N cut come from the query (see buildQuery),
  * so no client-side sorting is done.
  */
-export default function transformProps(chartProps: ChartProps): LabeledHbarProps {
-  const { width, height, formData, queriesData } = chartProps;
+export default function transformProps(
+  chartProps: ChartProps,
+): LabeledHbarProps {
+  const { width, height, formData, queriesData, theme } = chartProps;
   const {
     series,
     metric,
     headerText = '',
-    barColor = DEFAULT_BAR_COLOR,
+    barColor = theme.colorPrimary,
     barThickness = DEFAULT_BAR_THICKNESS,
     valueSuffix = '',
     numberFormat = DEFAULT_NUMBER_FORMAT,

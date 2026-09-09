@@ -44,8 +44,8 @@ class Session:
     requirement: str = ""
     image_paths: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
-    queues: list[queue.Queue] = field(default_factory=list)
-    status: str = "new"          # new | running | needs_input | done | failed
+    queues: list[queue.Queue[dict[str, Any]]] = field(default_factory=list)
+    status: str = "new"  # new | running | needs_input | done | failed
     result: dict[str, Any] | None = None
     error: str | None = None
     artifacts: dict[str, Any] = field(default_factory=dict)
@@ -65,7 +65,9 @@ class Session:
     reply: dict[str, Any] | None = None
     _replied: threading.Event = field(default_factory=threading.Event)
 
-    def ask(self, kind: str, payload: dict[str, Any], timeout: int = 3600) -> dict[str, Any]:
+    def ask(
+        self, kind: str, payload: dict[str, Any], timeout: int = 3600
+    ) -> dict[str, Any]:
         """Publish a question and block the worker until the user answers.
 
         ``kind`` is ``questions`` (stage B could not bind something),
@@ -143,20 +145,20 @@ class Session:
             except queue.Full:  # pragma: no cover - a slow client is dropped
                 pass
 
-    def attach(self) -> queue.Queue:
+    def attach(self) -> queue.Queue[dict[str, Any]]:
         """Attach a listener, replaying everything that already happened.
 
         Replay matters: the browser opens the event stream after the run has
         started, and without it the first stages would be invisible.
         """
-        listener: queue.Queue = queue.Queue(maxsize=1000)
+        listener: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1000)
         with self.lock:
             for event in self.events:
                 listener.put_nowait(event)
             self.queues.append(listener)
         return listener
 
-    def detach(self, listener: queue.Queue) -> None:
+    def detach(self, listener: queue.Queue[dict[str, Any]]) -> None:
         with self.lock:
             if listener in self.queues:
                 self.queues.remove(listener)

@@ -27,7 +27,7 @@ import { SupersetPluginChartHelloWorld } from '../src';
  * properly transform the data and/or any resulting props).
  */
 describe('superset-plugin-chart-hello-world', () => {
-  it('exists', () => {
+  test('exists', () => {
     expect(SupersetPluginChartHelloWorld).toBeDefined();
   });
 });

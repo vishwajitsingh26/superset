@@ -41,6 +41,7 @@ Produce the `POST /api/v1/chart/` body that renders this region.
 - **Respect control types.** A `SelectControl` takes one of its declared `choices`. A metric control takes a saved metric name or a well-formed adhoc metric object. A `BoundsControl` takes `[min, max]`. Read the schema; do not pattern-match from other charts.
 - **Adhoc metrics** use the full shape: `{ "expressionType": "SQL", "sqlExpression": "...", "label": "...", "hasCustomLabel": true, "optionName": "metric_<uuid>" }`. Simple metrics use `{ "expressionType": "SIMPLE", "column": {...}, "aggregate": "SUM", "label": "..." }`.
 - **Obey the design-system contract** for palette, number format, date format, time grain, legend, and `slice_name` convention — unless this region's `observed` explicitly contradicts it, in which case follow the region and note it in `unmapped`.
+- **Custom plugins carry no brand colour of their own.** A generated plugin's colour control falls back to a theme token, because literal colours are not allowed in plugin source. If the design system names an exact colour and the schema exposes a colour control, set it here — this is the only place the design's hex reaches the chart.
 - **Abbreviated numbers: check the magnitude first.** If the design shows
   `8.92M` and the stored value is in base units, use D3 SI (`,.3s`) or
   `SMART_NUMBER` — they scale and append the letter. If the stored value is

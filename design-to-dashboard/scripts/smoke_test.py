@@ -37,6 +37,7 @@ import json
 import pathlib
 import sys
 import types
+from collections.abc import Iterator
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DOCS = REPO_ROOT / "design-to-dashboard"
@@ -55,7 +56,7 @@ LIVE = "--live" in sys.argv
 
 if not LIVE and "superset" not in sys.modules:
     _pkg = types.ModuleType("superset")
-    _pkg.__path__ = [str(REPO_ROOT / "superset")]  # type: ignore[attr-defined]
+    _pkg.__path__ = [str(REPO_ROOT / "superset")]
     sys.modules["superset"] = _pkg
 elif LIVE:
     sys.path.insert(0, str(REPO_ROOT))
@@ -89,7 +90,7 @@ def simple_system_prompt(stage: str) -> str:
 
 
 @contextlib.contextmanager
-def _live_context():
+def _live_context() -> Iterator[None]:
     """A Flask request context with g.user set.
 
     `mcp_auth_hook` pushes a fresh app context when no request context is
@@ -102,9 +103,11 @@ def _live_context():
 
     app = create_app()
     with app.test_request_context("/api/v1/design_to_dashboard/"):
-        user = app.appbuilder.sm.find_user(username="admin")
+        from superset.extensions import security_manager
+
+        user = security_manager.find_user(username="admin")
         if user is None:
-            users = app.appbuilder.sm.get_all_users()
+            users = security_manager.get_all_users()
             user = users[0] if users else None
         if user is None:
             raise SystemExit("live mode needs a user in the metadata DB")
@@ -124,8 +127,10 @@ def _dump_calls(gateway: object) -> None:
         return
     print(f"tool calls made ({len(calls)}):", file=sys.stderr)
     for index, call in enumerate(calls, start=1):
-        print(f"  {index}. {call['tool']} {json.dumps(call['arguments'])}",
-              file=sys.stderr)
+        print(
+            f"  {index}. {call['tool']} {json.dumps(call['arguments'])}",
+            file=sys.stderr,
+        )
 
 
 def main() -> int:  # noqa: C901
@@ -163,7 +168,9 @@ def main() -> int:  # noqa: C901
     parser.add_argument("--model", default="claude-opus-5")
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--out", help="write the stage output to this path")
-    parser.add_argument("--raw", action="store_true", help="print text, skip JSON parse")
+    parser.add_argument(
+        "--raw", action="store_true", help="print text, skip JSON parse"
+    )
     args = parser.parse_args()
 
     try:
@@ -216,15 +223,15 @@ def main() -> int:  # noqa: C901
         total_cost = sum(r.cost_usd for r in results)
         failed = [r for r in results if not r.ok]
         print(f"cost=${total_cost:.4f}", file=sys.stderr)
-        for result in results:
-            status = "ok" if result.ok else "FAIL"
+        for chart in results:
+            status = "ok" if chart.ok else "FAIL"
             print(
-                f"  [{status}] {result.ref} {result.region_id} ({result.viz_type})",
+                f"  [{status}] {chart.ref} {chart.region_id} ({chart.viz_type})",
                 file=sys.stderr,
             )
-            if result.error:
-                print(f"      error: {result.error[:200]}", file=sys.stderr)
-            for problem in result.problems:
+            if chart.error:
+                print(f"      error: {chart.error[:200]}", file=sys.stderr)
+            for problem in chart.problems:
                 print(f"      - {problem}", file=sys.stderr)
 
         payload = {
@@ -269,9 +276,7 @@ def main() -> int:  # noqa: C901
         binding_set = json.loads(
             pathlib.Path(args.binding_set).read_text(encoding="utf-8")
         )
-        gateway = (
-            InProcessGateway() if args.live else FixtureGateway(FIXTURES / "mcp")
-        )
+        gateway = InProcessGateway() if args.live else FixtureGateway(FIXTURES / "mcp")
         context = _live_context() if args.live else contextlib.nullcontext()
         print(
             f"stage=C gateway={gateway.name} "
@@ -330,9 +335,7 @@ def main() -> int:  # noqa: C901
             return 2
         design_analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
 
-        gateway = (
-            InProcessGateway() if args.live else FixtureGateway(FIXTURES / "mcp")
-        )
+        gateway = InProcessGateway() if args.live else FixtureGateway(FIXTURES / "mcp")
         context = _live_context() if args.live else contextlib.nullcontext()
         print(
             f"stage=B gateway={gateway.name} regions="
@@ -391,7 +394,9 @@ def main() -> int:  # noqa: C901
             print("FAIL: stage A needs --image", file=sys.stderr)
             return 2
 
-    print(f"stage={args.stage} model={args.model} images={len(images)}", file=sys.stderr)
+    print(
+        f"stage={args.stage} model={args.model} images={len(images)}", file=sys.stderr
+    )
     print(f"system_prompt={len(system_prompt)} chars", file=sys.stderr)
 
     try:

@@ -23,13 +23,13 @@ real dashboard.
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 from typing import Any
 
 from superset.design_to_dashboard.llm.base import LLMProvider
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,5 @@ def run(
         on_thinking=on_thinking,
     )
     payload = extract_json(response.text)
-    logger.info(
-        "clarify: %d question(s)", len(payload.get("questions") or [])
-    )
+    logger.info("clarify: %d question(s)", len(payload.get("questions") or []))
     return payload, response.cost_usd or 0.0

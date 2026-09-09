@@ -167,6 +167,9 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         from superset.datasets.columns.api import DatasetColumnsRestApi
         from superset.datasets.metrics.api import DatasetMetricRestApi
         from superset.datasource.api import DatasourceRestApi
+        from superset.design_to_dashboard.api import (
+            DesignToDashboardRestApi,
+        )
         from superset.embedded.api import EmbeddedDashboardRestApi
         from superset.embedded.view import EmbeddedView
         from superset.explore.api import ExploreRestApi
@@ -201,6 +204,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         )
         from superset.views.database.views import DatabaseView
         from superset.views.datasource.views import DatasetEditor, Datasource
+        from superset.views.design_to_dashboard import DesignToDashboardView
         from superset.views.dynamic_plugins import DynamicPluginsView
         from superset.views.error_handling import set_app_error_handlers
         from superset.views.explore import ExplorePermalinkView, ExploreView
@@ -220,10 +224,6 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         )
         from superset.views.sqllab import SqllabView
         from superset.views.tags import TagModelView, TagView
-        from superset.design_to_dashboard.api import (
-            DesignToDashboardRestApi,
-        )
-        from superset.views.design_to_dashboard import DesignToDashboardView
         from superset.views.tasks import TaskModelView
         from superset.views.themes import ThemeModelView
         from superset.views.user_info import UserInfoView
@@ -342,9 +342,7 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
             icon="fa-magic",
             category="",
             category_icon="",
-            cond=lambda: feature_flag_manager.is_feature_enabled(
-                "DESIGN_TO_DASHBOARD"
-            ),
+            cond=lambda: feature_flag_manager.is_feature_enabled("DESIGN_TO_DASHBOARD"),
         )
 
         appbuilder.add_view(

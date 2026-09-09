@@ -73,12 +73,19 @@ def _expected_rows(region: dict[str, Any]) -> int | None:
     import re
 
     text = " ".join(
-        str(region.get(key) or "")
-        for key in ("observed", "implied_data", "title")
+        str(region.get(key) or "") for key in ("observed", "implied_data", "title")
     ).lower()
     words = {
-        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
     }
     # Allow a couple of adjectives between the count and the noun:
     # "five horizontal bars", "four data rows".
@@ -96,7 +103,7 @@ def _expected_rows(region: dict[str, Any]) -> int | None:
     return None
 
 
-def verify(
+def verify(  # noqa: C901
     dashboard_id: int,
     plan: dict[str, Any],
     design_analysis: dict[str, Any] | None = None,

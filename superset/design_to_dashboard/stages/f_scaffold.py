@@ -23,7 +23,6 @@ needed to register it, then a writer puts them on disk.
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 import re
@@ -33,9 +32,10 @@ from typing import Any
 from superset.design_to_dashboard.llm.base import (
     LLMError,
     LLMProvider,
-    LLMTimeout,
+    LLMTimeoutError,
 )
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -96,7 +96,9 @@ def _reference_source(repo_root: pathlib.Path) -> str:
     for relative in REFERENCE_FILES:
         path = base / relative
         if path.exists():
-            blocks.append(f"### {REFERENCE_PLUGIN}/{relative}\n```\n{path.read_text()}\n```")
+            blocks.append(
+                f"### {REFERENCE_PLUGIN}/{relative}\n```\n{path.read_text()}\n```"
+            )
     if not blocks:
         raise LLMError(f"Reference plugin not found at {base}")
     return "\n\n".join(blocks)
@@ -141,7 +143,7 @@ def build_user_prompt(
     )
 
 
-def validate(scaffold: dict[str, Any], known_viz_types: set[str]) -> list[str]:
+def validate(scaffold: dict[str, Any], known_viz_types: set[str]) -> list[str]:  # noqa: C901
     """Checks that catch scaffolds which will not build."""
     problems: list[str] = []
 
@@ -165,9 +167,12 @@ def validate(scaffold: dict[str, Any], known_viz_types: set[str]) -> list[str]:
             problems.append(f"missing required file: {suffix}")
 
     directory = scaffold.get("directory") or ""
-    if directory and not directory.startswith("superset-frontend/plugins/plugin-chart-"):
+    if directory and not directory.startswith(
+        "superset-frontend/plugins/plugin-chart-"
+    ):
         problems.append(
-            f"directory {directory!r} must be superset-frontend/plugins/plugin-chart-<name>"
+            f"directory {directory!r} must be "
+            "superset-frontend/plugins/plugin-chart-<name>"
         )
     for path in paths:
         if directory and not path.startswith(directory):
@@ -221,7 +226,7 @@ def run_one(
         )
         result.cost_usd = response.cost_usd or 0.0
         scaffold = extract_json(response.text)
-    except LLMTimeout:
+    except LLMTimeoutError:
         # Let the runner's retry see this rather than swallowing it into a
         # result the caller cannot distinguish from a bad scaffold.
         raise

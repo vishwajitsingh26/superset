@@ -137,10 +137,12 @@ const config: ControlPanelConfig = {
             name: 'bar_color',
             config: {
               type: 'TextControl',
-              default: '#22A7C4',
               renderTrigger: true,
               label: t('Bar color'),
-              description: t('Hex color used as the flat fill for every bar'),
+              description: t(
+                'CSS color used as the flat fill for every bar. Defaults to ' +
+                  'the theme primary color.',
+              ),
             },
           },
         ],

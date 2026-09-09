@@ -38,12 +38,11 @@ import json
 import pathlib
 import re
 import sys
+from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 FRONTEND = REPO_ROOT / "superset-frontend"
-VIZ_TYPE_TS = (
-    FRONTEND / "packages/superset-ui-core/src/chart/types/VizType.ts"
-)
+VIZ_TYPE_TS = FRONTEND / "packages/superset-ui-core/src/chart/types/VizType.ts"
 PRESETS = [
     FRONTEND / "src/visualizations/presets/MainPreset.ts",
     FRONTEND / "src/visualizations/presets/MainPreset.js",
@@ -120,9 +119,7 @@ REGISTER_RE = re.compile(
     re.S,
 )
 ENUM_RE = re.compile(r"^\s*(\w+)\s*=\s*'([^']+)'", re.M)
-FILTER_ENUM_RE = re.compile(
-    r"export enum FilterPlugins \{(.*?)\}", re.S
-)
+FILTER_ENUM_RE = re.compile(r"export enum FilterPlugins \{(.*?)\}", re.S)
 CLASS_RE = re.compile(r"class\s+(\w+)\s+extends\s+\w+", re.M)
 # Two metadata idioms in the wild: `new ChartMetadata({...})` and a plain
 # `const metadata = {...}` passed to super().
@@ -200,9 +197,9 @@ def collect_registrations(enum: dict[str, str]) -> dict[str, str]:
     return out
 
 
-def collect_metadata() -> dict[str, dict]:
+def collect_metadata() -> dict[str, dict[str, Any]]:  # noqa: C901
     """class name -> metadata fields, found in the file that defines the class."""
-    out: dict[str, dict] = {}
+    out: dict[str, dict[str, Any]] = {}
     for root in PLUGIN_ROOTS:
         if not root.exists():
             continue
@@ -351,32 +348,31 @@ def main() -> int:
         )
 
     unmatched = sorted(set(metadata) - set(registrations))
+    warnings: dict[str, list[str]] = {
+        "registered_without_metadata": sorted(
+            e["viz_type"] for e in entries if not e["metadata_found"]
+        ),
+        "registered_without_thumbnail": sorted(
+            e["viz_type"] for e in entries if not e["thumbnail"]
+        ),
+        "registered_without_control_panel": sorted(
+            e["viz_type"] for e in entries if not e["control_panel"]
+        ),
+        "metadata_without_registration": unmatched,
+    }
     payload = {
         "generated_from": "source",
         "count": len(entries),
         "viz_types": entries,
-        "warnings": {
-            "registered_without_metadata": sorted(
-                e["viz_type"] for e in entries if not e["metadata_found"]
-            ),
-            "registered_without_thumbnail": sorted(
-                e["viz_type"] for e in entries if not e["thumbnail"]
-            ),
-            "registered_without_control_panel": sorted(
-                e["viz_type"] for e in entries if not e["control_panel"]
-            ),
-            "metadata_without_registration": unmatched,
-        },
+        "warnings": warnings,
     }
 
     out_path = pathlib.Path(args.out)
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"wrote {out_path} ({len(entries)} viz types)", file=sys.stderr)
-    missing = payload["warnings"]["registered_without_metadata"]
-    if missing:
+    if missing := warnings["registered_without_metadata"]:
         print(f"  no metadata for {len(missing)}: {missing[:8]}", file=sys.stderr)
-    no_panel = payload["warnings"]["registered_without_control_panel"]
-    if no_panel:
+    if no_panel := warnings["registered_without_control_panel"]:
         print(
             f"  no control panel for {len(no_panel)}: {no_panel[:8]}", file=sys.stderr
         )

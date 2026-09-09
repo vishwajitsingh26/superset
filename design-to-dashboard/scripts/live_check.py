@@ -27,9 +27,9 @@ Superset's MCP tools and decodes what they return.
 
 from __future__ import annotations
 
-import json
 import sys
 import traceback
+from typing import Any, Callable
 
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 results: list[tuple[str, str, str]] = []
@@ -87,8 +87,8 @@ def main() -> int:  # noqa: C901
         from flask import g
 
         from superset.design_to_dashboard.mcp.gateway import InProcessGateway, MCPError
+        from superset.extensions import security_manager
 
-        security_manager = app.appbuilder.sm
         admin = security_manager.find_user(username="admin")
         if admin is None:
             admins = security_manager.get_all_users()
@@ -100,7 +100,7 @@ def main() -> int:  # noqa: C901
         gateway = InProcessGateway()
         if True:
             g.user = admin
-            for tool, arguments, describe in (
+            probes: tuple[tuple[str, dict[str, Any], Callable[[Any], str]], ...] = (
                 (
                     "list_datasets",
                     {"request": {"page_size": 5}},
@@ -111,7 +111,8 @@ def main() -> int:  # noqa: C901
                     {"request": {"page_size": 5}},
                     lambda r: f"{len(_rows(r))} chart(s)",
                 ),
-            ):
+            )
+            for tool, arguments, describe in probes:
                 try:
                     result = gateway.call(tool, arguments)
                 except MCPError as ex:
@@ -157,9 +158,18 @@ def _remember(tool: str, result: object) -> None:
     _seen[tool] = result
 
 
-def _rows(result: object) -> list:
+def _rows(result: object) -> list[Any]:
     if isinstance(result, dict):
-        for key in ("charts", "datasets", "databases", "dashboards", "result", "results", "data", "items"):
+        for key in (
+            "charts",
+            "datasets",
+            "databases",
+            "dashboards",
+            "result",
+            "results",
+            "data",
+            "items",
+        ):
             value = result.get(key)
             if isinstance(value, list):
                 return value

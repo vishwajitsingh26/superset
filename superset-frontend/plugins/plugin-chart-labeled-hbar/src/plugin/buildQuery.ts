@@ -25,9 +25,7 @@ import { LabeledHbarQueryFormData } from '../types';
  */
 export default function buildQuery(formData: LabeledHbarQueryFormData) {
   const { series, metric } = formData;
-  const orderby: [QueryFormMetric, boolean][] = metric
-    ? [[metric, false]]
-    : [];
+  const orderby: [QueryFormMetric, boolean][] = metric ? [[metric, false]] : [];
 
   return buildQueryContext(formData, baseQueryObject => [
     {

@@ -29,7 +29,6 @@ import {
 import { t } from '@apache-superset/core/translation';
 import { RankedBarDatum, RankedBarProps, RankedBarQueryFormData } from '../types';
 
-const DEFAULT_BAR_COLOR = '#22a7c2';
 const DEFAULT_BAR_THICKNESS = 12;
 const DEFAULT_NUMBER_FORMAT = ',.0f';
 const DEFAULT_VALUE_SUFFIX = '';
@@ -60,7 +59,7 @@ function toNumber(value: DataRecordValue): number {
 export default function transformProps(
   chartProps: ChartProps<RankedBarQueryFormData>,
 ): RankedBarProps {
-  const { width, height, formData, queriesData } = chartProps;
+  const { width, height, formData, queriesData, theme } = chartProps;
   const {
     groupby,
     metric,
@@ -123,7 +122,7 @@ export default function transformProps(
     height,
     data,
     cardTitle: cardTitle ?? '',
-    barColor: barColor || DEFAULT_BAR_COLOR,
+    barColor: barColor || theme.colorPrimary,
     barThickness: barThickness ?? DEFAULT_BAR_THICKNESS,
     numberFormat: format,
     valueSuffix: suffix,

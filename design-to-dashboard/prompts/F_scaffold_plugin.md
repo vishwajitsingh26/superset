@@ -73,6 +73,14 @@ it exactly:
   padding, typography scale.
 - Use theme tokens (`theme.colorText`, `theme.sizeUnit`, `theme.fontSizeXL`)
   rather than hardcoded colours, so the chart follows light and dark themes.
+- **Never write a literal colour into the plugin source** -- not in
+  `transformProps`, not as a control's `default`, not in a styled block. A
+  pre-commit rule (`check-custom-rules.js`) rejects any `#rrggbb`, `rgb(` or
+  `rgba(` string literal, so a plugin that carries one cannot be committed.
+  The design's exact brand colour is *data*, not code: expose a colour control,
+  fall back to a theme token (`theme.colorPrimary`) when it is unset, and let
+  stage D write the design system's hex into the chart's saved params. Fidelity
+  is preserved and the source stays themeable.
 - Keep the component driven by `transformProps` output; do no data shaping in
   the component.
 

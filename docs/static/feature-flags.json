@@ -134,6 +134,12 @@
         "docs": "https://superset.apache.org/docs/configuration/alerts-reports"
       },
       {
+        "name": "DESIGN_TO_DASHBOARD",
+        "default": false,
+        "lifecycle": "testing",
+        "description": "Generate dashboards from a design reference (Figma export or screenshot) via the Design-to-Dashboard chat. Requires an LLM provider to be configured."
+      },
+      {
         "name": "DYNAMIC_PLUGINS",
         "default": false,
         "lifecycle": "testing",

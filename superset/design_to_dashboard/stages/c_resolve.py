@@ -25,7 +25,6 @@ handed an index.
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 from typing import Any
@@ -44,6 +43,7 @@ from superset.design_to_dashboard.registry import (
     load as load_registry,
     render_summaries,
 )
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +179,7 @@ def validate(  # noqa: C901
             if not viz_type:
                 problems.append(f"{region_id}: {kind} without viz_type")
             elif viz_type not in known_charts:
-                problems.append(
-                    f"{region_id}: viz_type {viz_type!r} is not registered"
-                )
+                problems.append(f"{region_id}: viz_type {viz_type!r} is not registered")
         if kind == "reuse":
             if not decision.get("existing_chart_id"):
                 problems.append(f"{region_id}: reuse without existing_chart_id")
@@ -251,8 +249,14 @@ def validate(  # noqa: C901
         loss = (decision.get("fidelity_loss") or "").lower()
         if ("suffix" in loss or "'m'" in loss) and any(
             phrase in loss
-            for phrase in ("cannot be", "can not be", "not possible", "unachievable",
-                           "no way to", "impossible")
+            for phrase in (
+                "cannot be",
+                "can not be",
+                "not possible",
+                "unachievable",
+                "no way to",
+                "impossible",
+            )
         ):
             problems.append(
                 f"{decision.get('region_id')}: claims a magnitude suffix is "

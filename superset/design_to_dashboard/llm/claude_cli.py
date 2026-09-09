@@ -36,7 +36,6 @@ Swap `provider` to a real API provider before shipping.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
@@ -45,7 +44,9 @@ import tempfile
 import time
 from typing import Any
 
-from .base import LLMError, LLMResponse, LLMTimeout
+from superset.utils import json
+
+from .base import LLMError, LLMResponse, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ class ClaudeCliProvider:
                 f"or set DESIGN_TO_DASHBOARD_LLM['provider'] to an API provider."
             )
 
-    def complete(
+    def complete(  # noqa: C901
         self,
         system_prompt: str,
         user_prompt: str,
@@ -158,7 +159,7 @@ class ClaudeCliProvider:
                     shell=False,
                 )
         except subprocess.TimeoutExpired as ex:
-            raise LLMTimeout(
+            raise LLMTimeoutError(
                 f"Claude CLI timed out after {timeout or self.timeout}s"
             ) from ex
         finally:
@@ -175,9 +176,9 @@ class ClaudeCliProvider:
 
         return self._parse(completed.stdout)
 
-    def _run_streaming(
+    def _run_streaming(  # noqa: C901
         self, argv: list[str], prompt: str, timeout: int, on_thinking: Any
-    ) -> subprocess.CompletedProcess:
+    ) -> subprocess.CompletedProcess[str]:
         """Run the CLI in stream-json mode, forwarding reasoning as it arrives.
 
         Each stdout line is one JSON envelope. Thinking arrives as
@@ -194,7 +195,8 @@ class ClaudeCliProvider:
             bufsize=1,
             shell=False,
         )
-        assert process.stdin is not None and process.stdout is not None
+        assert process.stdin is not None
+        assert process.stdout is not None
 
         final_line = ""
         thinking_tokens = 0
@@ -223,7 +225,7 @@ class ClaudeCliProvider:
                 if envelope.get("type") != "stream_event":
                     continue
 
-                event = (envelope.get("event") or {})
+                event = envelope.get("event") or {}
                 delta = event.get("delta") or {}
 
                 # The CLI REDACTS reasoning text: thinking_delta arrives as
@@ -275,7 +277,9 @@ class ClaudeCliProvider:
         try:
             payload: dict[str, Any] = json.loads(stdout)
         except ValueError as ex:
-            raise LLMError(f"Claude CLI returned non-JSON output: {stdout[:500]}") from ex
+            raise LLMError(
+                f"Claude CLI returned non-JSON output: {stdout[:500]}"
+            ) from ex
 
         if payload.get("is_error"):
             raise LLMError(f"Claude CLI reported an error: {payload.get('result')}")

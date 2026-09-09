@@ -23,7 +23,6 @@ to the instance.
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 from typing import Any
@@ -36,6 +35,7 @@ from superset.design_to_dashboard.pipeline.tool_loop import (
     run_tool_loop,
     ToolLoopResult,
 )
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 

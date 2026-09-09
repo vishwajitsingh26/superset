@@ -35,12 +35,15 @@ import pathlib
 import sys
 import urllib.error
 import urllib.request
+from typing import Any
 
 API = "http://127.0.0.1:8088/api/v1"
 
 
-def _post(path: str, payload: dict, token: str | None = None) -> dict:
-    request = urllib.request.Request(
+def _post(
+    path: str, payload: dict[str, Any], token: str | None = None
+) -> dict[str, Any]:
+    request = urllib.request.Request(  # noqa: S310
         f"{API}{path}",
         data=json.dumps(payload).encode(),
         headers={
@@ -52,8 +55,8 @@ def _post(path: str, payload: dict, token: str | None = None) -> dict:
         return json.load(response)
 
 
-def _get(path: str, token: str) -> dict:
-    request = urllib.request.Request(
+def _get(path: str, token: str) -> dict[str, Any]:
+    request = urllib.request.Request(  # noqa: S310
         f"{API}{path}", headers={"Authorization": f"Bearer {token}"}
     )
     with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
@@ -61,12 +64,15 @@ def _get(path: str, token: str) -> dict:
 
 
 def humanise(seconds: float) -> str:
-    return f"{int(seconds // 60)}m {int(seconds % 60)}s" if seconds >= 60 else f"{seconds:.0f}s"
+    return (
+        f"{int(seconds // 60)}m {int(seconds % 60)}s"
+        if seconds >= 60
+        else f"{seconds:.0f}s"
+    )
 
 
-def render(state: dict) -> str:  # noqa: C901
+def render(state: dict[str, Any]) -> str:  # noqa: C901
     events = state.get("events") or []
-    started = next((e["at"] for e in events if e.get("at")), None)
     out: list[str] = [
         f"# Run trace — {state.get('id')}",
         "",
@@ -74,8 +80,7 @@ def render(state: dict) -> str:  # noqa: C901
         f"- **Status:** {state.get('status')}",
         f"- **Events:** {len(events)}",
     ]
-    result = state.get("result") or {}
-    if result:
+    if result := state.get("result") or {}:
         out += [
             f"- **Dashboard:** {result.get('dashboard_url')} "
             f"(id {result.get('dashboard_id')})",
@@ -106,9 +111,16 @@ def render(state: dict) -> str:  # noqa: C901
                 "",
             ]
             if event.get("thinking"):
-                out += ["<details><summary>Reasoning</summary>", "",
-                        "```", event["thinking"].strip(), "```", "",
-                        "</details>", ""]
+                out += [
+                    "<details><summary>Reasoning</summary>",
+                    "",
+                    "```",
+                    event["thinking"].strip(),
+                    "```",
+                    "",
+                    "</details>",
+                    "",
+                ]
             for decision in event.get("decisions") or []:
                 out.append(
                     f"- `{decision.get('region_id')}` → **{decision.get('decision')}**"
@@ -155,14 +167,19 @@ def render(state: dict) -> str:  # noqa: C901
             out.append("")
         elif kind == "input_received":
             out += [f"**Answered:** `{json.dumps(event.get('answer'))[:400]}`", ""]
-        elif kind in ("plugin_built", "registry_rebuilt", "frontend_restarted",
-                      "frontend_restart_needed", "retry", "cancelled"):
+        elif kind in (
+            "plugin_built",
+            "registry_rebuilt",
+            "frontend_restarted",
+            "frontend_restart_needed",
+            "retry",
+            "cancelled",
+        ):
             out.append(f"- _{kind}_: {event.get('label')}")
         elif kind == "error":
-            out += ["", f"### ❌ Error", "", f"```\n{event.get('detail')}\n```", ""]
+            out += ["", "### ❌ Error", "", f"```\n{event.get('detail')}\n```", ""]
 
-    notes = (state.get("result") or {}).get("fidelity_notes") or []
-    if notes:
+    if notes := (state.get("result") or {}).get("fidelity_notes") or []:
         out += ["## Known differences from the design", ""]
         for note in notes:
             out.append(f"- `{note.get('region_id')}`: {note.get('difference')}")
@@ -191,13 +208,13 @@ def main() -> int:
         state = _get(f"/design_to_dashboard/session/{args.session_id}/", token)
     except urllib.error.HTTPError as ex:
         print(f"could not read the session: HTTP {ex.code}", file=sys.stderr)
-        print("sessions live in the web process's memory and are lost on "
-              "restart", file=sys.stderr)
+        print(
+            "sessions live in the web process's memory and are lost on restart",
+            file=sys.stderr,
+        )
         return 1
 
-    out = pathlib.Path(
-        args.out or f"design-to-dashboard/traces/{args.session_id}.md"
-    )
+    out = pathlib.Path(args.out or f"design-to-dashboard/traces/{args.session_id}.md")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(render(state), encoding="utf-8")
     print(f"wrote {out} ({out.stat().st_size // 1024} KB)")

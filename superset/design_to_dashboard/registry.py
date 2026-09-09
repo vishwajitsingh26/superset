@@ -25,10 +25,11 @@ carries its own manifest. Regenerate with::
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 from typing import Any
+
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,9 @@ def load(path: str | pathlib.Path) -> list[dict[str, Any]]:
     return entries
 
 
-def render_summaries(entries: list[dict[str, Any]], include_filters: bool = False) -> str:
+def render_summaries(
+    entries: list[dict[str, Any]], include_filters: bool = False
+) -> str:
     """Render entries as compact prompt text.
 
     Summaries only - key, name, category, tags, one-line description. Stage C
@@ -75,7 +78,9 @@ def render_summaries(entries: list[dict[str, Any]], include_filters: bool = Fals
 
 def _render_group(entries: list[dict[str, Any]]) -> list[str]:
     lines = []
-    for entry in sorted(entries, key=lambda e: (e.get("category") or "~", e["viz_type"])):
+    for entry in sorted(
+        entries, key=lambda e: (e.get("category") or "~", e["viz_type"])
+    ):
         description = (entry.get("description") or "").strip()
         if len(description) > 180:
             description = description[:177].rsplit(" ", 1)[0] + "…"
@@ -99,9 +104,7 @@ def find(entries: list[dict[str, Any]], viz_type: str) -> dict[str, Any]:
     raise RegistryError(f"viz_type {viz_type!r} is not in the registry")
 
 
-def load_control_panel(
-    entry: dict[str, Any], repo_root: str | pathlib.Path
-) -> str:
+def load_control_panel(entry: dict[str, Any], repo_root: str | pathlib.Path) -> str:
     """Read the control-panel source for one viz type.
 
     Stage D gets the real source rather than a re-derived schema: it is ground

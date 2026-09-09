@@ -23,7 +23,6 @@ design image, so it is the cheapest stage to run and to re-run.
 
 from __future__ import annotations
 
-import json
 import logging
 import pathlib
 import uuid
@@ -31,6 +30,7 @@ from typing import Any
 
 from superset.design_to_dashboard.llm.base import LLMProvider
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +58,7 @@ def build_system_prompt(prompts_dir: pathlib.Path) -> str:
     return f"{preamble}\n\n---\n\n{stage}"
 
 
-def build_user_prompt(
-    design_analysis: dict[str, Any], plan: dict[str, Any]
-) -> str:
+def build_user_prompt(design_analysis: dict[str, Any], plan: dict[str, Any]) -> str:
     """Only geometry and refs — deliberately no data or params."""
     # Regions stage C dropped or routed to the filter bar must not be laid out.
     # Passing every region let stage E apply its own "header -> MARKDOWN" rule
@@ -72,10 +70,7 @@ def build_user_prompt(
         if decision.get("decision") in NON_GRID_DECISIONS
     }
     regions = [
-        {
-            key: region.get(key)
-            for key in ("region_id", "bbox", "role", "title")
-        }
+        {key: region.get(key) for key in ("region_id", "bbox", "role", "title")}
         for region in design_analysis.get("regions", [])
         if region.get("region_id") not in excluded
     ]
@@ -137,8 +132,7 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
     expected_refs = {
         decision["ref"]
         for decision in plan.get("decisions", [])
-        if decision.get("ref")
-        and decision.get("decision") not in NON_GRID_DECISIONS
+        if decision.get("ref") and decision.get("decision") not in NON_GRID_DECISIONS
     }
     # A wrap parent's children render inside the parent, not on the grid.
     child_refs = {

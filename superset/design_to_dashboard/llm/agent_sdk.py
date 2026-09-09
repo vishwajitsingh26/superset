@@ -29,11 +29,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import mimetypes
 import pathlib
 from typing import Any
 
-from .base import LLMError, LLMResponse, LLMTimeout
+from .base import LLMError, LLMResponse, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +125,7 @@ class ClaudeAgentSdkProvider:
         session_id: str | None = None
         result_text: str | None = None
 
-        async def run() -> None:
+        async def run() -> None:  # noqa: C901
             nonlocal cost, usage, session_id, result_text
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, StreamEvent):
@@ -181,7 +180,7 @@ class ClaudeAgentSdkProvider:
         try:
             await asyncio.wait_for(run(), timeout=timeout)
         except asyncio.TimeoutError as ex:
-            raise LLMTimeout(f"Agent SDK timed out after {timeout}s") from ex
+            raise LLMTimeoutError(f"Agent SDK timed out after {timeout}s") from ex
         except LLMError:
             raise
         except Exception as ex:  # noqa: BLE001

@@ -25,13 +25,13 @@ server-side session state, so the loop behaves identically on the local
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from superset.design_to_dashboard.llm.base import LLMError, LLMProvider
 from superset.design_to_dashboard.mcp.gateway import MCPError, MCPGateway
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +79,7 @@ class ToolLoopResult:
     transcript: list[dict[str, Any]] = field(default_factory=list)
 
 
-class ToolBudgetExceeded(LLMError):
+class ToolBudgetExceededError(LLMError):
     """Raised when the loop hits its call or iteration ceiling."""
 
 
@@ -147,7 +147,7 @@ def run_tool_loop(
             allowed = max(0, max_tool_calls - calls_made)
             requested = requested[:allowed]
             if not requested:
-                raise ToolBudgetExceeded(
+                raise ToolBudgetExceededError(
                     f"Tool budget of {max_tool_calls} exhausted after "
                     f"{iteration} iterations without a final answer"
                 )
@@ -163,9 +163,8 @@ def run_tool_loop(
 
         transcript.append({"tool_calls": requested, "observations": observations})
 
-    raise ToolBudgetExceeded(
-        f"No final answer after {max_iterations} iterations "
-        f"({calls_made} tool calls)"
+    raise ToolBudgetExceededError(
+        f"No final answer after {max_iterations} iterations ({calls_made} tool calls)"
     )
 
 
@@ -191,9 +190,7 @@ def _execute(gateway: MCPGateway, call: dict[str, Any]) -> dict[str, Any]:
     return {"id": call_id, "tool": tool, "result": result}
 
 
-def _compose(
-    user_prompt: str, transcript: list[dict[str, Any]], remaining: int
-) -> str:
+def _compose(user_prompt: str, transcript: list[dict[str, Any]], remaining: int) -> str:
     """Rebuild the user turn from the base prompt plus prior observations."""
     if not transcript:
         return user_prompt

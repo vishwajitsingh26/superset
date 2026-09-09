@@ -24,10 +24,11 @@ against recorded fixtures (`FixtureGateway`) with no changes.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import pathlib
 from typing import Any, Protocol
+
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -100,8 +101,7 @@ class InProcessGateway:
         if isinstance(structured, dict):
             return structured
 
-        content = getattr(result, "content", None)
-        if content:
+        if content := getattr(result, "content", None):
             text = getattr(content[0], "text", None)
             if text is not None:
                 try:
@@ -109,8 +109,7 @@ class InProcessGateway:
                 except ValueError:
                     return text
 
-        data = getattr(result, "data", None)
-        if data is not None:
+        if (data := getattr(result, "data", None)) is not None:
             if isinstance(data, (dict, list, str, int, float, bool)):
                 return data
             if hasattr(data, "__dict__"):

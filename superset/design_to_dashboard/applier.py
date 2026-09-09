@@ -30,12 +30,12 @@ and *compensates* by deleting those objects if a later step fails.
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from superset.design_to_dashboard.stages.e_layout import ensure_uuids
+from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +70,7 @@ def substitute_refs(value: Any, ref_to_id: dict[str, int]) -> Any:
     return value
 
 
-def build_query_context(
+def build_query_context(  # noqa: C901
     params: dict[str, Any], datasource_id: int, datasource_type: str = "table"
 ) -> dict[str, Any]:
     """Derive a query context from a chart's form data.
@@ -108,7 +108,11 @@ def build_query_context(
     seen: set[str] = set()
     ordered_columns = []
     for column in columns:
-        key = json.dumps(column, sort_keys=True) if not isinstance(column, str) else column
+        key = (
+            json.dumps(column, sort_keys=True)
+            if not isinstance(column, str)
+            else column
+        )
         if key not in seen:
             seen.add(key)
             ordered_columns.append(column)
@@ -161,7 +165,9 @@ def build_query_context(
     }
 
 
-def _order_charts(specs: list[dict], plan: dict[str, Any]) -> list[dict]:
+def _order_charts(
+    specs: list[dict[str, Any]], plan: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Children before the wrapper that references them."""
     children: set[str] = {
         child
@@ -210,7 +216,9 @@ def apply_plan(  # noqa: C901
             result.ref_to_id[decision["ref"]] = chart_id
             result.charts_reused.append(chart_id)
 
-    usable = [spec for spec in chart_specs if spec.get("spec") and not spec.get("error")]
+    usable = [
+        spec for spec in chart_specs if spec.get("spec") and not spec.get("error")
+    ]
     skipped = [spec for spec in chart_specs if spec not in usable]
     for spec in skipped:
         result.warnings.append(
@@ -236,9 +244,7 @@ def apply_plan(  # noqa: C901
                 query_context = raw_qc
             else:
                 query_context = json.dumps(
-                    build_query_context(
-                        params, body["datasource_id"], datasource_type
-                    )
+                    build_query_context(params, body["datasource_id"], datasource_type)
                 )
 
             chart = CreateChartCommand(
@@ -355,14 +361,17 @@ def _compensate(chart_ids: list[int], dashboard_id: int | None) -> None:
             chart = db.session.query(Slice).get(chart_id)
             if chart is not None:
                 db.session.delete(chart)
-        db.session.commit()
+        # Not a @transaction: this runs *after* the commands that created the
+        # charts have already committed, so there is no unit of work left to
+        # roll back -- the cleanup is itself the compensating write.
+        db.session.commit()  # pylint: disable=consider-using-transaction
         logger.info(
             "compensated: removed %d chart(s) and %s dashboard",
             len(chart_ids),
             "1" if dashboard_id else "0",
         )
     except Exception:  # noqa: BLE001
-        db.session.rollback()
+        db.session.rollback()  # pylint: disable=consider-using-transaction
         logger.exception(
             "compensation failed; charts %s and dashboard %s may remain",
             chart_ids,
@@ -372,7 +381,7 @@ def _compensate(chart_ids: list[int], dashboard_id: int | None) -> None:
 
 def _build_native_filters(plan: dict[str, Any]) -> list[dict[str, Any]]:
     """Translate stage C's native filters into dashboard metadata."""
-    filters = []
+    filters: list[dict[str, Any]] = []
     for index, native in enumerate(plan.get("native_filters") or []):
         filter_id = f"NATIVE_FILTER-d2d-{index}"
         filters.append(

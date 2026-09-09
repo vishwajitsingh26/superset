@@ -32,6 +32,7 @@ import argparse
 import json
 import pathlib
 import sys
+from typing import Any
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PROMPTS = REPO_ROOT / "design-to-dashboard" / "prompts"
@@ -44,7 +45,9 @@ def main() -> int:  # noqa: C901
     parser.add_argument("--binding-set", required=True)
     parser.add_argument("--plan", required=True)
     parser.add_argument("--charts", required=True)
-    parser.add_argument("--layout-out", default="/tmp/vg/e.json")
+    parser.add_argument(
+        "--layout-out", default="design-to-dashboard/fixtures/stage_e_output.json"
+    )
     parser.add_argument("--title", default=None)
     parser.add_argument("--model", default="claude-opus-5")
     parser.add_argument(
@@ -52,7 +55,9 @@ def main() -> int:  # noqa: C901
     )
     args = parser.parse_args()
 
-    load = lambda p: json.loads(pathlib.Path(p).read_text(encoding="utf-8"))  # noqa: E731
+    def load(path: str) -> Any:
+        return json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+
     design_analysis = load(args.design_analysis)
     binding_set = load(args.binding_set)  # noqa: F841 - kept for symmetry/debugging
     plan = load(args.plan)
@@ -65,12 +70,13 @@ def main() -> int:  # noqa: C901
     from superset.design_to_dashboard.applier import apply_plan, ApplyError
     from superset.design_to_dashboard.llm.claude_cli import ClaudeCliProvider
     from superset.design_to_dashboard.stages import e_layout
+    from superset.extensions import security_manager
 
     app = create_app()
     with app.test_request_context("/api/v1/design_to_dashboard/"):
-        user = app.appbuilder.sm.find_user(username="admin")
+        user = security_manager.find_user(username="admin")
         if user is None:
-            users = app.appbuilder.sm.get_all_users()
+            users = security_manager.get_all_users()
             user = users[0] if users else None
         if user is None:
             print("FAIL: no user in the metadata DB", file=sys.stderr)

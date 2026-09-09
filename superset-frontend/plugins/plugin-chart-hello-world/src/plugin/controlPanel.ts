@@ -101,7 +101,6 @@ const config: ControlPanelConfig = {
 
   // For control input types, see: superset-frontend/src/explore/components/controls/index.js
   controlPanelSections: [
-    
     {
       label: t('Query'),
       expanded: true,

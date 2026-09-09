@@ -303,7 +303,7 @@ Branch: `feat/design-to-dashboard`.
 | `superset/views/design_to_dashboard.py` | **New.** `DesignToDashboardView(BaseSupersetView)`, `route_base="/design-to-dashboard"`, `class_permission_name="DesignToDashboard"`, `MODEL_VIEW_RW_METHOD_PERMISSION_MAP`. `@before_request` raises `NotFound` when the flag is off — mirrors `TagView`. Serves the SPA via `render_app_template()` |
 | `superset/initialization/__init__.py` | `appbuilder.add_view_no_menu(DesignToDashboardView)` |
 | `superset/config.py` | `DESIGN_TO_DASHBOARD_LLM` settings block (provider, model, timeout, max_turns, allow_cli_provider) |
-| `superset/design_to_dashboard/llm/base.py` | **New.** `LLMProvider` Protocol, `LLMResponse`, `LLMError`/`LLMTimeout`. Stages talk to this, never to a vendor SDK |
+| `superset/design_to_dashboard/llm/base.py` | **New.** `LLMProvider` Protocol, `LLMResponse`, `LLMError`/`LLMTimeoutError`. Stages talk to this, never to a vendor SDK |
 | `superset/design_to_dashboard/llm/claude_cli.py` | **New.** Shells out to `claude -p --output-format json`. Prompt via stdin, system prompt via temp file (stage prompts exceed comfortable argv length and would otherwise be visible to `ps`). `subprocess.run` list-form, `shell=False` |
 | `superset/design_to_dashboard/llm/factory.py` | **New.** Resolves provider from config; refuses `claude_cli` unless `app.debug` or `allow_cli_provider`, and logs a warning when used |
 | `design-to-dashboard/scripts/smoke_test.py` | **New.** Runs one stage against the local CLI without booting Superset — loads the provider by file path so no virtualenv is needed for prompt iteration |

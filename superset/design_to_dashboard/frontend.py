@@ -58,7 +58,7 @@ def find_dev_server() -> int | None:
     """PID of the process listening on the dev-server port, if any."""
     try:
         completed = subprocess.run(  # noqa: S603
-            ["lsof", "-nP", f"-iTCP:{DEV_SERVER_PORT}", "-sTCP:LISTEN", "-t"],
+            ["lsof", "-nP", f"-iTCP:{DEV_SERVER_PORT}", "-sTCP:LISTEN", "-t"],  # noqa: S607
             capture_output=True,
             text=True,
             check=False,
@@ -78,7 +78,7 @@ def link_plugins(repo_root: str | pathlib.Path, timeout: int = 600) -> dict[str,
         env["PATH"] = f"{NODE_BIN}:{env.get('PATH', '')}"
     try:
         completed = subprocess.run(  # noqa: S603
-            ["npm", "install", "--no-audit", "--no-fund"],
+            ["npm", "install", "--no-audit", "--no-fund"],  # noqa: S607
             cwd=str(frontend),
             env=env,
             capture_output=True,
@@ -134,7 +134,7 @@ def restart_dev_server(repo_root: str | pathlib.Path) -> dict[str, Any]:
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("ab") as handle:
         subprocess.Popen(  # noqa: S603
-            ["npm", "run", "dev-server"],
+            ["npm", "run", "dev-server"],  # noqa: S607
             cwd=str(frontend),
             env=env,
             stdout=handle,

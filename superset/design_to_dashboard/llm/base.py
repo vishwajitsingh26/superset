@@ -30,7 +30,7 @@ class LLMError(Exception):
     """Raised when a provider fails to produce a usable completion."""
 
 
-class LLMTimeout(LLMError):
+class LLMTimeoutError(LLMError):
     """Raised when a provider exceeds its configured timeout."""
 
 
@@ -61,4 +61,5 @@ class LLMProvider(Protocol):
         user_prompt: str,
         image_paths: list[str] | None = None,
         timeout: int | None = None,
+        on_thinking: Any = None,
     ) -> LLMResponse: ...

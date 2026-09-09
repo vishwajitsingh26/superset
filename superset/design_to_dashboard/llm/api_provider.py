@@ -34,7 +34,7 @@ import mimetypes
 import pathlib
 from typing import Any
 
-from .base import LLMError, LLMResponse, LLMTimeout
+from .base import LLMError, LLMResponse, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +146,7 @@ class _BaseApiProvider:
                 message = stream.get_final_message()
         except Exception as ex:  # noqa: BLE001 - normalised below
             if "timeout" in str(ex).lower():
-                raise LLMTimeout(f"{self.name} timed out: {ex}") from ex
+                raise LLMTimeoutError(f"{self.name} timed out: {ex}") from ex
             raise LLMError(f"{self.name} request failed: {ex}") from ex
 
         if getattr(message, "stop_reason", None) == "refusal":
@@ -156,14 +156,16 @@ class _BaseApiProvider:
                 f"{getattr(details, 'explanation', '')}"
             )
 
-        text = "".join(
-            block.text for block in message.content if block.type == "text"
-        )
+        text = "".join(block.text for block in message.content if block.type == "text")
         if not text:
             raise LLMError(f"{self.name} returned no text content")
 
         usage = getattr(message, "usage", None)
-        usage_dict = usage.model_dump() if hasattr(usage, "model_dump") else {}
+        usage_dict: dict[str, Any] = (
+            usage.model_dump()
+            if usage is not None and hasattr(usage, "model_dump")
+            else {}
+        )
         # A cache_read of zero across repeated calls means something in the
         # prefix is varying -- worth seeing in the logs rather than only in the bill.
         if usage_dict.get("cache_read_input_tokens") == 0:
