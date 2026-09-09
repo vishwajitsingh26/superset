@@ -313,6 +313,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     "plan": plan.final.get("plan_for_review") or [],
                     "decisions": plan.final.get("decisions", []),
                     "counts": plan.final.get("counts", {}),
+                    # Creating a dataset writes to the user's database, so it
+                    # belongs in what they approve, not only in the answers.
+                    "datasets": binding.final.get("created_datasets") or [],
                 },
             )
             if not approval.get("approved"):
@@ -563,9 +566,16 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "stage_start", stage="apply", label="Creating the dashboard"
             )
             try:
+                # Stage B proposes the datasets a section needs; the applier
+                # creates them. C is not asked to echo the specs through --
+                # a stage that merely copies data is a stage that can drop it.
+                plan_for_apply = dict(plan.final)
+                if datasets := binding.final.get("created_datasets"):
+                    plan_for_apply["created_datasets"] = datasets
+
                 applied = apply_plan(
                     design_analysis=design_analysis,
-                    plan=plan.final,
+                    plan=plan_for_apply,
                     chart_specs=chart_specs,
                     layout=layout,
                     dashboard_title=(design_analysis.get("global") or {}).get("title"),

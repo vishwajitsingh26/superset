@@ -109,6 +109,8 @@ def build_user_prompt(
     # user answered, and stage C never saw it.
     if answers := binding_set.get("user_answers"):
         payload["user_answers"] = answers
+    if datasets := binding_set.get("created_datasets"):
+        payload["created_datasets"] = datasets
     return (
         "The attached image is the PLUGIN CONTACT SHEET -- every registered "
         "plugin's thumbnail, labelled with its viz_type. It is not the user's "
