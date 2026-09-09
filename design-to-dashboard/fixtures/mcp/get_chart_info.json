@@ -1,0 +1,88 @@
+{
+  "__key__": "identifier",
+  "__by_argument__": {
+    "318": {
+      "result": {
+        "id": 318,
+        "slice_name": "Monthly spend by provider",
+        "viz_type": "echarts_timeseries_line",
+        "datasource_id": 42,
+        "datasource_type": "table",
+        "datasource_name": "finops.cloud_cost_daily",
+        "params": {
+          "metrics": [
+            "total_cost"
+          ],
+          "groupby": [
+            "provider_name"
+          ],
+          "x_axis": "usage_date",
+          "time_grain_sqla": "P1M",
+          "legendOrientation": "bottom",
+          "y_axis_format": "$,.2f",
+          "row_limit": 10000,
+          "adhoc_filters": []
+        },
+        "description": "Monthly unblended spend split by cloud provider."
+      }
+    },
+    "401": {
+      "result": {
+        "id": 401,
+        "slice_name": "Top services by cost",
+        "viz_type": "echarts_timeseries_bar",
+        "datasource_id": 42,
+        "datasource_type": "table",
+        "datasource_name": "finops.cloud_cost_daily",
+        "params": {
+          "metrics": [
+            "total_cost"
+          ],
+          "groupby": [
+            "service_name"
+          ],
+          "x_axis": "usage_date",
+          "time_grain_sqla": "P1M",
+          "row_limit": 10,
+          "adhoc_filters": []
+        },
+        "description": "Monthly cost by service, vertical bars over time."
+      }
+    },
+    "415": {
+      "result": {
+        "id": 415,
+        "slice_name": "Commitment coverage trend",
+        "viz_type": "echarts_area",
+        "datasource_id": 43,
+        "datasource_type": "table",
+        "datasource_name": "finops.cloud_commitment_coverage",
+        "params": {
+          "metrics": [
+            "coverage_pct"
+          ],
+          "x_axis": "usage_date"
+        },
+        "description": "Coverage percentage over time."
+      }
+    },
+    "502": {
+      "result": {
+        "id": 502,
+        "slice_name": "Account owners",
+        "viz_type": "table",
+        "datasource_id": 51,
+        "datasource_type": "table",
+        "datasource_name": "finops.billing_accounts",
+        "params": {
+          "groupby": [
+            "account_name",
+            "owner_team"
+          ],
+          "row_limit": 100
+        },
+        "description": "Account to owning team mapping."
+      }
+    }
+  }
+}

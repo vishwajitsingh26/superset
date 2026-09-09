@@ -58,6 +58,13 @@ const ChartList = lazy(
   () => import(/* webpackChunkName: "ChartList" */ 'src/pages/ChartList'),
 );
 
+const DesignToDashboard = lazy(
+  () =>
+    import(
+      /* webpackChunkName: "DesignToDashboard" */ 'src/pages/DesignToDashboard'
+    ),
+);
+
 const CssTemplateList = lazy(
   () =>
     import(
@@ -331,6 +338,13 @@ export const routes: Routes = [
     Component: UserRegistrations,
   },
 ];
+
+if (isFeatureEnabled(FeatureFlag.DesignToDashboard)) {
+  routes.push({
+    path: '/design-to-dashboard/',
+    Component: DesignToDashboard,
+  });
+}
 
 if (isFeatureEnabled(FeatureFlag.TaggingSystem)) {
   routes.push({

@@ -138,3 +138,6 @@ PROJECT.md
 oxc-custom-build/
 *.code-workspace
 *.duckdb
+
+# Design-to-Dashboard local dev-server log
+design-to-dashboard/.devserver.log

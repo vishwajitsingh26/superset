@@ -42,6 +42,7 @@ import {
 } from '@superset-ui/legacy-preset-chart-nvd3';
 import { DeckGLChartPreset } from '@superset-ui/legacy-preset-chart-deckgl';
 import { CartodiagramPlugin } from '@superset-ui/plugin-chart-cartodiagram';
+import { SupersetPluginChartHelloWorld } from '@superset-ui/plugin-chart-hello-world';
 import {
   BigNumberChartPlugin,
   BigNumberTotalChartPlugin,
@@ -209,6 +210,11 @@ export default class MainPreset extends Preset {
             },
           ],
         }).configure({ key: VizType.Cartodiagram }),
+        // Custom plugin. The key is the viz_type persisted on the slice, so it
+        // must stay stable once charts have been saved against it.
+        new SupersetPluginChartHelloWorld().configure({
+          key: 'hello-world',
+        }),
         ...experimentalPlugins,
         ...agGridTablePlugin,
       ],

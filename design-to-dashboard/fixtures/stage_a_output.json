@@ -1,0 +1,213 @@
+{
+  "status": "ok",
+  "regions": [
+    {
+      "region_id": "r01_cloud_cost_overview_header",
+      "bbox": {
+        "x": 24,
+        "y": 28,
+        "w": 300,
+        "h": 32
+      },
+      "role": "header",
+      "title": "Cloud Cost Overview",
+      "observed": "Page title in the top-left of the canvas, verbatim 'Cloud Cost Overview'. Large bold dark-navy sans-serif, approx 26-28px, weight ~700. No subtitle, no date-range caption, no icon, no action buttons or overflow menu to its right. Sits directly on the page background (no card chrome).",
+      "implied_data": "None \u2014 static page title text.",
+      "interactions": [],
+      "confidence": "high",
+      "ambiguity": null
+    },
+    {
+      "region_id": "r02_provider_filter",
+      "bbox": {
+        "x": 24,
+        "y": 74,
+        "w": 1392,
+        "h": 45
+      },
+      "role": "filter",
+      "title": "Provider: All providers",
+      "observed": "A single full-width white bar with 1px light grey border and small corner radius, spanning the full content width directly beneath the page title. Contains one left-aligned control rendered as text plus a small downward caret: 'Provider: All providers'. Label and value are run together in one string, muted grey ~14px. Closed/collapsed state; no open dropdown list is shown. No 'Apply' or 'Clear all' buttons, no second control, no search box, no date-range picker. The bar is visually separate from the KPI cards below it (gap, and it is not part of the card grid).",
+      "implied_data": "A selector over the cloud provider dimension, currently unrestricted ('All providers'). Implies the whole page can be filtered by provider.",
+      "interactions": [
+        "dropdown caret indicating an expandable single-select or multi-select list of providers"
+      ],
+      "confidence": "high",
+      "ambiguity": "Cannot tell from the closed state whether this is single-select or multi-select; 'All providers' reads as the unset/default value rather than an explicitly chosen option. Read as a provider selector defaulting to no restriction."
+    },
+    {
+      "region_id": "r03_kpi_aws",
+      "bbox": {
+        "x": 24,
+        "y": 138,
+        "w": 337,
+        "h": 143
+      },
+      "role": "kpi",
+      "title": "AWS",
+      "observed": "White card, 1px light border, small radius, ~20px padding. Three stacked text rows plus a micro-chart. Row 1: label 'AWS' in muted grey ~14px regular. Row 2: big value '$1.24M' in dark navy, ~32px, weight ~700 \u2014 currency-prefixed, abbreviated to millions with two decimals. Row 3: a green downward-pointing solid triangle followed by green text '8.2% vs last month'. Bottom of the card holds a single-series cyan sparkline (thin ~2px line, no fill, no axes, no gridlines, no dots) running the full inner width, trending gently upward left-to-right with small wobble. Green colour on a downward arrow signals cost decrease treated as good.",
+      "implied_data": "Total cloud spend attributable to one provider (AWS) for the current period, its percent change against the prior month, and that provider's spend trend across a recent series of periods.",
+      "interactions": [],
+      "confidence": "high",
+      "ambiguity": null
+    },
+    {
+      "region_id": "r04_kpi_azure",
+      "bbox": {
+        "x": 376,
+        "y": 138,
+        "w": 337,
+        "h": 143
+      },
+      "role": "kpi",
+      "title": "Azure",
+      "observed": "Identical card treatment to r03. Label 'Azure' muted grey ~14px. Value '$842K' dark navy ~32px bold \u2014 currency-prefixed, abbreviated to thousands, no decimals. Delta row uses a RED upward-pointing solid triangle with red text '3.1% vs last month' \u2014 the only card of the four with an upward/red delta. Bottom holds the same style cyan single-series sparkline, gently rising left-to-right.",
+      "implied_data": "Total cloud spend attributable to one provider (Azure) for the current period, its percent change against the prior month, and that provider's spend trend across recent periods.",
+      "interactions": [],
+      "confidence": "high",
+      "ambiguity": null
+    },
+    {
+      "region_id": "r05_kpi_gcp",
+      "bbox": {
+        "x": 729,
+        "y": 138,
+        "w": 337,
+        "h": 143
+      },
+      "role": "kpi",
+      "title": "GCP",
+      "observed": "Identical card treatment to r03. Label 'GCP' muted grey ~14px. Value '$391K' dark navy ~32px bold \u2014 currency-prefixed, thousands abbreviation, no decimals. Delta row: green downward triangle, green text '1.4% vs last month'. Bottom holds the same style cyan single-series sparkline, slightly flatter than the others but still rising.",
+      "implied_data": "Total cloud spend attributable to one provider (GCP) for the current period, its percent change against the prior month, and that provider's spend trend across recent periods.",
+      "interactions": [],
+      "confidence": "high",
+      "ambiguity": null
+    },
+    {
+      "region_id": "r06_kpi_total",
+      "bbox": {
+        "x": 1081,
+        "y": 138,
+        "w": 335,
+        "h": 143
+      },
+      "role": "kpi",
+      "title": "Total",
+      "observed": "Identical card treatment to r03-r05, fourth in the row. Label 'Total' muted grey ~14px. Value '$2.47M' dark navy ~32px bold \u2014 currency-prefixed, millions with two decimals. Delta row: green downward triangle, green text '4.6% vs last month'. Bottom holds the same style cyan single-series sparkline, rising. Note the three provider values ($1.24M + $842K + $391K = $2.473M) sum to this card's value, so it reads as an aggregate of the other three rather than an independent measure.",
+      "implied_data": "Total cloud spend across all providers for the current period, its percent change against the prior month, and the overall spend trend across recent periods.",
+      "interactions": [],
+      "confidence": "high",
+      "ambiguity": null
+    },
+    {
+      "region_id": "r07_spend_over_time",
+      "bbox": {
+        "x": 24,
+        "y": 296,
+        "w": 900,
+        "h": 323
+      },
+      "role": "chart",
+      "title": "Spend over time",
+      "observed": "White card. Header row: bold dark-navy card title 'Spend over time' at left (~15px, weight 600); at the right of the same header row an inline horizontal legend with three entries, each a short coloured dash plus label: 'AWS' (cyan, and the label text is itself cyan), 'Azure' (dark navy/purple), 'GCP' (green). Plot area is a multi-series time-series line chart, three unstacked, non-overlapping smooth lines, ~2.5px stroke, no markers, no area fill, no data labels. Series rank consistently top-to-bottom: cyan (AWS) highest, dark navy (Azure) middle, green (GCP) lowest; all three trend upward across the range with small month-to-month wobble and no crossings. Y axis shows only two tick labels, '$0' at the baseline and '$2M' near the top, drawn outside the plot at the left; horizontal gridlines are drawn at those two levels only (light grey, no vertical gridlines). X axis shows three sparse tick labels: 'Jan' (left), 'Jun' (middle), 'Dec' (right) \u2014 no year shown. No axis titles, no tooltip shown, no zoom/brush control, no 'no data' state.",
+      "implied_data": "Spend over a twelve-month calendar span, broken out into one line per cloud provider, with the three providers plotted as separate series against a currency-denominated vertical scale reaching about two million.",
+      "interactions": [
+        "legend entries appear clickable/toggleable (standard legend affordance); the cyan 'AWS' label is tinted, which may indicate a hovered or active legend item"
+      ],
+      "confidence": "high",
+      "ambiguity": "The x-axis only labels Jan/Jun/Dec, so the exact point count is not directly countable from the labels; the line vertices read as roughly twelve monthly points. Read as monthly granularity over one year. Also cannot tell whether 'Jan'..'Dec' is a fixed calendar year or a rolling twelve months."
+    },
+    {
+      "region_id": "r08_by_service",
+      "bbox": {
+        "x": 939,
+        "y": 296,
+        "w": 477,
+        "h": 323
+      },
+      "role": "chart",
+      "title": "By service",
+      "observed": "White card sitting to the right of r07 and matching its height. Header: bold dark-navy card title 'By service'. Immediately below the title, a single row of three tab-style switchers: 'Compute' (active \u2014 solid cyan filled pill, white text), 'Storage' and 'Network' (inactive \u2014 no fill, muted grey text). One tab bar controlling one chart region; the tabs are inside the card, not page-level. Chart body is a horizontal bar chart, five bars, uniform cyan fill, square corners, equal bar height with even spacing, sorted strictly descending by length top-to-bottom. Each bar has its value printed as a right-aligned label in a dedicated column to the right of the plot, in dark navy ~13px: $680K, $512K, $389K, $254K, $161K \u2014 currency-prefixed, thousands-abbreviated, no decimals. Critically, the bars carry NO visible category labels on the left \u2014 there is no y-axis tick text, no legend, and no in-bar labels. No x axis, no gridlines, no axis title.",
+      "implied_data": "Spend broken down by service, restricted to one service category at a time (compute / storage / network), showing the top five contributors ranked highest to lowest by cost.",
+      "interactions": [
+        "tab switcher with three options (Compute / Storage / Network) that swaps the bar chart's contents",
+        "bars may be hoverable for a tooltip, though no hover state is drawn"
+      ],
+      "confidence": "medium",
+      "ambiguity": "The bars have no category names rendered in the design, so the dimension being broken out on the bar axis is stated only by the card title 'By service' and cannot be verified from the mock; the left label column may simply have been omitted by the mock author. Read as five named service entities per selected tab, with labels expected but not drawn. Secondary ambiguity: it is not visible whether the three tabs filter to a service-category subset or switch the measure entirely; read as filtering to a category. Note also this is a single card containing a tab switcher over one chart, so it is emitted as ONE region, not three."
+    },
+    {
+      "region_id": "r09_cost_detail_table",
+      "bbox": {
+        "x": 24,
+        "y": 639,
+        "w": 1392,
+        "h": 240
+      },
+      "role": "table",
+      "title": "Cost detail",
+      "observed": "Full-width white card at the bottom of the page. Bold dark-navy card title 'Cost detail', with a full-width thin light-grey rule beneath it separating title from table. Table header row in small uppercase muted grey letter-spaced text, four columns, evenly spaced across the width: 'SERVICE', 'PROVIDER', 'ACCOUNT', 'COST'. A light rule sits under the header row. Four data rows, all values left-aligned including the COST column (cost is NOT right-aligned): EC2 / AWS / prod-01 / $412,338 \u2014 S3 / AWS / prod-01 / $268,904 \u2014 Blob Storage / Azure / core-prod / $193,220 \u2014 BigQuery / GCP / analytics / $147,655. Rows are ordered descending by cost. Cost formatting is full precision with thousands separators and a dollar prefix (not abbreviated, unlike every other number on the page). No row striping, no row borders between data rows, no sort carets in the headers, no pagination controls, no row-count caption, no search box, no conditional formatting or colour, no totals row. Roughly 60px of empty white card space remains below the last row.",
+      "implied_data": "A row-level detail listing of cost, one row per combination of service, cloud provider and account, sorted from highest cost down.",
+      "interactions": [],
+      "confidence": "high",
+      "ambiguity": "Four rows are shown with visible empty space beneath, so it is unclear whether the table is truncated to a top-N or simply has few rows in the mock; no pagination or 'view all' affordance is drawn. Read as a top-N detail listing sorted by cost descending. Column headers are also not drawn with sort indicators, so sortability cannot be confirmed."
+    }
+  ],
+  "global": {
+    "canvas": {
+      "w": 1440,
+      "h": 900
+    },
+    "column_count": 4,
+    "tabs": null,
+    "filter_bar": {
+      "present": true,
+      "position": "top",
+      "controls": [
+        {
+          "label": "Provider",
+          "displayed_value": "All providers",
+          "control_type": "dropdown / select (closed state, caret shown)"
+        }
+      ]
+    },
+    "palette": [
+      "#18A0C4",
+      "#2E3A4E",
+      "#3D3B6B",
+      "#4FC08D",
+      "#D94F4F",
+      "#8A94A6",
+      "#FFFFFF",
+      "#F4F6F8",
+      "#E4E8EC"
+    ],
+    "typography": {
+      "page_title": "~27px, weight 700, dark navy",
+      "kpi_value": "~32px, weight 700, dark navy",
+      "card_title": "~15px, weight 600, dark navy",
+      "kpi_label": "~14px, weight 400, muted grey",
+      "delta_text": "~13px, weight 400, semantic green or red",
+      "table_header": "~11px, weight 600, uppercase, letter-spaced, muted grey",
+      "table_cell": "~13px, weight 400, dark navy",
+      "axis_and_legend": "~11-12px, weight 400, muted grey",
+      "tab_label": "~13px, weight 500 (active white on cyan, inactive muted grey)",
+      "family": "single humanist sans-serif throughout; no serif, no monospace"
+    },
+    "theme": "light",
+    "card_chrome": "Every content block is a white (#FFFFFF) card on a very light grey page background, with a 1px light grey border (~#E4E8EC), a small corner radius (~6px), and no drop shadow or a shadow too faint to read. Internal padding ~20px. Card titles are bold dark navy, top-left, with no icon; only the table card draws a horizontal rule under its title. Horizontal gutter between cards ~15px, vertical gutter between rows ~15-20px. Page outer margin ~24px on all sides. No card has a header action menu, kebab, or refresh icon.",
+    "reading_order": [
+      "r01_cloud_cost_overview_header",
+      "r02_provider_filter",
+      "r03_kpi_aws",
+      "r04_kpi_azure",
+      "r05_kpi_gcp",
+      "r06_kpi_total",
+      "r07_spend_over_time",
+      "r08_by_service",
+      "r09_cost_detail_table"
+    ]
+  },
+  "conflicts": [],
+  "notes": "Layout is four stacked rows under a title and a filter bar: (1) four equal-width KPI cards, (2) a two-up row where 'Spend over time' takes roughly two-thirds of the width and 'By service' one-third, (3) a full-width detail table. The design's own grid reads most naturally as 4 equal columns (the KPI row), with row 2 splitting 3:1 \u2014 this is compatible with a 12-column mapping but 4 is what the mock literally demonstrates.\n\nThings a reviewer should check before approving: (a) The four KPI cards are emitted as four separate regions per the rules even though they are visually identical \u2014 r06 'Total' is arithmetically the sum of r03-r05, so it is an aggregate, not a fourth peer provider. (b) r02 is a dedicated bar above the grid, not a card inside it, so it is recorded as a page-level filter bar rather than an in-grid filter widget. (c) r08 is a single card wrapping a three-way tab switcher over one chart, so per the wrapper rule it is one region with the tab labels captured in 'observed', not three regions. (d) r08's bars carry no category labels anywhere in the mock \u2014 the entity being ranked is asserted only by the card title; this is the weakest reading on the page and is the most likely place a downstream stage would have to guess. (e) Number formatting is inconsistent by design: KPIs and the bar chart abbreviate (M/K) while the detail table uses full precision with separators. (f) Delta semantics are inverted-good: a downward arrow is green because falling cost is favourable; only Azure rises and is red. (g) The sparklines in r03-r06 are unlabelled and unaxised, so their time range is unstated and may or may not match r07's twelve-month span. (h) No empty, loading, or error states appear anywhere in the mock, and no dark-theme variant is provided."
+}

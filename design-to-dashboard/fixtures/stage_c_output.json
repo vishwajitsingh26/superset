@@ -1,0 +1,172 @@
+{
+  "status": "ready",
+  "design_system": {
+    "palette": [
+      "#18A0C4",
+      "#2E3A4E",
+      "#3D3B6B",
+      "#4FC08D",
+      "#D94F4F",
+      "#8A94A6"
+    ],
+    "color_scheme": "supersetColors",
+    "currency": {
+      "symbol": "$",
+      "format": "SMART_NUMBER"
+    },
+    "number_formats": {
+      "money": "$,.2f",
+      "money_full": "$,.0f",
+      "money_abbrev": "SMART_NUMBER",
+      "percent": ".1%",
+      "count": ",d"
+    },
+    "date_format": "%b %Y",
+    "default_time_grain": "P1M",
+    "row_limit": 1000,
+    "legend": {
+      "show": true,
+      "position": "top"
+    },
+    "naming_convention": "Cloud Cost Overview \u2014 <Metric> by <Dimension>",
+    "show_values": false,
+    "notes": "KPI cards and bar value labels use the abbreviated currency form (SMART_NUMBER: $1.24M, $842K); only the Cost detail table overrides to money_full ($412,338) because its `observed` explicitly contradicts the abbreviated default. Time axis on the 12-month series may render as %b alone (design shows Jan/Jun/Dec with no year); that is the only sanctioned date_format override."
+  },
+  "decisions": [
+    {
+      "region_id": "r01_cloud_cost_overview_header",
+      "ref": "c0",
+      "decision": "drop",
+      "viz_type": null,
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview",
+      "rationale": "Static page title with no data binding; it becomes the dashboard's own title/header in the layout rather than a chart.",
+      "reuse_evidence": null,
+      "fidelity_loss": "Rendered as the dashboard title (or a markdown header element) by the layout stage, so exact 26-28px/700 dark-navy typography follows the dashboard theme rather than the mock.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r02_provider_filter",
+      "ref": "f1",
+      "decision": "native_filter",
+      "viz_type": null,
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Provider",
+      "rationale": "role=filter and global.filter_bar.present is true with the control drawn in a dedicated top bar outside the card grid, so it routes to a native filter, not a chart widget.",
+      "reuse_evidence": null,
+      "fidelity_loss": "Native filter bar renders label and value as separate elements ('Provider' above 'All providers') rather than the mock's single run-together string; default unset state gives the 'All providers' behaviour. The four KPI cards carry hard provider filters in params, so the native filter will intersect with them rather than override them.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r03_kpi_aws",
+      "ref": "c1",
+      "decision": "configure",
+      "viz_type": "big_number",
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview \u2014 AWS Spend",
+      "rationale": "Big Number with Trendline is the only registered KPI type that renders a single value, a period-over-period delta and an inline sparkline together, which is exactly the three-row card layout.",
+      "reuse_evidence": null,
+      "fidelity_loss": "Superset colours the delta by sign (increase green / decrease red) and cannot invert it, so the design's cost-semantics colouring \u2014 green on a downward arrow \u2014 will read inverted; the trendline is drawn as a tinted area under the line rather than the mock's 2px unfilled cyan stroke, and the label sits above the value rather than as a separate muted row.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r04_kpi_azure",
+      "ref": "c2",
+      "decision": "configure",
+      "viz_type": "big_number",
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview \u2014 Azure Spend",
+      "rationale": "Same viz_type as the other three KPI tiles for row consistency; identical card treatment in the design demands identical resolution.",
+      "reuse_evidence": null,
+      "fidelity_loss": "Same as c1. Azure is the one card with a red upward delta, which happens to match Superset's built-in sign colouring, but the rule is applied uniformly across all four tiles so the other three will still read inverted.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r05_kpi_gcp",
+      "ref": "c3",
+      "decision": "configure",
+      "viz_type": "big_number",
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview \u2014 GCP Spend",
+      "rationale": "Same viz_type as the other three KPI tiles for row consistency.",
+      "reuse_evidence": null,
+      "fidelity_loss": "Same as c1.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r06_kpi_total",
+      "ref": "c4",
+      "decision": "configure",
+      "viz_type": "big_number",
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview \u2014 Total Spend",
+      "rationale": "Same viz_type as the other three KPI tiles; the unfiltered aggregate needs no different mark type despite being a roll-up of the other three.",
+      "reuse_evidence": null,
+      "fidelity_loss": "Same as c1.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r07_spend_over_time",
+      "ref": "c5",
+      "decision": "reuse",
+      "viz_type": "echarts_timeseries_line",
+      "existing_chart_id": 318,
+      "children": [],
+      "slice_name": "Monthly spend by provider",
+      "rationale": "An existing chart already renders this region's bound data with the required mark type, so reuse is cheaper than building a duplicate.",
+      "reuse_evidence": "get_chart_info(318) confirmed viz_type echarts_timeseries_line on datasource_id 42 (finops.cloud_cost_daily) \u2014 the exact bound dataset \u2014 with metrics ['total_cost'], groupby ['provider_name'], x_axis 'usage_date' and time_grain_sqla 'P1M'. Every element of the Stage B binding for r07 (dataset, measure, breakout dimension, time column, monthly grain) is matched by the chart's own params, and the mark type is a multi-series unstacked line.",
+      "fidelity_loss": "The chart is reused as-is and must not be modified (non-destructive constraint), so three of its params differ from the mock: legendOrientation is 'bottom' where the design puts the legend inline at the right of the card header; y_axis_format is '$,.2f' where the design shows sparse abbreviated ticks ($0 / $2M); row_limit is 10000 rather than a 12-month window, so the visible range depends on the chart's saved time range rather than the design's Jan\u2013Dec span. Series colours come from the chart's saved scheme, not the design's cyan/navy/green. If any of these matter more than the reuse saving, re-resolve r07 as `configure` with a new echarts_timeseries_line.",
+      "confidence": "high"
+    },
+    {
+      "region_id": "r08_by_service",
+      "ref": "c6",
+      "decision": "configure",
+      "viz_type": "echarts_timeseries_bar",
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview \u2014 Compute Spend by Service",
+      "rationale": "A horizontal ranked bar chart of the top five services is expressible through params alone \u2014 categorical x_axis on service_name, orientation horizontal, descending sort, row_limit 5 \u2014 with the Compute tab as a saved adhoc filter on service_family.",
+      "reuse_evidence": "get_chart_info(401) was checked and rejected: although 'Top services by cost' sits on datasource_id 42 with metrics ['total_cost'] and groupby ['service_name'], its params set x_axis 'usage_date' with time_grain_sqla 'P1M' and row_limit 10, making it vertical bars over time \u2014 a different mark type from this region's ranked horizontal bars, and it carries no service_family filter. Not a compatible reuse.",
+      "fidelity_loss": "The in-card Compute/Storage/Network tab switcher is dropped. The registry for this deployment has no tabbed-wrapper or container composer viz type, so a `wrap` decision is not available and the gap is a single-use interaction (fails the new_plugin 'used more than once' test), which the rubric resolves as configure. The chart is therefore pinned to the Compute tab only; expose service_family as a second native filter, or lay Storage and Network out as sibling regions, if the analyst needs the other two cuts. The design also omits y-axis category labels entirely \u2014 the built chart will render service names on the left, which is almost certainly the mock author's omission rather than intent.",
+      "confidence": "medium"
+    },
+    {
+      "region_id": "r09_cost_detail_table",
+      "ref": "c7",
+      "decision": "configure",
+      "viz_type": "table",
+      "existing_chart_id": null,
+      "children": [],
+      "slice_name": "Cloud Cost Overview \u2014 Cost Detail by Service, Provider and Account",
+      "rationale": "A four-column aggregate listing sorted by cost descending is the table control panel's default shape, needing only groupby, metric, sort and row_limit in params.",
+      "reuse_evidence": "list_charts returned chart 502 'Account owners' (viz_type table) as the only existing table, but it sits on datasource_id 51 (billing_accounts), not the bound dataset 42, so it was not a reuse candidate and no get_chart_info call was spent on it.",
+      "fidelity_loss": "Superset's table right-aligns numeric columns; the design left-aligns the COST column and that cannot be overridden through params. Column headers will render sortable (carets on hover) where the mock draws none. Cost uses the money_full override ('$,.0f') to match the design's unabbreviated $412,338 formatting.",
+      "confidence": "high"
+    }
+  ],
+  "native_filters": [
+    {
+      "name": "Provider",
+      "filterType": "filter_select",
+      "region_id": "r02_provider_filter",
+      "scope": "all"
+    }
+  ],
+  "counts": {
+    "reuse": 1,
+    "configure": 6,
+    "wrap": 0,
+    "new_plugin": 0,
+    "native_filter": 1,
+    "drop": 1
+  },
+  "tool_calls": 5,
+  "summary": "1 reused, 6 configured, 0 wrapped, 0 new plugins."
+}

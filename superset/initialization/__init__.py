@@ -220,6 +220,10 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         )
         from superset.views.sqllab import SqllabView
         from superset.views.tags import TagModelView, TagView
+        from superset.design_to_dashboard.api import (
+            DesignToDashboardRestApi,
+        )
+        from superset.views.design_to_dashboard import DesignToDashboardView
         from superset.views.tasks import TaskModelView
         from superset.views.themes import ThemeModelView
         from superset.views.user_info import UserInfoView
@@ -329,6 +333,18 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
             icon="fa-table",
             category="",
             category_icon="",
+        )
+
+        appbuilder.add_link(
+            "Design to Dashboard",
+            label=_("Design to Dashboard"),
+            href=f"{app_root}/design-to-dashboard/",
+            icon="fa-magic",
+            category="",
+            category_icon="",
+            cond=lambda: feature_flag_manager.is_feature_enabled(
+                "DESIGN_TO_DASHBOARD"
+            ),
         )
 
         appbuilder.add_view(
@@ -445,6 +461,8 @@ class SupersetAppInitializer:  # pylint: disable=too-many-public-methods
         appbuilder.add_view_no_menu(TableSchemaView)
         appbuilder.add_view_no_menu(TabStateView)
         appbuilder.add_view_no_menu(TaggedObjectsModelView)
+        appbuilder.add_api(DesignToDashboardRestApi)
+        appbuilder.add_view_no_menu(DesignToDashboardView)
         appbuilder.add_view_no_menu(TagView)
         appbuilder.add_view_no_menu(ReportView)
         appbuilder.add_view_no_menu(RedirectView)

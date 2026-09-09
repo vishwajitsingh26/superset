@@ -1,0 +1,43 @@
+{
+  "charts": [
+    {
+      "id": 318,
+      "slice_name": "Monthly spend by provider",
+      "viz_type": "echarts_timeseries_line",
+      "datasource_id": 42,
+      "datasource_type": "table",
+      "changed_on_humanized": "6 days ago"
+    },
+    {
+      "id": 401,
+      "slice_name": "Top services by cost",
+      "viz_type": "echarts_timeseries_bar",
+      "datasource_id": 42,
+      "datasource_type": "table",
+      "changed_on_humanized": "3 weeks ago"
+    },
+    {
+      "id": 415,
+      "slice_name": "Commitment coverage trend",
+      "viz_type": "echarts_area",
+      "datasource_id": 43,
+      "datasource_type": "table",
+      "changed_on_humanized": "1 month ago"
+    },
+    {
+      "id": 502,
+      "slice_name": "Account owners",
+      "viz_type": "table",
+      "datasource_id": 51,
+      "datasource_type": "table",
+      "changed_on_humanized": "2 months ago"
+    }
+  ],
+  "count": 4,
+  "total_count": 4,
+  "page": 0,
+  "page_size": 25,
+  "total_pages": 1,
+  "has_previous": false,
+  "has_next": false
+}

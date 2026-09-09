@@ -39,6 +39,7 @@ export enum FeatureFlag {
   DatapanelClosedByDefault = 'DATAPANEL_CLOSED_BY_DEFAULT',
   DatasetFolders = 'DATASET_FOLDERS',
   DateRangeTimeshiftsEnabled = 'DATE_RANGE_TIMESHIFTS_ENABLED',
+  DesignToDashboard = 'DESIGN_TO_DASHBOARD',
   DisableEmbeddedSupersetLogout = 'DISABLE_EMBEDDED_SUPERSET_LOGOUT',
   /** @deprecated */
   DrillToDetail = 'DRILL_TO_DETAIL',

@@ -536,6 +536,21 @@ CURRENCIES = ["USD", "EUR", "GBP", "INR", "MXN", "JPY", "CNY"]
 #   - stable: Production-ready, tested and supported
 #   - deprecated: Will be removed in a future major release
 
+# ---------------------------------------------------
+# Design-to-Dashboard
+# ---------------------------------------------------
+# LLM provider used by the Design-to-Dashboard pipeline. The "claude_cli"
+# provider shells out to the Claude Code CLI and is intended for local
+# development only -- it runs as the web server's OS user and uses the host
+# developer's credentials, so it must be opted into explicitly.
+DESIGN_TO_DASHBOARD_LLM: dict[str, Any] = {
+    "provider": "claude_cli",
+    "model": "claude-opus-5",
+    "timeout": 300,
+    "max_turns": 6,
+    "allow_cli_provider": False,
+}
+
 DEFAULT_FEATURE_FLAGS: dict[str, bool] = {
     # =================================================================
     # IN DEVELOPMENT
@@ -614,6 +629,10 @@ DEFAULT_FEATURE_FLAGS: dict[str, bool] = {
     # @lifecycle: testing
     # @docs: https://superset.apache.org/docs/configuration/alerts-reports
     "DATE_FORMAT_IN_EMAIL_SUBJECT": False,
+    # Generate dashboards from a design reference (Figma export or screenshot)
+    # via the Design-to-Dashboard chat. Requires an LLM provider to be configured.
+    # @lifecycle: testing
+    "DESIGN_TO_DASHBOARD": False,
     # Enable dynamic plugin loading
     # @lifecycle: testing
     "DYNAMIC_PLUGINS": False,

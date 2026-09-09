@@ -1,0 +1,149 @@
+{
+  "__key__": "identifier",
+  "__by_argument__": {
+    "42": {
+      "result": {
+        "id": 42,
+        "table_name": "cloud_cost_daily",
+        "schema": "finops",
+        "database": {
+          "id": 7,
+          "database_name": "warehouse"
+        },
+        "columns": [
+          {
+            "column_name": "usage_date",
+            "type": "TIMESTAMP",
+            "is_dttm": true
+          },
+          {
+            "column_name": "provider_name",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "service_name",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "service_family",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "account_name",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "region",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "unblended_cost",
+            "type": "DOUBLE",
+            "is_dttm": false
+          },
+          {
+            "column_name": "amortized_cost",
+            "type": "DOUBLE",
+            "is_dttm": false
+          },
+          {
+            "column_name": "usage_quantity",
+            "type": "DOUBLE",
+            "is_dttm": false
+          }
+        ],
+        "metrics": [
+          {
+            "metric_name": "total_cost",
+            "verbose_name": "Total Cost",
+            "expression": "SUM(unblended_cost)"
+          },
+          {
+            "metric_name": "total_amortized_cost",
+            "verbose_name": "Total Amortized Cost",
+            "expression": "SUM(amortized_cost)"
+          },
+          {
+            "metric_name": "count",
+            "verbose_name": "COUNT(*)",
+            "expression": "COUNT(*)"
+          }
+        ]
+      }
+    },
+    "43": {
+      "result": {
+        "id": 43,
+        "table_name": "cloud_commitment_coverage",
+        "schema": "finops",
+        "database": {
+          "id": 7,
+          "database_name": "warehouse"
+        },
+        "columns": [
+          {
+            "column_name": "usage_date",
+            "type": "TIMESTAMP",
+            "is_dttm": true
+          },
+          {
+            "column_name": "provider_name",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "covered_cost",
+            "type": "DOUBLE",
+            "is_dttm": false
+          },
+          {
+            "column_name": "on_demand_cost",
+            "type": "DOUBLE",
+            "is_dttm": false
+          }
+        ],
+        "metrics": [
+          {
+            "metric_name": "coverage_pct",
+            "verbose_name": "Coverage %",
+            "expression": "SUM(covered_cost)/NULLIF(SUM(covered_cost)+SUM(on_demand_cost),0)"
+          }
+        ]
+      }
+    },
+    "51": {
+      "result": {
+        "id": 51,
+        "table_name": "billing_accounts",
+        "schema": "finops",
+        "database": {
+          "id": 7,
+          "database_name": "warehouse"
+        },
+        "columns": [
+          {
+            "column_name": "account_name",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "account_id",
+            "type": "VARCHAR",
+            "is_dttm": false
+          },
+          {
+            "column_name": "owner_team",
+            "type": "VARCHAR",
+            "is_dttm": false
+          }
+        ],
+        "metrics": []
+      }
+    }
+  }
+}

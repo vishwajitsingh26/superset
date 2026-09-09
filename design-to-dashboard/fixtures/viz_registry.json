@@ -1,0 +1,1166 @@
+{
+  "generated_from": "source",
+  "count": 53,
+  "viz_types": [
+    {
+      "viz_type": "ag-grid-table",
+      "plugin_class": "AgGridTableChartPlugin",
+      "name": "Table V2",
+      "category": "Table",
+      "description": "Classic row-by-column spreadsheet like view of a dataset. Use tables to showcase a view into the underlying data or to show aggregated metrics.",
+      "tags": [
+        "Additive",
+        "Business",
+        "Pattern",
+        "Featured",
+        "Report",
+        "Sequential",
+        "Tabular"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-ag-grid-table/src/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-ag-grid-table/src/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "big_number",
+      "plugin_class": "BigNumberChartPlugin",
+      "name": "Big Number with Trendline",
+      "category": "KPI",
+      "description": "Showcases a single number accompanied by a simple line chart, to call attention to an important metric along with its change over time or other dimension.",
+      "tags": [
+        "Advanced-Analytics",
+        "Line",
+        "Report",
+        "Trend",
+        "Featured"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "METADATA_OVERRIDES",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberWithTrendline/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "big_number_total",
+      "plugin_class": "BigNumberTotalChartPlugin",
+      "name": "Big Number",
+      "category": "KPI",
+      "description": "Showcases a single metric front-and-center. Big number is best used to call attention to a KPI or the one thing you want your audience to focus on.",
+      "tags": [
+        "Additive",
+        "Business",
+        "ECharts",
+        "Legacy",
+        "Percentages",
+        "Featured",
+        "Report"
+      ],
+      "behaviors": [
+        "DrillToDetail"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "box_plot",
+      "plugin_class": "EchartsBoxPlotChartPlugin",
+      "name": "Box Plot",
+      "category": "Distribution",
+      "description": "Also known as a box and whisker plot, this visualization compares the distributions of a related metric across multiple groups. The box in the middle emphasizes the mean, median, and inner 2 quartiles. The whiskers around each box visualize the min, max, range, and outer 2 quartiles.",
+      "tags": [
+        "ECharts",
+        "Range",
+        "Statistical",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/BoxPlot/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BoxPlot/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "bubble",
+      "plugin_class": "BubbleChartPlugin",
+      "name": "Bubble Chart (legacy)",
+      "category": "Correlation",
+      "description": "Visualizes a metric across three dimensions of data in a single chart (X axis, Y axis, and bubble size). Bubbles from the same group can be showcased using bubble color.",
+      "tags": [
+        "Multi-Dimensions",
+        "Comparison",
+        "Legacy",
+        "Scatter",
+        "Time",
+        "Trend",
+        "nvd3"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bubble/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bubble/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "bubble_v2",
+      "plugin_class": "EchartsBubbleChartPlugin",
+      "name": "Bubble Chart",
+      "category": "Correlation",
+      "description": "Visualizes a metric across three dimensions of data in a single chart (X axis, Y axis, and bubble size). Bubbles from the same group can be showcased using bubble color.",
+      "tags": [
+        "Multi-Dimensions",
+        "Comparison",
+        "Scatter",
+        "Time",
+        "Trend",
+        "ECharts",
+        "Featured"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Bubble/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Bubble/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "bullet",
+      "plugin_class": "BulletChartPlugin",
+      "name": "Bullet Chart",
+      "category": "KPI",
+      "description": "Showcases the progress of a single metric against a given target. The higher the fill, the closer the metric is to the target.",
+      "tags": [
+        "Business",
+        "Legacy",
+        "Report",
+        "nvd3"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bullet/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bullet/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "cal_heatmap",
+      "plugin_class": "CalendarChartPlugin",
+      "name": "Calendar Heatmap",
+      "category": "Correlation",
+      "description": "Visualizes how a metric has changed over a time using a color scale and a calendar view. Gray values are used to indicate missing values and the linear color scheme is used to encode the magnitude of each day's value.",
+      "tags": [
+        "Business",
+        "Comparison",
+        "Intensity",
+        "Pattern",
+        "Report",
+        "Trend"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-calendar/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-calendar/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "cartodiagram",
+      "plugin_class": "CartodiagramPlugin",
+      "name": "Cartodiagram",
+      "category": "Map",
+      "description": "Display charts on a map. For using this plugin, users first have to create any other chart that can then be placed on the map.",
+      "tags": [
+        "Geo",
+        "2D",
+        "Spatial",
+        "Experimental"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-cartodiagram/src/plugin/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-cartodiagram/src/plugin/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "chord",
+      "plugin_class": "ChordChartPlugin",
+      "name": "Chord Diagram",
+      "category": "Flow",
+      "description": "Showcases the flow or link between categories using thickness of chords. The value and corresponding thickness can be different for each side.",
+      "tags": [
+        "Circular",
+        "Legacy",
+        "Proportional",
+        "Relational"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-chord/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-chord/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "compare",
+      "plugin_class": "CompareChartPlugin",
+      "name": "Time-series Percent Change",
+      "category": "Evolution",
+      "description": "Visualizes many different time-series objects in a single chart. This chart is being deprecated and we recommend using the Time-series Chart instead.",
+      "tags": [
+        "Legacy",
+        "Time",
+        "nvd3",
+        "Advanced-Analytics",
+        "Comparison",
+        "Line",
+        "Percentages",
+        "Predictive",
+        "Trend"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Compare/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Compare/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "country_map",
+      "plugin_class": "CountryMapChartPlugin",
+      "name": "Country Map",
+      "category": "Map",
+      "description": "Visualizes how a single metric varies across a country's principal subdivisions (states, provinces, etc) on a choropleth map. Each subdivision's value is elevated when you hover over the corresponding geographic boundary.",
+      "tags": [
+        "2D",
+        "Comparison",
+        "Geo",
+        "Range",
+        "Report",
+        "Stacked"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_area",
+      "plugin_class": "EchartsAreaChartPlugin",
+      "name": "Area Chart",
+      "category": "Evolution",
+      "description": "Area charts are similar to line charts in that they represent variables with the same scale, but area charts stack the metrics on top of each other.",
+      "tags": [
+        "ECharts",
+        "Predictive",
+        "Advanced-Analytics",
+        "Time",
+        "Line",
+        "Transformable",
+        "Stacked",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Area/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Area/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_timeseries",
+      "plugin_class": "EchartsTimeseriesChartPlugin",
+      "name": "Generic Chart",
+      "category": "Evolution",
+      "description": "Swiss army knife for visualizing data. Choose between step, line, scatter, and bar charts. This viz type has many customization options as well.",
+      "tags": [
+        "Advanced-Analytics",
+        "ECharts",
+        "Line",
+        "Predictive",
+        "Time",
+        "Transformable"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_timeseries_bar",
+      "plugin_class": "EchartsTimeseriesBarChartPlugin",
+      "name": "Bar Chart",
+      "category": "Evolution",
+      "description": "Bar Charts are used to show metrics as a series of bars.",
+      "tags": [
+        "ECharts",
+        "Predictive",
+        "Advanced-Analytics",
+        "Time",
+        "Transformable",
+        "Stacked",
+        "Bar",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Bar/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Bar/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_timeseries_line",
+      "plugin_class": "EchartsTimeseriesLineChartPlugin",
+      "name": "Line Chart",
+      "category": "Evolution",
+      "description": "Line chart is used to visualize measurements taken over a given category. Line chart is a type of chart which displays information as a series of data points connected by straight line segments. It is a basic type of chart common in many fields.",
+      "tags": [
+        "ECharts",
+        "Predictive",
+        "Advanced-Analytics",
+        "Line",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_timeseries_scatter",
+      "plugin_class": "EchartsTimeseriesScatterChartPlugin",
+      "name": "Scatter Plot",
+      "category": "Evolution",
+      "description": "Scatter Plot has the horizontal axis in linear units, and the points are connected in order. It shows a statistical relationship between two variables.",
+      "tags": [
+        "ECharts",
+        "Predictive",
+        "Advanced-Analytics",
+        "Time",
+        "Transformable",
+        "Scatter",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Scatter/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Scatter/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_timeseries_smooth",
+      "plugin_class": "EchartsTimeseriesSmoothLineChartPlugin",
+      "name": "Smooth Line",
+      "category": "Evolution",
+      "description": "Smooth-line is a variation of the line chart. Without angles and hard edges, Smooth-line sometimes looks smarter and more professional.",
+      "tags": [
+        "ECharts",
+        "Predictive",
+        "Advanced-Analytics",
+        "Time",
+        "Line",
+        "Transformable"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/SmoothLine/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/SmoothLine/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "echarts_timeseries_step",
+      "plugin_class": "EchartsTimeseriesStepChartPlugin",
+      "name": "Stepped Line",
+      "category": "Evolution",
+      "description": "Stepped-line graph (also called step chart) is a variation of line chart but with the line forming a series of steps between data points. A step chart can be useful when you want to show the changes that occur at irregular intervals.",
+      "tags": [
+        "ECharts",
+        "Predictive",
+        "Advanced-Analytics",
+        "Time",
+        "Transformable",
+        "Stacked"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Step/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Step/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "filter_range",
+      "plugin_class": "RangeFilterPlugin",
+      "name": "Range filter",
+      "category": null,
+      "description": "Range filter plugin using AntD",
+      "tags": [
+        "Experimental"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "NativeFilter"
+      ],
+      "custom": false,
+      "is_filter": true,
+      "source": "superset-frontend/src/filters/components/Range/index.ts",
+      "control_panel": "superset-frontend/src/filters/components/Range/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "filter_select",
+      "plugin_class": "SelectFilterPlugin",
+      "name": "SelectFilterPlugin",
+      "category": null,
+      "description": null,
+      "tags": [],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": true,
+      "source": null,
+      "control_panel": null,
+      "metadata_found": false
+    },
+    {
+      "viz_type": "filter_time",
+      "plugin_class": "TimeFilterPlugin",
+      "name": "Time filter",
+      "category": null,
+      "description": "Custom time filter plugin",
+      "tags": [
+        "Experimental"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "NativeFilter"
+      ],
+      "custom": false,
+      "is_filter": true,
+      "source": "superset-frontend/src/filters/components/Time/index.ts",
+      "control_panel": "superset-frontend/src/filters/components/Time/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "filter_timecolumn",
+      "plugin_class": "TimeColumnFilterPlugin",
+      "name": "TimeColumnFilterPlugin",
+      "category": null,
+      "description": null,
+      "tags": [],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": true,
+      "source": null,
+      "control_panel": null,
+      "metadata_found": false
+    },
+    {
+      "viz_type": "filter_timegrain",
+      "plugin_class": "TimeGrainFilterPlugin",
+      "name": "TimeGrainFilterPlugin",
+      "category": null,
+      "description": null,
+      "tags": [],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": true,
+      "source": null,
+      "control_panel": null,
+      "metadata_found": false
+    },
+    {
+      "viz_type": "funnel",
+      "plugin_class": "EchartsFunnelChartPlugin",
+      "name": "Funnel Chart",
+      "category": "KPI",
+      "description": "Showcases how a metric changes as the funnel progresses. This classic chart is useful for visualizing drop-off between stages in a pipeline or lifecycle.",
+      "tags": [
+        "Business",
+        "ECharts",
+        "Progressive",
+        "Report",
+        "Sequential",
+        "Trend",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Funnel/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Funnel/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "gantt_chart",
+      "plugin_class": "EchartsGanttChartPlugin",
+      "name": "Gantt Chart",
+      "category": null,
+      "description": "Gantt chart visualizes important events over a time span. Every data point displayed as a separate event along a horizontal line.",
+      "tags": [
+        "ECharts",
+        "Featured",
+        "Timeline",
+        "Time"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Gantt/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Gantt/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "gauge_chart",
+      "plugin_class": "EchartsGaugeChartPlugin",
+      "name": "Gauge Chart",
+      "category": "KPI",
+      "description": "Uses a gauge to showcase progress of a metric towards a target. The position of the dial represents the progress and the terminal value in the gauge represents the target value.",
+      "tags": [
+        "Multi-Variables",
+        "Business",
+        "Comparison",
+        "ECharts",
+        "Report",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Gauge/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Gauge/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "graph_chart",
+      "plugin_class": "EchartsGraphChartPlugin",
+      "name": "Graph Chart",
+      "category": "Flow",
+      "description": "Displays connections between entities in a graph structure. Useful for mapping relationships and showing which nodes are important in a network. Graph charts can be configured to be force-directed or circulate. If your data has a geospatial component, try the deck.gl Arc chart.",
+      "tags": [
+        "Circular",
+        "Comparison",
+        "Directional",
+        "ECharts",
+        "Relational",
+        "Structural",
+        "Transformable",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Graph/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Graph/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "handlebars",
+      "plugin_class": "HandlebarsChartPlugin",
+      "name": "Handlebars",
+      "category": null,
+      "description": "Write a handlebars template to render the data",
+      "tags": [],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-handlebars/src/plugin/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-handlebars/src/plugin/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "heatmap_v2",
+      "plugin_class": "EchartsHeatmapChartPlugin",
+      "name": "Heatmap",
+      "category": "Correlation",
+      "description": "Visualize a related metric across pairs of groups. Heatmaps excel at showcasing the correlation or strength between two groups. Color is used to emphasize the strength of the link between each pair of groups.",
+      "tags": [
+        "Business",
+        "Intensity",
+        "Density",
+        "Single Metric",
+        "ECharts",
+        "Featured"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Heatmap/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Heatmap/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "hello-world",
+      "plugin_class": "SupersetPluginChartHelloWorld",
+      "name": "Hello World",
+      "category": null,
+      "description": "Superset Plugin Chart Hello World",
+      "tags": [],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-hello-world/src/plugin/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-hello-world/src/plugin/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "histogram_v2",
+      "plugin_class": "EchartsHistogramChartPlugin",
+      "name": "Histogram",
+      "category": "Distribution",
+      "description": null,
+      "tags": [
+        "Comparison",
+        "ECharts",
+        "Pattern",
+        "Range"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Histogram/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Histogram/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "horizon",
+      "plugin_class": "HorizonChartPlugin",
+      "name": "Horizon Chart",
+      "category": "Distribution",
+      "description": "Compares how a metric changes over time between different groups. Each group is mapped to a row and change over time is visualized bar lengths and color.",
+      "tags": [
+        "Legacy"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-horizon/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-horizon/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "mapbox",
+      "plugin_class": "MapBoxChartPlugin",
+      "name": "MapBox",
+      "category": "Map",
+      "description": "",
+      "tags": [
+        "Business",
+        "Intensity",
+        "Legacy",
+        "Density",
+        "Scatter",
+        "Transformable"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-map-box/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-map-box/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "mixed_timeseries",
+      "plugin_class": "EchartsMixedTimeseriesChartPlugin",
+      "name": "Mixed Chart",
+      "category": "Evolution",
+      "description": "Visualize two different series using the same x-axis. Note that both series can be visualized with a different chart type (e.g. 1 using bars and 1 using a line).",
+      "tags": [
+        "ECharts",
+        "Line",
+        "Bar",
+        "Advanced-Analytics"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "METADATA_OVERRIDES",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "paired_ttest",
+      "plugin_class": "PairedTTestChartPlugin",
+      "name": "Paired t-test Table",
+      "category": "Correlation",
+      "description": "Table that visualizes paired t-tests, which are used to understand statistical differences between groups.",
+      "tags": [
+        "Legacy",
+        "Statistical",
+        "Tabular"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-paired-t-test/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-paired-t-test/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "para",
+      "plugin_class": "ParallelCoordinatesChartPlugin",
+      "name": "Parallel Coordinates",
+      "category": "Ranking",
+      "description": "Plots the individual metrics for each row in the data vertically and links them together as a line. This chart is useful for comparing multiple metrics across all of the samples or rows in the data.",
+      "tags": [
+        "Directional",
+        "Legacy",
+        "Relational"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-parallel-coordinates/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-parallel-coordinates/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "partition",
+      "plugin_class": "PartitionChartPlugin",
+      "name": "Partition Chart",
+      "category": "Part of a Whole",
+      "description": "Compare the same summarized metric across multiple groups.",
+      "tags": [
+        "Categorical",
+        "Comparison",
+        "Legacy",
+        "Proportional"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-partition/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-partition/src/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "pie",
+      "plugin_class": "EchartsPieChartPlugin",
+      "name": "Pie Chart",
+      "category": "Part of a Whole",
+      "description": null,
+      "tags": [
+        "Categorical",
+        "Circular",
+        "Comparison",
+        "Percentages",
+        "Featured",
+        "Proportional",
+        "ECharts",
+        "Nightingale"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Pie/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Pie/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "pivot_table_v2",
+      "plugin_class": "PivotTableChartPluginV2",
+      "name": "PivotTableChartPluginV2",
+      "category": null,
+      "description": null,
+      "tags": [],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": null,
+      "control_panel": "superset-frontend/plugins/plugin-chart-pivot-table/src/plugin/controlPanel.tsx",
+      "metadata_found": false
+    },
+    {
+      "viz_type": "pop_kpi",
+      "plugin_class": "BigNumberPeriodOverPeriodChartPlugin",
+      "name": "Big Number with Time Comparison",
+      "category": "KPI",
+      "description": "Showcases a single metric alongside its value in a comparison period, with the delta between them.",
+      "tags": [
+        "Report",
+        "Comparison",
+        "Experimental"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "METADATA_OVERRIDES",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberPeriodOverPeriod/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "radar",
+      "plugin_class": "EchartsRadarChartPlugin",
+      "name": "Radar Chart",
+      "category": "Ranking",
+      "description": "Visualize a parallel set of metrics across multiple groups. Each group is visualized using its own line of points and each metric is represented as an edge in the chart.",
+      "tags": [
+        "Business",
+        "Comparison",
+        "Multi-Variables",
+        "Report",
+        "Web",
+        "ECharts",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Radar/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Radar/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "rose",
+      "plugin_class": "RoseChartPlugin",
+      "name": "Nightingale Rose Chart",
+      "category": "Ranking",
+      "description": "A polar coordinate chart where the circle is broken into wedges of equal angle, and the value represented by any wedge is illustrated by its area, rather than its radius or sweep angle.",
+      "tags": [
+        "Legacy",
+        "Advanced-Analytics",
+        "Circular",
+        "Multi-Layers",
+        "Pattern",
+        "Time",
+        "Trend"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-rose/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-rose/src/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "sankey_v2",
+      "plugin_class": "EchartsSankeyChartPlugin",
+      "name": "Sankey Chart",
+      "category": "Flow",
+      "description": null,
+      "tags": [
+        "Directional",
+        "ECharts",
+        "Distribution",
+        "Flow"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Sankey/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Sankey/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "sunburst_v2",
+      "plugin_class": "EchartsSunburstChartPlugin",
+      "name": "Sunburst Chart",
+      "category": "Part of a Whole",
+      "description": "Uses circles to visualize the flow of data through different stages of a system. Hover over individual paths in the visualization to understand the stages a value took. Useful for multi-stage, multi-group visualizing funnels and pipelines.",
+      "tags": [
+        "ECharts",
+        "Multi-Levels",
+        "Proportional",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Sunburst/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Sunburst/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "table",
+      "plugin_class": "TableChartPlugin",
+      "name": "Table",
+      "category": "Table",
+      "description": "Classic row-by-column spreadsheet like view of a dataset. Use tables to showcase a view into the underlying data or to show aggregated metrics.",
+      "tags": [
+        "Additive",
+        "Business",
+        "Pattern",
+        "Featured",
+        "Report",
+        "Sequential",
+        "Tabular"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-table/src/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "time_pivot",
+      "plugin_class": "TimePivotChartPlugin",
+      "name": "Time-series Period Pivot",
+      "category": "Evolution",
+      "description": "Compares metrics between different time periods. Displays time series data across multiple periods (like weeks or months) to show period-over-period trends and patterns.",
+      "tags": [
+        "Legacy",
+        "Time",
+        "nvd3"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/TimePivot/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/TimePivot/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "time_table",
+      "plugin_class": "TimeTableChartPlugin",
+      "name": "Time-series Table",
+      "category": "Table",
+      "description": "Compare multiple time series charts (as sparklines) and related metrics quickly.",
+      "tags": [
+        "Multi-Variables",
+        "Comparison",
+        "Legacy",
+        "Percentages",
+        "Tabular",
+        "Text",
+        "Trend"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/src/visualizations/TimeTable/index.ts",
+      "control_panel": null,
+      "metadata_found": true
+    },
+    {
+      "viz_type": "tree_chart",
+      "plugin_class": "EchartsTreeChartPlugin",
+      "name": "Tree Chart",
+      "category": "Part of a Whole",
+      "description": "Visualize multiple levels of hierarchy using a familiar tree-like structure.",
+      "tags": [
+        "Categorical",
+        "ECharts",
+        "Multi-Levels",
+        "Relational",
+        "Structural",
+        "Featured"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Tree/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Tree/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "treemap_v2",
+      "plugin_class": "EchartsTreemapChartPlugin",
+      "name": "Treemap",
+      "category": "Part of a Whole",
+      "description": "Show hierarchical relationships of data, with the value represented by area, showing proportion and contribution to the whole.",
+      "tags": [
+        "Categorical",
+        "Comparison",
+        "ECharts",
+        "Multi-Levels",
+        "Percentages",
+        "Proportional",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Treemap/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Treemap/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "waterfall",
+      "plugin_class": "EchartsWaterfallChartPlugin",
+      "name": "Waterfall Chart",
+      "category": "Evolution",
+      "description": null,
+      "tags": [
+        "Categorical",
+        "Comparison",
+        "ECharts",
+        "Featured"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-echarts/src/Waterfall/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Waterfall/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "word_cloud",
+      "plugin_class": "WordCloudChartPlugin",
+      "name": "Word Cloud",
+      "category": "Ranking",
+      "description": "Visualizes the words in a column that appear the most often. Bigger font corresponds to higher frequency.",
+      "tags": [
+        "Categorical",
+        "Comparison",
+        "Density",
+        "Single Metric"
+      ],
+      "behaviors": [],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-word-cloud/src/plugin/index.ts",
+      "control_panel": "superset-frontend/plugins/plugin-chart-word-cloud/src/plugin/controlPanel.tsx",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "world_map",
+      "plugin_class": "WorldMapChartPlugin",
+      "name": "World Map",
+      "category": "Map",
+      "description": "A map of the world, that can indicate values in different countries.",
+      "tags": [
+        "2D",
+        "Comparison",
+        "Intensity",
+        "Legacy",
+        "Multi-Dimensions",
+        "Multi-Layers",
+        "Multi-Variables",
+        "Scatter",
+        "Featured"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": false,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/legacy-plugin-chart-world-map/src/index.ts",
+      "control_panel": "superset-frontend/plugins/legacy-plugin-chart-world-map/src/controlPanel.ts",
+      "metadata_found": true
+    }
+  ],
+  "warnings": {
+    "registered_without_metadata": [
+      "filter_select",
+      "filter_timecolumn",
+      "filter_timegrain",
+      "pivot_table_v2"
+    ],
+    "registered_without_control_panel": [
+      "filter_select",
+      "filter_timecolumn",
+      "filter_timegrain",
+      "time_table"
+    ],
+    "metadata_without_registration": [
+      "ArcChartPlugin",
+      "BigNumberWithTrendlineChartPlugin",
+      "ContourChartPlugin",
+      "FilterSelectPlugin",
+      "FilterTimeColumnPlugin",
+      "FilterTimeGrainPlugin",
+      "GeojsonChartPlugin",
+      "GridChartPlugin",
+      "HeatmapChartPlugin",
+      "HexChartPlugin",
+      "MultiChartPlugin",
+      "PathChartPlugin",
+      "PivotTableChartPlugin",
+      "PolygonChartPlugin",
+      "PopKPIPlugin",
+      "ScatterChartPlugin",
+      "ScreengridChartPlugin"
+    ]
+  }
+}
