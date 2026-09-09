@@ -70,6 +70,58 @@ def substitute_refs(value: Any, ref_to_id: dict[str, int]) -> Any:
     return value
 
 
+# Physical types that DATE_TRUNC cannot be applied to, whatever the dataset's
+# `is_dttm` flag claims. Superset lets a column be marked temporal while its
+# column type stays numeric -- the bundled `video_game_sales.year` is BIGINT
+# with `is_dttm = true` -- and every stage downstream believes the flag.
+_NON_TEMPORAL_TYPES = (
+    "INT",
+    "BIGINT",
+    "SMALLINT",
+    "FLOAT",
+    "DOUBLE",
+    "NUMERIC",
+    "DECIMAL",
+    "REAL",
+)
+
+
+def _numeric_columns(datasource_id: int) -> set[str]:
+    """Column names whose physical type cannot take a time grain."""
+    from superset import db
+    from superset.connectors.sqla.models import TableColumn
+
+    rows = (
+        db.session.query(TableColumn.column_name, TableColumn.type)
+        .filter(TableColumn.table_id == datasource_id)
+        .all()
+    )
+    return {
+        name
+        for name, type_ in rows
+        if type_ and any(t in type_.upper() for t in _NON_TEMPORAL_TYPES)
+    }
+
+
+def strip_invalid_grains(payload: Any, numeric: set[str]) -> Any:
+    """Remove time grains that target a numerically-typed column.
+
+    A grain on such a column makes Superset emit `DATE_TRUNC('year', <number>)`,
+    which the database rejects and the chart renders as an error. Stage D is
+    told not to do this, and stage B is told not to bind the grain, but both
+    read the same `is_dttm` flag the dataset gets wrong -- so this last check is
+    deterministic rather than another instruction.
+    """
+    if isinstance(payload, dict):
+        column = payload.get("sqlExpression") or payload.get("column_name")
+        if payload.get("timeGrain") and column in numeric:
+            payload = {k: v for k, v in payload.items() if k != "timeGrain"}
+        return {k: strip_invalid_grains(v, numeric) for k, v in payload.items()}
+    if isinstance(payload, list):
+        return [strip_invalid_grains(item, numeric) for item in payload]
+    return payload
+
+
 def build_query_context(  # noqa: C901
     params: dict[str, Any], datasource_id: int, datasource_type: str = "table"
 ) -> dict[str, Any]:
@@ -239,9 +291,19 @@ def apply_plan(  # noqa: C901
             datasource_type = body.get("datasource_type", "table")
             # Prefer a query context from stage D; derive one otherwise so the
             # chart is queryable through the API, not only inside a dashboard.
+            numeric = _numeric_columns(body["datasource_id"])
+            axis = params.get("x_axis")
+            if params.get("time_grain_sqla") and (axis in numeric or not axis):
+                params.pop("time_grain_sqla", None)
+
             raw_qc = body.get("query_context")
             if isinstance(raw_qc, str) and raw_qc.strip():
-                query_context = raw_qc
+                decoded_qc = strip_invalid_grains(json.loads(raw_qc), numeric)
+                for query in decoded_qc.get("queries") or []:
+                    extras = query.get("extras")
+                    if isinstance(extras, dict) and axis in numeric:
+                        extras.pop("time_grain_sqla", None)
+                query_context = json.dumps(decoded_qc)
             else:
                 query_context = json.dumps(
                     build_query_context(params, body["datasource_id"], datasource_type)

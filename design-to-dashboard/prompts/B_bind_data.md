@@ -62,6 +62,14 @@ Regions with `role` in `nav | header | text | decoration` get `state: "not_appli
 - **Prefer an existing metric over an adhoc one.** If `get_dataset_info` returns a metric matching the region's measure, bind it by name; do not re-derive its SQL.
 - **One dataset per region.** A region genuinely needing a cross-dataset join is `unavailable` — say so. (A virtual dataset may resolve it, if permitted.)
 - **A `composite` region needs one binding per thing inside it.** Stage A marks a card holding several charts as `composition: composite` and lists what it holds in `observed`. Each of those becomes its own chart later, so emit a binding per piece using `region_id` values suffixed `:1`, `:2` … (`r04_spend:1`). Binding the card as a single measure leaves the inner charts with no data — they are built regardless, and they render empty.
+- **`is_dttm` is a claim, not a fact.** A dataset can mark a column temporal
+  while its physical type is `BIGINT`, `INT` or `DOUBLE` — a `year` column
+  holding `1985` is the common case. A time grain on such a column makes
+  Superset emit `DATE_TRUNC('year', 1985)`, which the database rejects and the
+  chart renders as an error. Read the column's **type** as well as its flag:
+  where the type is numeric, set `time_grain: null` and treat the column as an
+  ordinary axis. Validating it once with `execute_sql` costs one call and
+  settles it.
 - **A `control` region usually binds too.** A period picker or dropdown reads its options from a column, so bind that column. Only a control whose options are hard-coded in the design is `unavailable`.
 - **`derivable` means expressible in SQL from columns that exist, and `execute_sql` confirmed it.** An unvalidated derivation is `validated: false` and lowers confidence.
 - **Type-check.** Measures bind to numeric columns or metrics; time grains require a temporal column. Report mismatches; never coerce.
