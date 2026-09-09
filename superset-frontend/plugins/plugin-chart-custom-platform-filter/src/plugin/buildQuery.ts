@@ -16,14 +16,28 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import {
+  QueryFormColumn,
+  buildQueryContext,
+} from '../adapters/supersetAdapter';
+import { DEFAULT_ROW_LIMIT } from '../constants';
+import { PlatformFilterFormData } from '../types';
 
-// For individual deployments to add custom overrides
+// One query: the distinct values of the filter column. No metric is needed,
+// so the GROUP BY alone produces the option list.
+export default function buildQuery(formData: PlatformFilterFormData) {
+  const { filterColumn } = formData;
+  const columns: QueryFormColumn[] = filterColumn ? [filterColumn] : [];
+  const rowLimit =
+    formData.rowLimit ?? formData.row_limit ?? DEFAULT_ROW_LIMIT;
 
-import { CustomLabelBarPlugin } from '@superset-ui/plugin-chart-custom-label-bar';
-
-import { CustomPlatformFilterPlugin } from '@superset-ui/plugin-chart-custom-platform-filter';
-
-export default function setupPluginsExtra() {
-  new CustomLabelBarPlugin().configure({ key: 'custom_label_bar' }).register();
-  new CustomPlatformFilterPlugin().configure({ key: 'custom_platform_filter' }).register();
+  return buildQueryContext(formData, baseQueryObject => [
+    {
+      ...baseQueryObject,
+      columns,
+      groupby: columns,
+      metrics: [],
+      row_limit: rowLimit,
+    },
+  ]);
 }

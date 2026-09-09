@@ -50,6 +50,10 @@ NODE_TYPES = {
 }
 # Decisions that never occupy a grid cell.
 NON_GRID_DECISIONS = {"native_filter", "drop"}
+# `grid_text` does occupy a cell, but as a MARKDOWN/HEADER node, which carries
+# no chart ref. Counting it among the refs a CHART node must claim failed the
+# whole layout with "ref 'c1' was never placed on the grid".
+NON_CHART_DECISIONS = {"grid_text"}
 
 
 def build_system_prompt(prompts_dir: pathlib.Path) -> str:
@@ -132,7 +136,8 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
     expected_refs = {
         decision["ref"]
         for decision in plan.get("decisions", [])
-        if decision.get("ref") and decision.get("decision") not in NON_GRID_DECISIONS
+        if decision.get("ref")
+        and decision.get("decision") not in NON_GRID_DECISIONS | NON_CHART_DECISIONS
     }
     # A composing parent renders its children itself, so they get no grid node
     # of their own. This is keyed on `children` rather than on `decision ==

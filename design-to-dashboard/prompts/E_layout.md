@@ -39,7 +39,7 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 - **Skip `decoration` regions** and any decision of `drop`. Skip `native_filter` decisions — those live in `json_metadata`, not the grid.
 - **Never lay out a wrapper's children.** When a decision has a `children` array (a `wrap`, or a `new_plugin` with `plugin_archetype: "composite"`), the parent gets **one** CHART node and the children get **none** — they are rendered inside the parent, by the parent. Giving a child its own grid node draws it twice: once in the wrapper and once loose on the dashboard.
 - **A `filter_widget` plugin does get a grid node.** It is a chart that happens to filter, so it sits in the layout where the design draws it — unlike a `native_filter`, which does not.
-- **`header` / `text` regions** become `MARKDOWN` nodes with the visible text, or `HEADER` nodes for section titles.
+- **`header` / `text` regions** become `MARKDOWN` nodes with the visible text, or `HEADER` nodes for section titles. A `grid_text` decision is exactly this: place it where its bbox says, using its `text`. It occupies a cell but is not a chart, so it gets no `ref` in `meta`.
 
 ## Output
 

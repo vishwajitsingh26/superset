@@ -55,7 +55,19 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_CALLS = 24
 MAX_ITERATIONS = 10
 
-DECISIONS = {"reuse", "configure", "wrap", "new_plugin", "native_filter", "drop"}
+# `grid_text` is a heading or caption that occupies a grid cell without being a
+# chart. It exists because a dashboard viewed with the chrome hidden has no
+# title bar, so the page heading has to live in the grid -- and `configure`
+# without a viz_type is not a chart the rest of the pipeline can build.
+DECISIONS = {
+    "reuse",
+    "configure",
+    "wrap",
+    "new_plugin",
+    "native_filter",
+    "grid_text",
+    "drop",
+}
 # What kind of component a `new_plugin` is. A plugin is a React component we
 # own, so this is not limited to "a chart shape Superset lacks".
 ARCHETYPES = {"viz", "composite", "filter_widget", "table", "navigation"}
@@ -238,6 +250,8 @@ def validate(  # noqa: C901
                 problems.append(f"{region_id}: duplicate ref {ref!r}")
             seen_refs.add(ref)
 
+        if kind == "grid_text" and not decision.get("text"):
+            problems.append(f"{region_id}: grid_text without the text to render")
         if kind in {"configure", "wrap"}:
             if not viz_type:
                 problems.append(f"{region_id}: {kind} without viz_type")

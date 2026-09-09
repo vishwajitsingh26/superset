@@ -17,13 +17,13 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// Label rendered to the left of the control, e.g. "Platform:".
+export const DEFAULT_FILTER_LABEL = 'Platform';
 
-import { CustomLabelBarPlugin } from '@superset-ui/plugin-chart-custom-label-bar';
+// Shown when nothing is selected; an empty selection means every value.
+export const DEFAULT_PLACEHOLDER = 'All platforms';
 
-import { CustomPlatformFilterPlugin } from '@superset-ui/plugin-chart-custom-platform-filter';
+export const DEFAULT_ROW_LIMIT = 1000;
 
-export default function setupPluginsExtra() {
-  new CustomLabelBarPlugin().configure({ key: 'custom_label_bar' }).register();
-  new CustomPlatformFilterPlugin().configure({ key: 'custom_platform_filter' }).register();
-}
+// Width of the control itself; the bar around it stays full width.
+export const CONTROL_MAX_WIDTH = 320;

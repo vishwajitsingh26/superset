@@ -162,8 +162,12 @@ Backwards here produces a dashboard whose filters don't cross-filter. Check `glo
 `drop` means the section will not exist on the dashboard. Use it for decoration
 only. Deferring a heading to "the dashboard title" is a `drop` plus an
 assumption that the title is rendered — and when the user has said the chrome is
-hidden, that assumption is wrong and the heading is simply gone. Make it a grid
-element instead, and say so in the plan.
+hidden, that assumption is wrong and the heading is simply gone.
+
+Use **`grid_text`** for a heading or caption that must occupy a grid cell
+without being a chart: it becomes a `MARKDOWN` or `HEADER` node, and its `text`
+field carries what to render. Do not reach for `configure` without a
+`viz_type` — a chart with no type is not something any later stage can build.
 
 ## The user's answers are settled
 
@@ -253,7 +257,8 @@ establishing which case you are in — case A is always achievable.
   "design_system": { ... },
   "decisions": [{
     "region_id": "...", "ref": "c1",
-    "decision": "reuse|configure|wrap|new_plugin|native_filter|drop",
+    "decision": "reuse|configure|wrap|new_plugin|native_filter|grid_text|drop",
+    "text": "markdown to render, for grid_text only",
     "viz_type": "...|null", "existing_chart_id": null, "children": ["c2","c3"],
     "plugin_archetype": "viz|composite|filter_widget|table|navigation|null",
     "behaviors": ["InteractiveChart", "DrillToDetail"],
@@ -265,7 +270,7 @@ establishing which case you are in — case A is always achievable.
     "confidence": "high|medium|low"
   }],
   "native_filters": [{ "name": "...", "filterType": "...", "region_id": "...", "scope": "all|[refs]" }],
-  "counts": { "reuse": 0, "configure": 0, "wrap": 0, "new_plugin": 0, "native_filter": 0, "drop": 0 },
+  "counts": { "reuse": 0, "configure": 0, "wrap": 0, "new_plugin": 0, "native_filter": 0, "grid_text": 0, "drop": 0 },
   "plan_for_review": [
     { "step": 1,
       "kind": "reuse|configure|wrap|new_plugin|native_filter",
