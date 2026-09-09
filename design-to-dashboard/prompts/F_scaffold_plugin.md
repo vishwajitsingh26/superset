@@ -111,6 +111,13 @@ These are not style preferences; a plugin that breaks them fails review.
   below.
 - **Handle all three states**: loading, empty and error. Do not poll — the
   dashboard's own refresh drives updates.
+- **Assume the datasource will change.** A chart may be built on a dataset this
+  run created and repointed at the real one later by a teammate in Explore.
+  Take every column and metric through standard controls (`groupby`, `metric`,
+  `x_axis` from `sharedControls`) so they re-populate from whatever dataset is
+  attached; never hardcode a column name in `transformProps` or the component,
+  and never key logic off a specific dataset. Label the controls for what they
+  mean — "Category", "Value" — so the swap is obvious without reading the code.
 
 ## Fidelity is the point
 

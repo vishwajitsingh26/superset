@@ -30,7 +30,22 @@ column or switch measures.
 say precisely what would differ and ask whether that is acceptable or whether a
 custom plugin should be built. Do not decide this silently.
 
-**4. Structure the design implies but does not settle.** A custom plugin is a
+**4. Datasets this run would create.** If the binding carries
+`created_datasets`, ask before any of them is made — this is the only chance.
+
+- A **`derived`** dataset summarises or joins real tables to get the grain the
+  dashboard needs. The numbers are true. Show the user the SQL in plain terms
+  ("a per-genre summary of the sales table") and confirm the shape is what they
+  meant.
+- A **`placeholder`** holds literal rows from the design because nothing in the
+  instance has this data. Say so bluntly: the section will be built for real —
+  chart, plugin, layout — but **the numbers shown are invented**, and someone
+  must repoint the chart at a real dataset before anyone trusts it. Offer the
+  alternative of leaving the section out entirely.
+
+Never present a placeholder as though it were data.
+
+**5. Structure the design implies but does not settle.** A custom plugin is a
 component we write, so the answer is rarely "Superset can't". Ask which shape
 the user wants, and say plainly that either is buildable:
 

@@ -54,6 +54,7 @@ class ApplyResult:
     charts_reused: list[int] = field(default_factory=list)
     ref_to_id: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    created_datasets: list[dict[str, Any]] = field(default_factory=list)
 
 
 def substitute_refs(value: Any, ref_to_id: dict[str, int]) -> Any:
@@ -230,6 +231,71 @@ def _order_charts(
     return sorted(specs, key=lambda spec: 0 if spec.get("ref") in children else 1)
 
 
+def plan_datasets(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """Virtual datasets this run must create before any chart points at one.
+
+    Two kinds, and the difference matters to whoever reads the dashboard:
+
+    - ``derived`` — real data, reshaped. A master table exists but the
+      dashboard needs a different grain, so the SQL aggregates or joins it.
+      The numbers are true.
+    - ``placeholder`` — literal rows taken from the design, because no table
+      holds this at all. The layout is real; the numbers are not.
+
+    Both are virtual, so neither writes a table into the warehouse and both are
+    repointed later by editing the chart's datasource. One dataset may serve
+    several regions -- three KPI tiles reading one summary is one dataset, not
+    three.
+    """
+    specs = []
+    for spec in plan.get("created_datasets") or []:
+        if not isinstance(spec, dict) or not spec.get("name"):
+            continue
+        if spec.get("kind") not in {"derived", "placeholder"}:
+            raise ApplyError(
+                f"dataset {spec['name']!r} has kind {spec.get('kind')!r}; "
+                "expected 'derived' or 'placeholder'"
+            )
+        if not spec.get("database_id"):
+            raise ApplyError(f"dataset {spec['name']!r} has no database_id")
+        if not (spec.get("sql") or "").strip():
+            raise ApplyError(f"dataset {spec['name']!r} has no SQL")
+        specs.append(spec)
+    return specs
+
+
+PLACEHOLDER_PREFIX = "d2d_placeholder_"
+
+
+def create_virtual_dataset(spec: dict[str, Any], user_id: int) -> int:
+    """Create one virtual dataset from a SQL statement.
+
+    Virtual means a saved SELECT, not a table: no DDL runs, nothing is written
+    to the source database, and swapping a chart onto real data later is a
+    datasource change rather than a migration.
+
+    A ``placeholder`` is name-prefixed so it is unmistakable in the dataset
+    list, in Explore's datasource picker, and in any audit of what this
+    pipeline created. A ``derived`` dataset holds real data and is named for
+    what it contains.
+    """
+    from superset.commands.dataset.create import CreateDatasetCommand
+
+    name = spec["name"]
+    if spec["kind"] == "placeholder" and not name.startswith(PLACEHOLDER_PREFIX):
+        name = f"{PLACEHOLDER_PREFIX}{name}"
+    dataset = CreateDatasetCommand(
+        {
+            "database": spec["database_id"],
+            "table_name": name,
+            "sql": spec["sql"].strip(),
+            "owners": [user_id],
+        }
+    ).run()
+    logger.info("created %s dataset %s (id %s)", spec["kind"], name, dataset.id)
+    return int(dataset.id)
+
+
 def apply_plan(  # noqa: C901
     design_analysis: dict[str, Any],
     plan: dict[str, Any],
@@ -251,9 +317,31 @@ def apply_plan(  # noqa: C901
     from superset.models.slice import Slice
 
     result = ApplyResult()
+    created_datasets: list[int] = []
     user_id = getattr(g.user, "id", None)
     if user_id is None:
         raise ApplyError("apply_plan needs a request context with g.user set")
+
+    # ---- virtual datasets, before any chart that points at one -------------
+    # A section the instance cannot serve at the right grain still gets built:
+    # either on a `derived` dataset that reshapes a real master table, or on a
+    # `placeholder` of literal rows. Created first because the charts reference
+    # the resulting id, and one dataset may serve several regions.
+    region_dataset: dict[str, int] = {}
+    for spec in plan_datasets(plan):
+        dataset_id = create_virtual_dataset(spec, user_id)
+        created_datasets.append(dataset_id)
+        for region_id in spec.get("region_ids") or []:
+            region_dataset[region_id] = dataset_id
+        result.created_datasets.append(
+            {
+                "dataset_id": dataset_id,
+                "name": spec["name"],
+                "kind": spec["kind"],
+                "reason": spec.get("reason"),
+                "region_ids": spec.get("region_ids") or [],
+            }
+        )
 
     # ---- reuse decisions map straight to existing ids ----------------------
     for decision in plan.get("decisions", []):
@@ -283,6 +371,12 @@ def apply_plan(  # noqa: C901
     try:
         for entry in _order_charts(usable, plan):
             body = dict(entry["spec"]["request"]["body"])
+            # A chart on a dataset this run creates cannot know its id: the
+            # dataset was created moments ago, in this function. Stage D wrote
+            # whatever it was given, so the real id is substituted here.
+            if created_id := region_dataset.get(entry.get("region_id") or ""):
+                body["datasource_id"] = created_id
+                body["datasource_type"] = "table"
             params = entry["spec"].get("params_decoded")
             if not isinstance(params, dict):
                 params = json.loads(body.get("params") or "{}")
@@ -372,7 +466,7 @@ def apply_plan(  # noqa: C901
         result.dashboard_url = f"/superset/dashboard/{dashboard.id}/"
 
     except Exception as ex:  # noqa: BLE001
-        _compensate(created_charts, created_dashboard_id)
+        _compensate(created_charts, created_dashboard_id, created_datasets)
         raise ApplyError(
             f"apply failed after {len(created_charts)} chart(s); "
             f"created objects were removed: {ex}"
@@ -403,7 +497,11 @@ def _derive_title(design_analysis: dict[str, Any]) -> str:
     return "Design to Dashboard"
 
 
-def _compensate(chart_ids: list[int], dashboard_id: int | None) -> None:
+def _compensate(
+    chart_ids: list[int],
+    dashboard_id: int | None,
+    dataset_ids: list[int] | None = None,
+) -> None:
     """Undo a partial apply.
 
     Superset's commands commit as they go, so a failure halfway through leaves
@@ -411,6 +509,7 @@ def _compensate(chart_ids: list[int], dashboard_id: int | None) -> None:
     deleted explicitly instead.
     """
     from superset import db
+    from superset.connectors.sqla.models import SqlaTable
     from superset.models.dashboard import Dashboard
     from superset.models.slice import Slice
 
@@ -423,6 +522,12 @@ def _compensate(chart_ids: list[int], dashboard_id: int | None) -> None:
             chart = db.session.query(Slice).get(chart_id)
             if chart is not None:
                 db.session.delete(chart)
+        # Placeholder datasets are ours and nothing else can reference them yet,
+        # so a failed apply must not leave them in the dataset list.
+        for dataset_id in dataset_ids or []:
+            dataset = db.session.query(SqlaTable).get(dataset_id)
+            if dataset is not None:
+                db.session.delete(dataset)
         # Not a @transaction: this runs *after* the commands that created the
         # charts have already committed, so there is no unit of work left to
         # roll back -- the cleanup is itself the compensating write.
