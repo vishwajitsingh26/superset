@@ -16,13 +16,26 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { buildQueryContext, QueryFormMetric } from '@superset-ui/core';
+import { LabeledHbarQueryFormData } from '../types';
 
-// For individual deployments to add custom overrides
-import { RankedBarChartPlugin } from '@superset-ui/plugin-chart-ranked-bar';
+/**
+ * The ranking and the top-N cut are done by the database, not the browser:
+ * one group-by query, ordered descending on the measure, capped by row_limit.
+ */
+export default function buildQuery(formData: LabeledHbarQueryFormData) {
+  const { series, metric } = formData;
+  const orderby: [QueryFormMetric, boolean][] = metric
+    ? [[metric, false]]
+    : [];
 
-import { SupersetPluginChartLabeledHbar } from '@superset-ui/plugin-chart-labeled-hbar';
-
-export default function setupPluginsExtra() {
-new RankedBarChartPlugin().configure({ key: 'custom_ranked_bar' }).register();
-new SupersetPluginChartLabeledHbar().configure({ key: 'custom_labeled_hbar' }).register();
+  return buildQueryContext(formData, baseQueryObject => [
+    {
+      ...baseQueryObject,
+      columns: series ? [series] : [],
+      metrics: metric ? [metric] : [],
+      orderby,
+      is_timeseries: false,
+    },
+  ]);
 }

@@ -16,13 +16,5 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-// For individual deployments to add custom overrides
-import { RankedBarChartPlugin } from '@superset-ui/plugin-chart-ranked-bar';
-
-import { SupersetPluginChartLabeledHbar } from '@superset-ui/plugin-chart-labeled-hbar';
-
-export default function setupPluginsExtra() {
-new RankedBarChartPlugin().configure({ key: 'custom_ranked_bar' }).register();
-new SupersetPluginChartLabeledHbar().configure({ key: 'custom_labeled_hbar' }).register();
-}
+export { default as RankedBarChartPlugin } from './plugin';
+export * from './types';

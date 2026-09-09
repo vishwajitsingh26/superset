@@ -247,6 +247,30 @@ def collect_metadata() -> dict[str, dict]:
     return out
 
 
+def _find_thumbnail(source: str | None) -> str | None:
+    """Locate the plugin's thumbnail.
+
+    Every plugin ships one for the viz-type gallery, so it is the best available
+    picture of what the chart actually looks like -- far more useful for
+    matching a design than a text description.
+    """
+    if not source:
+        return None
+    start = (REPO_ROOT / source).parent
+    candidates = [start, *list(start.parents)[:3]]
+    for directory in candidates:
+        if not directory.is_dir():
+            continue
+        for name in ("images/thumbnail.png", "images/thumbnail.jpg"):
+            candidate = directory / name
+            if candidate.exists():
+                try:
+                    return str(candidate.relative_to(REPO_ROOT))
+                except ValueError:
+                    return None
+    return None
+
+
 def _verified(path: str | None) -> str | None:
     """Drop a control-panel path that is not actually on disk.
 
@@ -316,6 +340,7 @@ def main() -> int:
                 "custom": key.startswith("custom_") or key == "container_chart",
                 "is_filter": key.startswith("filter_"),
                 "source": meta.get("source"),
+                "thumbnail": _find_thumbnail(meta.get("source")),
                 "control_panel": _verified(
                     meta.get("control_panel")
                     or CONTROL_PANEL_OVERRIDES.get(key)
@@ -333,6 +358,9 @@ def main() -> int:
         "warnings": {
             "registered_without_metadata": sorted(
                 e["viz_type"] for e in entries if not e["metadata_found"]
+            ),
+            "registered_without_thumbnail": sorted(
+                e["viz_type"] for e in entries if not e["thumbnail"]
             ),
             "registered_without_control_panel": sorted(
                 e["viz_type"] for e in entries if not e["control_panel"]

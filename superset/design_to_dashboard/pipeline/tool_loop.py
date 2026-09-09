@@ -38,6 +38,13 @@ logger = logging.getLogger(__name__)
 ENVELOPE_INSTRUCTIONS = """
 ## Response envelope
 
+**These tools are not native tools and you cannot call them directly.** You may
+also have a real tool surface available (for reading an attached image, say);
+that is unrelated. The *only* way to use the tools below is to emit the JSON
+envelope described here — this program reads it, runs the tool, and returns the
+result to you. If you look for these tools among your own and do not find them,
+that is expected: emit the envelope instead. Never report them as unreachable.
+
 Every reply is a single JSON object and nothing else. Choose exactly one shape.
 
 To call tools (they run in parallel, so batch independent calls together):
@@ -101,6 +108,7 @@ def run_tool_loop(
     max_iterations: int = 6,
     on_progress: Any = None,
     on_thinking: Any = None,
+    image_paths: list[str] | None = None,
 ) -> ToolLoopResult:
     """Drive the model until it returns ``final`` or exhausts its budget."""
     transcript: list[dict[str, Any]] = []
@@ -109,7 +117,12 @@ def run_tool_loop(
 
     for iteration in range(1, max_iterations + 1):
         prompt = _compose(user_prompt, transcript, max_tool_calls - calls_made)
-        response = provider.complete(system_prompt, prompt, on_thinking=on_thinking)
+        response = provider.complete(
+            system_prompt,
+            prompt,
+            image_paths=image_paths,
+            on_thinking=on_thinking,
+        )
         cost += response.cost_usd or 0.0
         payload = extract_json(response.text)
 

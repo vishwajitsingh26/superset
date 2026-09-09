@@ -98,6 +98,12 @@ def build_query_context(
     x_axis = params.get("x_axis")
     if x_axis and x_axis not in columns:
         columns.insert(0, x_axis)
+    # Never carry a grain onto the axis column: on an integer "year" column it
+    # emits DATE_TRUNC against a number and the chart fails to render.
+    columns = [
+        {k: v for k, v in c.items() if k != "timeGrain"} if isinstance(c, dict) else c
+        for c in columns
+    ]
     # De-duplicate while preserving order.
     seen: set[str] = set()
     ordered_columns = []

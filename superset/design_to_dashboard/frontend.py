@@ -16,13 +16,22 @@
 # under the License.
 """Make a freshly generated plugin visible to the running frontend.
 
-`webpack.config.js` builds `resolve.alias` from `package.json`'s `file:`
-dependencies **when the config is evaluated**, and points each alias straight at
-the package's `src/`. Two consequences:
+`webpack.config.js` aliases a `file:` dependency to its source, but only if the
+package is **already symlinked into `node_modules`**:
 
-* `npm install` is not what matters -- the alias bypasses `node_modules`.
-* A dependency added after the dev server started is invisible until the dev
-  server is **restarted**, because that is when the alias map is rebuilt.
+    const srcPath = path.join(APP_DIR, `./node_modules/${pkg}/src`);
+    if (pkg.startsWith('@superset-ui') && fs.existsSync(srcPath)) { ... }
+
+So a newly written plugin needs **both** steps, in order:
+
+1. `npm install` -- creates the `node_modules` symlink for the new `file:`
+   dependency. Without it the `existsSync` check fails, no alias is created, and
+   the build fails with `Module not found`.
+2. a dev-server **restart** -- the alias map is built when the config is
+   evaluated, so a dependency added mid-session is invisible until then.
+
+Restarting alone is not enough, and was the cause of a real `Module not found`
+failure.
 
 This restarts a dev server that was started detached. A dev server running in
 someone's terminal is left alone; the caller is told to restart it instead.
@@ -61,10 +70,43 @@ def find_dev_server() -> int | None:
     return int(pids[0]) if pids else None
 
 
+def link_plugins(repo_root: str | pathlib.Path, timeout: int = 600) -> dict[str, Any]:
+    """Run `npm install` so new `file:` dependencies are linked into node_modules."""
+    frontend = pathlib.Path(repo_root) / "superset-frontend"
+    env = dict(os.environ)
+    if NODE_BIN.is_dir():
+        env["PATH"] = f"{NODE_BIN}:{env.get('PATH', '')}"
+    try:
+        completed = subprocess.run(  # noqa: S603
+            ["npm", "install", "--no-audit", "--no-fund"],
+            cwd=str(frontend),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            shell=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as ex:
+        return {"linked": False, "reason": f"npm install failed: {ex}"}
+    if completed.returncode != 0:
+        return {
+            "linked": False,
+            "reason": f"npm install exited {completed.returncode}: "
+            f"{(completed.stderr or completed.stdout)[-300:]}",
+        }
+    return {"linked": True}
+
+
 def restart_dev_server(repo_root: str | pathlib.Path) -> dict[str, Any]:
-    """Restart the webpack dev server so new plugin aliases are picked up."""
+    """Link new plugins, then restart the dev server so aliases are rebuilt."""
     root = pathlib.Path(repo_root)
     frontend = root / "superset-frontend"
+
+    linked = link_plugins(root)
+    if not linked.get("linked"):
+        return {"restarted": False, "reason": linked.get("reason")}
+
     pid = find_dev_server()
 
     if pid is None:

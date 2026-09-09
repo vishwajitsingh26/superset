@@ -115,6 +115,8 @@ export default function DesignToDashboard() {
     elapsed,
     thinking,
     thinkingStage,
+    pending,
+    reply,
     start,
     reset,
   } = useDesignToDashboard();
@@ -169,6 +171,8 @@ export default function DesignToDashboard() {
             elapsed={elapsed}
             thinking={thinking}
             thinkingStage={thinkingStage}
+            pending={pending}
+            onReply={reply}
             error={error}
             requirement={requirement}
             previewUrl={previewUrl}

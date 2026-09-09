@@ -111,6 +111,11 @@ class ClaudeAgentSdkProvider:
             # AssistantMessage -- i.e. at the very end of the stage, which is
             # useless for a live view. Partial messages stream the deltas.
             include_partial_messages=True,
+            # Messages travel as JSON over stdio. An image returned by the Read
+            # tool is base64 in that payload, and the default 1 MB buffer is
+            # exceeded by a contact sheet of any size -- the failure is
+            # "JSON message exceeded maximum buffer size".
+            max_buffer_size=32 * 1024 * 1024,
         )
 
         thinking_parts: list[str] = []

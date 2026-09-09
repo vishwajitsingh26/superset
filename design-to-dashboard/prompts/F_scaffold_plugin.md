@@ -80,6 +80,31 @@ it exactly:
 `useLegacyApi: false`, and appropriate `behaviors` (`Behavior.InteractiveChart`
 when it should participate in cross-filtering).
 
+## Performance is part of the brief
+
+These plugins run in dashboards that are often embedded and reloaded frequently,
+so a slow chart is a slow product. Fidelity comes first; performance comes
+immediately after.
+
+- **Shape the data in `transformProps`, not in the component.** It runs once per
+  data change; the component runs on every render.
+- **Do not sort, group or aggregate in render.** If the design needs a top-5 cut
+  or a descending order, express it in `buildQuery` as `row_limit` and `orderby`
+  so the database does it, not the browser.
+- **Memoise derived values** (`useMemo`) and avoid rebuilding arrays or objects
+  inline in JSX.
+- **Keep the DOM proportional to the data shown.** A ranked list of five bars
+  should render five elements, not a virtualised grid.
+- **No layout thrash.** Do not read `offsetWidth`/`getBoundingClientRect` during
+  render; use the `width` and `height` props Superset already passes.
+- **Import narrowly.** Pull in only what you use; a chart should not drag a
+  charting library in for a handful of `div`s.
+
+If the design's structure is simple — bars, a value, a list — render it with
+plain elements and CSS rather than a charting library. It is faster, and it
+matches the design more precisely than configuring a generic chart to look
+like it.
+
 ## Output
 
 ```json

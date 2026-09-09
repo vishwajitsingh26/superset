@@ -41,11 +41,14 @@ Produce the `POST /api/v1/chart/` body that renders this region.
 - **Respect control types.** A `SelectControl` takes one of its declared `choices`. A metric control takes a saved metric name or a well-formed adhoc metric object. A `BoundsControl` takes `[min, max]`. Read the schema; do not pattern-match from other charts.
 - **Adhoc metrics** use the full shape: `{ "expressionType": "SQL", "sqlExpression": "...", "label": "...", "hasCustomLabel": true, "optionName": "metric_<uuid>" }`. Simple metrics use `{ "expressionType": "SIMPLE", "column": {...}, "aggregate": "SUM", "label": "..." }`.
 - **Obey the design-system contract** for palette, number format, date format, time grain, legend, and `slice_name` convention — unless this region's `observed` explicitly contradicts it, in which case follow the region and note it in `unmapped`.
-- **Magnitude suffixes need `SMART_NUMBER`.** If the region's `observed` text
-  shows an abbreviated number (`8,920.4M`, `1.2K`, `$3.4B`), set the number
-  format to `SMART_NUMBER` — not `,.1f`, which drops the suffix and makes the
-  value read as a different quantity. Use a fixed decimal format only when the
-  design shows the unabbreviated number.
+- **Abbreviated numbers: check the magnitude first.** If the design shows
+  `8.92M` and the stored value is in base units, use D3 SI (`,.3s`) or
+  `SMART_NUMBER` — they scale and append the letter. If the stored value is
+  **already scaled** (a `global_sales` column already in millions, summing to
+  `8920.13`, drawn as `8,920.4M`), SI notation gives `8.92k` and is wrong by
+  three orders of magnitude: keep a plain format such as `",.1f"` and put the
+  unit in the subheader or label. `currency_format` is for currency symbols,
+  not magnitude letters.
 - **Always set `row_limit`** and a sane `adhoc_filters` array (`[]` if none).
 - **Set the time range explicitly.** Default to `"No filter"` rather than leaving it unset.
 - Use only columns and metrics named in your binding. Nothing else exists.

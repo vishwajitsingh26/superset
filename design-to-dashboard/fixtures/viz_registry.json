@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 53,
+  "count": 55,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -25,6 +25,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-ag-grid-table/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-ag-grid-table/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-ag-grid-table/src/controlPanel.tsx",
       "metadata_found": true
     },
@@ -45,6 +46,7 @@
       "custom": false,
       "is_filter": false,
       "source": "METADATA_OVERRIDES",
+      "thumbnail": null,
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberWithTrendline/controlPanel.tsx",
       "metadata_found": true
     },
@@ -69,6 +71,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberTotal/controlPanel.ts",
       "metadata_found": true
     },
@@ -92,6 +95,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/BoxPlot/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/BoxPlot/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BoxPlot/controlPanel.ts",
       "metadata_found": true
     },
@@ -114,6 +118,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bubble/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bubble/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bubble/controlPanel.ts",
       "metadata_found": true
     },
@@ -136,6 +141,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Bubble/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Bubble/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Bubble/controlPanel.tsx",
       "metadata_found": true
     },
@@ -155,6 +161,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bullet/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bullet/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Bullet/controlPanel.ts",
       "metadata_found": true
     },
@@ -176,6 +183,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-calendar/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-calendar/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-calendar/src/controlPanel.ts",
       "metadata_found": true
     },
@@ -195,6 +203,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-cartodiagram/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-cartodiagram/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-cartodiagram/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
@@ -214,6 +223,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-chord/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-chord/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-chord/src/controlPanel.ts",
       "metadata_found": true
     },
@@ -238,6 +248,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Compare/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Compare/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/Compare/controlPanel.ts",
       "metadata_found": true
     },
@@ -259,7 +270,49 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_labeled_hbar",
+      "plugin_class": "SupersetPluginChartLabeledHbar",
+      "name": "Custom Labeled Horizontal Bar",
+      "category": "Ranking",
+      "description": "Horizontal bars ranked by value on a shared left baseline. Each category name sits above its bar and the formatted value sits outside the right end of the bar. No axis, ticks, gridlines or legend.",
+      "tags": [
+        "Bar",
+        "Categorical",
+        "Comparison",
+        "Ranking",
+        "Custom"
+      ],
+      "behaviors": [],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-labeled-hbar/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-labeled-hbar/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-labeled-hbar/src/plugin/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_ranked_bar",
+      "plugin_class": "RankedBarChartPlugin",
+      "name": "Custom Ranked Bar",
+      "category": "Ranking",
+      "description": "Ranked horizontal bars with the category label above each bar and the formatted value beside it. No axis, gridlines, ticks or legend, for compact \"top N\" cards where the labels are the axis.",
+      "tags": [
+        "Bar",
+        "Categorical",
+        "Comparison",
+        "Ranking"
+      ],
+      "behaviors": [],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-ranked-bar/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-ranked-bar/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-ranked-bar/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
     {
@@ -286,6 +339,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Area/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Area/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Area/controlPanel.tsx",
       "metadata_found": true
     },
@@ -311,6 +365,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/controlPanel.tsx",
       "metadata_found": true
     },
@@ -338,6 +393,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Bar/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Bar/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Bar/controlPanel.tsx",
       "metadata_found": true
     },
@@ -362,6 +418,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/controlPanel.tsx",
       "metadata_found": true
     },
@@ -388,6 +445,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Scatter/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Scatter/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Scatter/controlPanel.tsx",
       "metadata_found": true
     },
@@ -413,6 +471,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/SmoothLine/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/SmoothLine/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/SmoothLine/controlPanel.tsx",
       "metadata_found": true
     },
@@ -438,6 +497,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Step/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Step/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Step/controlPanel.tsx",
       "metadata_found": true
     },
@@ -457,6 +517,7 @@
       "custom": false,
       "is_filter": true,
       "source": "superset-frontend/src/filters/components/Range/index.ts",
+      "thumbnail": "superset-frontend/src/filters/components/Range/images/thumbnail.png",
       "control_panel": "superset-frontend/src/filters/components/Range/controlPanel.ts",
       "metadata_found": true
     },
@@ -471,6 +532,7 @@
       "custom": false,
       "is_filter": true,
       "source": null,
+      "thumbnail": null,
       "control_panel": null,
       "metadata_found": false
     },
@@ -490,6 +552,7 @@
       "custom": false,
       "is_filter": true,
       "source": "superset-frontend/src/filters/components/Time/index.ts",
+      "thumbnail": "superset-frontend/src/filters/components/Time/images/thumbnail.png",
       "control_panel": "superset-frontend/src/filters/components/Time/controlPanel.ts",
       "metadata_found": true
     },
@@ -504,6 +567,7 @@
       "custom": false,
       "is_filter": true,
       "source": null,
+      "thumbnail": null,
       "control_panel": null,
       "metadata_found": false
     },
@@ -518,6 +582,7 @@
       "custom": false,
       "is_filter": true,
       "source": null,
+      "thumbnail": null,
       "control_panel": null,
       "metadata_found": false
     },
@@ -544,6 +609,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Funnel/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Funnel/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Funnel/controlPanel.tsx",
       "metadata_found": true
     },
@@ -567,6 +633,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Gantt/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Gantt/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Gantt/controlPanel.tsx",
       "metadata_found": true
     },
@@ -592,6 +659,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Gauge/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Gauge/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Gauge/controlPanel.tsx",
       "metadata_found": true
     },
@@ -619,6 +687,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Graph/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Graph/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Graph/controlPanel.tsx",
       "metadata_found": true
     },
@@ -633,6 +702,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-handlebars/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-handlebars/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-handlebars/src/plugin/controlPanel.tsx",
       "metadata_found": true
     },
@@ -654,6 +724,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Heatmap/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Heatmap/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Heatmap/controlPanel.tsx",
       "metadata_found": true
     },
@@ -668,6 +739,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-hello-world/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-hello-world/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-hello-world/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
@@ -687,6 +759,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Histogram/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Histogram/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Histogram/controlPanel.tsx",
       "metadata_found": true
     },
@@ -703,6 +776,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-horizon/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-horizon/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-horizon/src/controlPanel.ts",
       "metadata_found": true
     },
@@ -724,6 +798,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-map-box/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-map-box/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-map-box/src/controlPanel.ts",
       "metadata_found": true
     },
@@ -743,6 +818,7 @@
       "custom": false,
       "is_filter": false,
       "source": "METADATA_OVERRIDES",
+      "thumbnail": null,
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/MixedTimeseries/controlPanel.tsx",
       "metadata_found": true
     },
@@ -761,6 +837,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-paired-t-test/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-paired-t-test/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-paired-t-test/src/controlPanel.ts",
       "metadata_found": true
     },
@@ -779,6 +856,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-parallel-coordinates/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-parallel-coordinates/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-parallel-coordinates/src/controlPanel.ts",
       "metadata_found": true
     },
@@ -798,6 +876,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-partition/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-partition/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-partition/src/controlPanel.tsx",
       "metadata_found": true
     },
@@ -825,6 +904,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Pie/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Pie/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Pie/controlPanel.tsx",
       "metadata_found": true
     },
@@ -839,6 +919,7 @@
       "custom": false,
       "is_filter": false,
       "source": null,
+      "thumbnail": null,
       "control_panel": "superset-frontend/plugins/plugin-chart-pivot-table/src/plugin/controlPanel.tsx",
       "metadata_found": false
     },
@@ -857,6 +938,7 @@
       "custom": false,
       "is_filter": false,
       "source": "METADATA_OVERRIDES",
+      "thumbnail": null,
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/BigNumber/BigNumberPeriodOverPeriod/controlPanel.ts",
       "metadata_found": true
     },
@@ -883,6 +965,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Radar/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Radar/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Radar/controlPanel.tsx",
       "metadata_found": true
     },
@@ -905,6 +988,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-rose/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-rose/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-rose/src/controlPanel.tsx",
       "metadata_found": true
     },
@@ -924,6 +1008,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Sankey/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Sankey/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Sankey/controlPanel.tsx",
       "metadata_found": true
     },
@@ -947,6 +1032,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Sunburst/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Sunburst/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Sunburst/controlPanel.tsx",
       "metadata_found": true
     },
@@ -973,6 +1059,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-table/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-table/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-table/src/controlPanel.tsx",
       "metadata_found": true
     },
@@ -991,6 +1078,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/TimePivot/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/TimePivot/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-preset-chart-nvd3/src/TimePivot/controlPanel.ts",
       "metadata_found": true
     },
@@ -1013,6 +1101,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/src/visualizations/TimeTable/index.ts",
+      "thumbnail": "superset-frontend/src/visualizations/TimeTable/images/thumbnail.png",
       "control_panel": null,
       "metadata_found": true
     },
@@ -1034,6 +1123,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Tree/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Tree/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Tree/controlPanel.tsx",
       "metadata_found": true
     },
@@ -1060,6 +1150,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Treemap/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Treemap/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Treemap/controlPanel.tsx",
       "metadata_found": true
     },
@@ -1079,6 +1170,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-echarts/src/Waterfall/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-echarts/src/Waterfall/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-echarts/src/Waterfall/controlPanel.tsx",
       "metadata_found": true
     },
@@ -1098,6 +1190,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/plugin-chart-word-cloud/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-word-cloud/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/plugin-chart-word-cloud/src/plugin/controlPanel.tsx",
       "metadata_found": true
     },
@@ -1126,6 +1219,7 @@
       "custom": false,
       "is_filter": false,
       "source": "superset-frontend/plugins/legacy-plugin-chart-world-map/src/index.ts",
+      "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-world-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-world-map/src/controlPanel.ts",
       "metadata_found": true
     }
@@ -1136,6 +1230,15 @@
       "filter_timecolumn",
       "filter_timegrain",
       "pivot_table_v2"
+    ],
+    "registered_without_thumbnail": [
+      "big_number",
+      "filter_select",
+      "filter_timecolumn",
+      "filter_timegrain",
+      "mixed_timeseries",
+      "pivot_table_v2",
+      "pop_kpi"
     ],
     "registered_without_control_panel": [
       "filter_select",

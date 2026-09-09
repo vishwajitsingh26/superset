@@ -57,6 +57,42 @@ class Session:
     thinking_stage: str = ""
     lock: threading.Lock = field(default_factory=threading.Lock)
 
+    # --- conversation gates -------------------------------------------------
+    # A run pauses here and waits for the user. Questions are only ever asked
+    # while planning; once the plan is approved the run executes without
+    # stopping, so nothing is written while an answer is outstanding.
+    pending: dict[str, Any] | None = None
+    reply: dict[str, Any] | None = None
+    _replied: threading.Event = field(default_factory=threading.Event)
+
+    def ask(self, kind: str, payload: dict[str, Any], timeout: int = 3600) -> dict[str, Any]:
+        """Publish a question and block the worker until the user answers.
+
+        ``kind`` is ``questions`` (stage B could not bind something),
+        ``clarify`` (open choices such as embedded mode) or ``plan`` (approve
+        the plan before anything is created).
+        """
+        self.pending = {"kind": kind, **payload}
+        self.status = "waiting"
+        self._replied.clear()
+        self.publish("awaiting_input", kind=kind, **payload)
+        if not self._replied.wait(timeout=timeout):
+            raise TimeoutError(f"no answer to {kind!r} within {timeout}s")
+        answer = self.reply or {}
+        self.pending = None
+        self.reply = None
+        self.status = "running"
+        self.publish("input_received", kind=kind, answer=answer)
+        return answer
+
+    def answer(self, payload: dict[str, Any]) -> bool:
+        """Deliver the user's answer and release the waiting worker."""
+        if self.pending is None:
+            return False
+        self.reply = payload
+        self._replied.set()
+        return True
+
     def set_thinking(self, stage: str, text: str) -> None:
         with self.lock:
             self.thinking_stage = stage

@@ -19,8 +19,9 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { t } from '@apache-superset/core/translation';
 import { styled } from '@apache-superset/core/theme';
-import { StageEvent } from './useDesignToDashboard';
 import { buildConversation, Stage } from './stageModel';
+import AskPanel from './AskPanel';
+import { PendingAsk, StageEvent } from './useDesignToDashboard';
 
 const Wrap = styled.div`
   ${({ theme }) => `
@@ -273,6 +274,8 @@ type Props = {
   elapsed: number;
   thinking: string;
   thinkingStage: string;
+  pending: PendingAsk | null;
+  onReply: (answer: Record<string, unknown>) => void;
   error: string | null;
   requirement: string;
   previewUrl: string | null;
@@ -288,6 +291,8 @@ export default function ChatPanel({
   elapsed,
   thinking,
   thinkingStage,
+  pending,
+  onReply,
   error,
   requirement,
   previewUrl,
@@ -300,6 +305,7 @@ export default function ChatPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const busy = state === 'running' || state === 'uploading';
+  const waiting = state === 'waiting' && pending !== null;
   const started = busy || state === 'done' || state === 'error';
 
   const { stages, result, failure, question } = buildConversation(
@@ -361,6 +367,19 @@ export default function ChatPanel({
                   <StepRow key={stage.key} stage={stage} />
                 ))}
               </Steps>
+            </Bubble>
+          </Turn>
+        )}
+
+        {waiting && pending && (
+          <Turn from="agent">
+            <Bubble from="agent">
+              <Who>
+                {pending.kind === 'plan'
+                  ? t('Review the plan')
+                  : t('A few questions first')}
+              </Who>
+              <AskPanel pending={pending} onReply={onReply} />
             </Bubble>
           </Turn>
         )}

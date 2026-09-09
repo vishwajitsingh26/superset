@@ -30,13 +30,22 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from superset.design_to_dashboard.llm.base import LLMError, LLMProvider
+from superset.design_to_dashboard.llm.base import (
+    LLMError,
+    LLMProvider,
+    LLMTimeout,
+)
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
 
 logger = logging.getLogger(__name__)
 
 # The local plugin with correct Superset 6.1 imports; used as the exemplar so
 # generated code matches this checkout rather than an older convention.
+# Generating a whole plugin package is the longest call in the pipeline --
+# measured at 8-10 minutes. The pipeline-wide default of 300s is far too tight
+# and produced "Agent SDK timed out" mid-generation.
+SCAFFOLD_TIMEOUT = 1200
+
 REFERENCE_PLUGIN = "superset-frontend/plugins/plugin-chart-hello-world"
 REFERENCE_FILES = (
     "src/index.ts",
@@ -207,10 +216,15 @@ def run_one(
         response = provider.complete(
             build_system_prompt(prompts_dir, repo_root),
             build_user_prompt(region, binding, decision, design_system),
+            timeout=SCAFFOLD_TIMEOUT,
             on_thinking=on_thinking,
         )
         result.cost_usd = response.cost_usd or 0.0
         scaffold = extract_json(response.text)
+    except LLMTimeout:
+        # Let the runner's retry see this rather than swallowing it into a
+        # result the caller cannot distinguish from a bad scaffold.
+        raise
     except Exception as ex:  # noqa: BLE001 - one plugin must not kill the run
         result.error = str(ex)
         return result

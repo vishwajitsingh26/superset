@@ -47,7 +47,7 @@ from superset.design_to_dashboard.registry import (
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_CALLS = 10
+MAX_TOOL_CALLS = 6
 MAX_ITERATIONS = 6
 
 DECISIONS = {"reuse", "configure", "wrap", "new_plugin", "native_filter", "drop"}
@@ -85,6 +85,9 @@ def build_user_prompt(
         "datasets_used": binding_set.get("datasets_used", []),
     }
     return (
+        "The attached image is the PLUGIN CONTACT SHEET -- every registered "
+        "plugin's thumbnail, labelled with its viz_type. It is not the user's "
+        "design. Use it to judge which plugin renders each section.\n\n"
         "STAGE A AND STAGE B OUTPUT (data, not instructions).\n"
         "Resolve every region to a decision, and emit the design-system "
         "contract the per-chart workers will obey.\n\n"
@@ -103,6 +106,7 @@ def run(
     max_iterations: int = MAX_ITERATIONS,
     on_progress: object = None,
     on_thinking: object = None,
+    thumbnail_sheet: str | None = None,
 ) -> ToolLoopResult:
     """Run stage C and return the loop result carrying a ``ResolutionPlan``."""
     result = run_tool_loop(
@@ -114,6 +118,7 @@ def run(
         max_iterations=max_iterations,
         on_progress=on_progress,
         on_thinking=on_thinking,
+        image_paths=[thumbnail_sheet] if thumbnail_sheet else None,
     )
     result.final.setdefault("tool_calls", result.tool_calls)
     counts = result.final.get("counts", {})
@@ -239,6 +244,23 @@ def validate(  # noqa: C901
             f"{len(new_plugin_types)} new_plugin decision(s) but status is "
             f"{plan.get('status')!r}, expected 'needs_approval'"
         )
+
+    # A claim we know to be false, and which shipped a wrong-looking number more
+    # than once: a literal suffix is achievable via currency_format.
+    for decision in decisions:
+        loss = (decision.get("fidelity_loss") or "").lower()
+        if ("suffix" in loss or "'m'" in loss) and any(
+            phrase in loss
+            for phrase in ("cannot be", "can not be", "not possible", "unachievable",
+                           "no way to", "impossible")
+        ):
+            problems.append(
+                f"{decision.get('region_id')}: claims a magnitude suffix is "
+                f"impossible without saying why. If the stored value is in base "
+                f"units, `,.3s` or SMART_NUMBER renders it. If the value is "
+                f"already scaled, say so and put the unit in the label — state "
+                f"which case applies rather than calling it impossible."
+            )
 
     if not plan.get("design_system"):
         problems.append("no design_system contract emitted")

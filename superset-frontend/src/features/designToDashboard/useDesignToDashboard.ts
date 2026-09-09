@@ -29,6 +29,9 @@ export type StageEvent = {
     | 'registry_rebuilt'
     | 'frontend_restarted'
     | 'frontend_restart_needed'
+    | 'awaiting_input'
+    | 'input_received'
+    | 'cancelled'
     | 'retry'
     | 'needs_input'
     | 'needs_approval'
@@ -39,6 +42,9 @@ export type StageEvent = {
   summary?: string;
   tool?: string;
   thinking?: string;
+  kind?: string;
+  plan?: unknown[];
+  fidelity_notes?: unknown[];
   ref?: string;
   viz_type?: string;
   ok?: boolean;
@@ -57,7 +63,28 @@ export type StageEvent = {
   at?: number;
 };
 
-type RunState = 'idle' | 'uploading' | 'running' | 'done' | 'error';
+type RunState = 'idle' | 'uploading' | 'running' | 'waiting' | 'done' | 'error';
+
+/** What the run is blocked on. Only ever set while planning. */
+export type PendingAsk = {
+  kind: 'questions' | 'plan';
+  label?: string;
+  questions?: {
+    id: string;
+    question: string;
+    why_it_matters?: string;
+    options?: string[];
+    default?: string;
+  }[];
+  plan?: {
+    step: number;
+    what: string;
+    why?: string;
+    exactness?: string;
+    cost?: string;
+  }[];
+  counts?: Record<string, number>;
+};
 
 const ENDPOINT = '/api/v1/design_to_dashboard';
 
@@ -68,6 +95,7 @@ export function useDesignToDashboard() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [thinking, setThinking] = useState('');
   const [thinkingStage, setThinkingStage] = useState('');
+  const [pending, setPending] = useState<PendingAsk | null>(null);
   const cursorRef = useRef(0);
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
@@ -140,9 +168,13 @@ export function useDesignToDashboard() {
             .then(({ json }) => {
               const payload = json as {
                 status: string;
+                pending?: PendingAsk | null;
                 events: StageEvent[];
                 cursor?: number;
                 thinking?: string;
+                kind?: string;
+                plan?: unknown[];
+                fidelity_notes?: unknown[];
                 thinking_stage?: string;
                 error?: string | null;
               };
@@ -157,6 +189,9 @@ export function useDesignToDashboard() {
               }
               setThinking(payload.thinking ?? '');
               setThinkingStage(payload.thinking_stage ?? '');
+              setPending(payload.pending ?? null);
+              if (payload.status === 'waiting') setState('waiting');
+              else if (payload.status === 'running') setState('running');
               if (payload.status === 'done') {
                 setState('done');
                 stopPolling();
@@ -183,9 +218,26 @@ export function useDesignToDashboard() {
     [stopPolling],
   );
 
+  const reply = useCallback(
+    async (answer: Record<string, unknown>) => {
+      if (!sessionId) return;
+      // Optimistically clear so the form cannot be submitted twice while the
+      // worker wakes up; the next poll restores it if something went wrong.
+      setPending(null);
+      setState('running');
+      await SupersetClient.post({
+        endpoint: `${ENDPOINT}/session/${sessionId}/reply/`,
+        jsonPayload: answer,
+      });
+    },
+    [sessionId],
+  );
+
   return {
     events,
     state,
+    pending,
+    reply,
     error,
     sessionId,
     elapsed,

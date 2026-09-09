@@ -34,11 +34,13 @@ export type Stage = {
 const STAGES: { key: string; title: string }[] = [
   { key: 'A', title: 'Read the design' },
   { key: 'B', title: 'Find matching data' },
+  { key: 'clarify', title: 'Check for anything unclear' },
   { key: 'C', title: 'Choose chart types' },
   { key: 'F', title: 'Build custom chart plugins' },
   { key: 'D', title: 'Configure charts' },
   { key: 'E', title: 'Lay out the dashboard' },
   { key: 'apply', title: 'Create the dashboard' },
+  { key: 'verify', title: 'Check it renders' },
 ];
 
 export type Conversation = {

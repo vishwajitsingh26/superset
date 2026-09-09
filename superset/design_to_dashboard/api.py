@@ -116,6 +116,30 @@ class DesignToDashboardRestApi(BaseApi):
         runner.start(current_app._get_current_object(), session)  # noqa: SLF001
         return self.response(202, id=session.id, status="running")
 
+    @expose("/session/<session_id>/reply/", methods=("POST",))
+    @protect()
+    @safe
+    @event_logger.log_this
+    def reply(self, session_id: str) -> FlaskResponse:
+        """Answer whatever the run is waiting on, and let it continue."""
+        session = session_store.get(session_id, user_id=g.user.id)
+        if session is None:
+            return self.response_404()
+        if session.pending is None:
+            return self.response_400(message="this run is not waiting for input")
+
+        payload = request.json or {}
+        kind = session.pending.get("kind")
+        # A plan must be explicitly approved; anything else is a rejection and
+        # stops the run rather than proceeding on an assumption.
+        if kind == "plan" and "approved" not in payload:
+            return self.response_400(message="plan replies need an 'approved' boolean")
+
+        delivered = session.answer(payload)
+        if not delivered:
+            return self.response_400(message="nothing was waiting for that answer")
+        return self.response(200, id=session.id, status=session.status)
+
     @expose("/session/<session_id>/events/", methods=("GET",))
     @protect()
     @safe
@@ -177,5 +201,6 @@ class DesignToDashboardRestApi(BaseApi):
             images=len(session.image_paths),
             result=session.result,
             error=session.error,
+            pending=session.pending,
             **snapshot,
         )

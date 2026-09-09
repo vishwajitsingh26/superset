@@ -218,6 +218,18 @@ def validate(
                     f"references column {column!r}, which the binding does not name"
                 )
 
+    # A time grain on a non-temporal column makes Superset emit
+    # DATE_TRUNC('YEAR', <number>), which the database rejects. Stage B decides
+    # whether a grain is valid; stage D must not override that.
+    if not binding.get("time_grain"):
+        for where, grain in _time_grains(spec, decoded):
+            problems.append(
+                f"{where} sets a time grain ({grain!r}) but the binding set "
+                f"none — column {binding.get('time_column')!r} is not a real "
+                f"temporal type, so this emits DATE_TRUNC against a number and "
+                f"the chart fails to render"
+            )
+
     children = decision.get("children") or []
     if children:
         blob = json.dumps(decoded)
@@ -267,6 +279,37 @@ def _names_of(entry: Any) -> set[str]:
                 names.add(value["column_name"])
         return names
     return set()
+
+
+def _time_grains(spec: dict[str, Any], decoded: dict[str, Any]) -> list[tuple[str, str]]:
+    """Every place a time grain can hide.
+
+    `params.time_grain_sqla` is the obvious one, but a grain is also carried on
+    an adhoc x-axis column inside the query context
+    (`queries[].columns[].timeGrain`) -- which is where a real failure came
+    from, invisible to a params-only check.
+    """
+    found: list[tuple[str, str]] = []
+    grain = decoded.get("time_grain_sqla")
+    if grain:
+        found.append(("params.time_grain_sqla", grain))
+
+    raw = (spec.get("request") or {}).get("body", {}).get("query_context")
+    context = spec.get("query_context_decoded")
+    if isinstance(raw, str) and raw.strip() and not isinstance(context, dict):
+        try:
+            context = json.loads(raw)
+        except ValueError:
+            context = None
+    if isinstance(context, dict):
+        for index, query in enumerate(context.get("queries") or []):
+            for column in query.get("columns") or []:
+                if isinstance(column, dict) and column.get("timeGrain"):
+                    found.append(
+                        (f"query_context.queries[{index}].columns[].timeGrain",
+                         column["timeGrain"])
+                    )
+    return found
 
 
 def _referenced_columns(params: dict[str, Any]) -> set[str]:

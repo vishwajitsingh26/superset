@@ -96,6 +96,15 @@ REGISTRY = (
     / "viz_registry.json"
 )
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+# One labelled image of every plugin's thumbnail. A plugin is a UI component, so
+# its thumbnail is the most direct evidence of whether it matches a design
+# section -- better than a text description, and one image rather than 46.
+THUMBNAIL_SHEET = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "design-to-dashboard"
+    / "fixtures"
+    / "plugin_thumbnails.png"
+)
 
 
 def start(app: Any, session: Any) -> None:
@@ -126,6 +135,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             )
             from superset.design_to_dashboard.stages import (
                 b_bind,
+                clarify,
                 c_resolve,
                 d_configure,
                 e_layout,
@@ -200,16 +210,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             )
             total_cost += binding.cost_usd
             session.artifacts["binding_set"] = binding.final
-            if binding.final.get("status") == "needs_input":
-                session.status = "needs_input"
-                session.publish(
-                    "needs_input",
-                    stage="B",
-                    label="I need a few answers before continuing",
-                    questions=binding.final.get("questions", []),
-                    cost=round(total_cost, 4),
-                )
-                return
+            binding_questions = binding.final.get("questions", [])
             _reasoning = session.take_thinking()
             session.publish(
                 "stage_complete",
@@ -224,17 +225,62 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 cost=round(total_cost, 4),
             )
 
+            # ---- Clarify: the only place the run asks anything ----------------
+            session.publish(
+                "stage_start", stage="clarify", label="Checking for anything unclear"
+            )
+            clarification, clarify_cost = clarify.run(
+                provider,
+                design_analysis,
+                binding.final,
+                PROMPTS,
+                on_thinking=_thinking_for("clarify"),
+            )
+            total_cost += clarify_cost
+            questions = list(binding_questions) + list(
+                clarification.get("questions") or []
+            )
+            _reasoning = session.take_thinking()
+            session.publish(
+                "stage_complete",
+                stage="clarify",
+                label="Checked for anything unclear",
+                thinking=_reasoning,
+                summary=(
+                    f"{len(questions)} question(s)" if questions else "nothing unclear"
+                ),
+                cost=round(total_cost, 4),
+            )
+
+            answers: dict[str, Any] = {}
+            if questions:
+                # Blocks here. Everything past plan approval runs without
+                # stopping, so this is the last chance to remove a guess.
+                answers = session.ask(
+                    "questions",
+                    {
+                        "label": "A few things before I plan this",
+                        "questions": questions,
+                    },
+                )
+
             # ---- C: resolve --------------------------------------------------
             session.publish("stage_start", stage="C", label="Choosing chart types")
+            binding_with_answers = dict(binding.final)
+            if answers:
+                binding_with_answers["user_answers"] = answers
             plan = c_resolve.run(
                 provider,
                 gateway,
                 design_analysis,
-                binding.final,
+                binding_with_answers,
                 PROMPTS,
                 str(REGISTRY),
                 on_progress=_tool_progress,
                 on_thinking=_thinking_for("C"),
+                thumbnail_sheet=str(THUMBNAIL_SHEET)
+                if THUMBNAIL_SHEET.exists()
+                else None,
             )
             total_cost += plan.cost_usd
             session.artifacts["plan"] = plan.final
@@ -251,6 +297,25 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 counts=counts,
                 cost=round(total_cost, 4),
             )
+            # ---- Approve the plan; nothing is created before this ------------
+            approval = session.ask(
+                "plan",
+                {
+                    "label": "Here is what I will build — approve to continue",
+                    "plan": plan.final.get("plan_for_review") or [],
+                    "decisions": plan.final.get("decisions", []),
+                    "counts": plan.final.get("counts", {}),
+                },
+            )
+            if not approval.get("approved"):
+                session.status = "cancelled"
+                session.publish(
+                    "cancelled",
+                    label="Plan rejected — nothing was created",
+                    detail=approval.get("feedback"),
+                )
+                return
+
             # ---- F: scaffold plugins the design actually needs ---------------
             new_plugin_decisions = [
                 d
@@ -294,16 +359,24 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                             reused=True,
                         )
                         continue
-                    scaffold = f_scaffold.run_one(
-                        provider,
-                        regions.get(region_id, {}),
-                        bindings.get(region_id, {}),
-                        decision,
-                        plan.final.get("design_system", {}),
-                        PROMPTS,
-                        REPO_ROOT,
-                        known,
-                        on_thinking=_thinking_for("F"),
+                    # F is a single-shot call like A and E, and equally prone
+                    # to a transient failure -- losing a 40-minute run to one is
+                    # not acceptable.
+                    scaffold = _retry(
+                        session,
+                        f"Building the plugin for {region_id}",
+                        2,
+                        lambda: f_scaffold.run_one(
+                            provider,
+                            regions.get(region_id, {}),
+                            bindings.get(region_id, {}),
+                            decision,
+                            plan.final.get("design_system", {}),
+                            PROMPTS,
+                            REPO_ROOT,
+                            known,
+                            on_thinking=_thinking_for("F"),
+                        ),
                     )
                     total_cost += scaffold.cost_usd
                     if not scaffold.ok:
@@ -482,6 +555,31 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             except ApplyError as ex:
                 raise RuntimeError(str(ex)) from ex
 
+            session.publish(
+                "stage_start", stage="verify", label="Checking the dashboard renders"
+            )
+            from superset.design_to_dashboard.verify import verify as verify_dashboard
+
+            checks = verify_dashboard(applied.dashboard_id, plan.final, design_analysis)
+            session.publish(
+                "stage_complete",
+                stage="verify",
+                label="Checked the dashboard",
+                summary=checks.rendering,
+                charts=[
+                    {
+                        "chart_id": c.chart_id,
+                        "name": c.slice_name,
+                        "viz_type": c.viz_type,
+                        "ok": c.ok,
+                        "rows": c.rows,
+                        "error": c.error,
+                    }
+                    for c in checks.charts
+                ],
+                fidelity_notes=checks.fidelity_notes,
+            )
+
             session.status = "done"
             session.result = {
                 "dashboard_id": applied.dashboard_id,
@@ -489,6 +587,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "charts_created": applied.charts_created,
                 "charts_reused": applied.charts_reused,
                 "cost_usd": round(total_cost, 4),
+                "rendering": checks.rendering,
+                "all_charts_ok": checks.all_ok,
+                "fidelity_notes": checks.fidelity_notes,
             }
             session.publish("done", label="Dashboard created", **session.result)
 
