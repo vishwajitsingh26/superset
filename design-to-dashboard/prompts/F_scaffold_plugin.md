@@ -145,9 +145,11 @@ These plugins run in dashboards that are often embedded and reloaded frequently,
 so a slow chart is a slow product. Fidelity comes first; performance comes
 immediately after.
 
-- **Ask the database once.** A round trip costs far more than any amount of
-  reshaping in the browser. If a card shows a total, a breakdown and a
-  percentage, fetch the rows once and derive all three in `transformProps`.
+- **Ask the database once *per render*.** Every query object you declare runs
+  again each time anyone opens the dashboard, forever — that is the cost being
+  managed here, not the cost of you looking things up while building. If a card
+  shows a total, a breakdown and a percentage, fetch the rows once and derive
+  all three in `transformProps`.
   Reach for a second query object only when the shapes genuinely differ — a
   different grain, a different time window, a different dimension — never to
   save yourself a `reduce`.

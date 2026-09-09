@@ -39,8 +39,13 @@ from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_CALLS = 8
-MAX_ITERATIONS = 6
+# Discovery is metadata, not data: a `get_dataset_info` response is a few KB and
+# is fetched once, at build time. The chart's own queries are what run on every
+# dashboard load, and those are budgeted in the chart config, not here. Binding a
+# column that was never inspected is far more expensive than inspecting one time
+# too many, so this budget is deliberately generous.
+MAX_TOOL_CALLS = 24
+MAX_ITERATIONS = 10
 
 # Roles that carry no data and are skipped rather than bound.
 NON_DATA_ROLES = {"nav", "header", "text", "decoration"}

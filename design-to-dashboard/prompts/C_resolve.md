@@ -268,8 +268,9 @@ saying so. Silence reads as agreement, and the user is approving this list as
 the whole of what will be built.
 
 **Say what the dashboard will cost to load.** In `cost`, state how many queries
-the step adds, because that is what the user feels every time the dashboard
-opens. A composite hosting four charts issues four queries; a card showing a
+the step adds — meaning queries the *finished* chart will run, every time
+anyone opens the dashboard. Your own tool calls and the discovery stage's are
+not part of this; they happen once, while building, and nobody waits on them. A composite hosting four charts issues four queries; a card showing a
 total and its breakdown should issue one. Where a section could be built with
 fewer queries at some cost to fidelity, say so — that is the user's trade to
 make, not yours.
