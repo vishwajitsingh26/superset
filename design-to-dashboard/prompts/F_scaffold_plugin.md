@@ -67,8 +67,9 @@ Your decision carries a `plugin_archetype`. It changes what you write, not just
 how it looks:
 
 - **`viz`** — one visualisation. `buildQuery` → `transformProps` → component.
-  Emit **several query objects** when the design shows a value and its
-  comparison period; that is one chart, not two.
+  One query object by default. A second is right when the design needs data the
+  first cannot carry — a prior period, a different grain — and wrong when the
+  numbers could have been derived from rows you already fetched.
 - **`composite`** — hosts other **saved charts** inside its own frame. You own
   everything around them — tabs, header, per-card filters, download and expand
   controls — and never re-implement a child's chart. The children keep their own
@@ -144,6 +145,12 @@ These plugins run in dashboards that are often embedded and reloaded frequently,
 so a slow chart is a slow product. Fidelity comes first; performance comes
 immediately after.
 
+- **Ask the database once.** A round trip costs far more than any amount of
+  reshaping in the browser. If a card shows a total, a breakdown and a
+  percentage, fetch the rows once and derive all three in `transformProps`.
+  Reach for a second query object only when the shapes genuinely differ — a
+  different grain, a different time window, a different dimension — never to
+  save yourself a `reduce`.
 - **Shape the data in `transformProps`, not in the component.** It runs once per
   data change; the component runs on every render.
 - **Do not sort, group or aggregate in render.** If the design needs a top-5 cut

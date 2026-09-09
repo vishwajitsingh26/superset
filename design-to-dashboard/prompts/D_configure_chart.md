@@ -50,7 +50,10 @@ Produce the `POST /api/v1/chart/` body that renders this region.
   three orders of magnitude: keep a plain format such as `",.1f"` and put the
   unit in the subheader or label. `currency_format` is for currency symbols,
   not magnitude letters.
-- **Always set `row_limit`** and a sane `adhoc_filters` array (`[]` if none).
+- **Always set `row_limit`**, and set it to what the design shows. A card
+  drawing five bars asks for five rows, not ten thousand. `adhoc_filters` is a
+  real array (`[]` if none) — filtering in the database beats shipping rows the
+  chart will discard.
 - **Set the time range explicitly.** Default to `"No filter"` rather than leaving it unset.
 - Use only columns and metrics named in your binding. Nothing else exists.
 
