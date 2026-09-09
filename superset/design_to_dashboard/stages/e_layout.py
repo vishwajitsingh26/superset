@@ -134,11 +134,13 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
         for decision in plan.get("decisions", [])
         if decision.get("ref") and decision.get("decision") not in NON_GRID_DECISIONS
     }
-    # A wrap parent's children render inside the parent, not on the grid.
+    # A composing parent renders its children itself, so they get no grid node
+    # of their own. This is keyed on `children` rather than on `decision ==
+    # "wrap"` because a generated composite plugin composes exactly the same
+    # way; keying on the decision word laid its children out twice.
     child_refs = {
         child
         for decision in plan.get("decisions", [])
-        if decision.get("decision") == "wrap"
         for child in decision.get("children") or []
     }
     expected_refs -= child_refs

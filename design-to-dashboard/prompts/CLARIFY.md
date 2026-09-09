@@ -30,6 +30,26 @@ column or switch measures.
 say precisely what would differ and ask whether that is acceptable or whether a
 custom plugin should be built. Do not decide this silently.
 
+**4. Structure the design implies but does not settle.** A custom plugin is a
+component we write, so the answer is rarely "Superset can't". Ask which shape
+the user wants, and say plainly that either is buildable:
+
+- **A card holding several charts.** Should it be one wrapper with a shared
+  header and tabs, or separate cards side by side? A wrapper matches the design
+  and keeps the children's own queries and cross-filtering; separate cards are
+  simpler and easier to rearrange later.
+- **A control drawn inside the grid** — a period picker, a dropdown. Should it
+  stay a card in the layout that filters the other charts, or move into
+  Superset's filter bar? Embedded dashboards often hide the filter bar, which
+  is what makes this worth asking.
+- **A table with drawn cells** — ratio bars, sparklines, expandable rows.
+  Confirm those are real requirements and not decoration, because they decide
+  whether this is a stock table or a custom one.
+
+Stage A flags each section with a provisional `stock_feasibility` lean. Where it
+leaned `custom`, the reason is a concrete visual detail — quote that detail in
+the question so the user can judge whether it matters to them.
+
 ## What not to ask
 
 - Anything the design or the bindings already answer. Re-asking wastes the

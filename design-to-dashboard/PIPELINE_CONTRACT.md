@@ -16,6 +16,36 @@ How the six stages connect, and how their output becomes a dashboard that actual
 
 D, E, and F are independent once C returns — run them concurrently.
 
+## Plugin archetypes
+
+A plugin is a React component this fork owns, so `new_plugin` is not limited to
+"a chart shape Superset lacks". Every `new_plugin` decision carries a
+`plugin_archetype`, validated in `c_resolve.validate`:
+
+| Archetype | What it is | Key mechanism |
+|---|---|---|
+| `viz` | one visualisation | `buildQuery` → `transformProps` → component; may emit several query objects |
+| `composite` | hosts other **saved charts** in its own frame | fetches each child by id, renders it through Superset's chart container; children keep their queries, cross-filtering and drill |
+| `filter_widget` | a card in the grid that *is* a filter | declares `Behavior.NativeFilter`, pushes `extraFormData` via `setDataMask` |
+| `table` | cells that are not text | ratio bars, sparklines, chips, expandable hierarchy rows |
+| `navigation` | breadcrumbs, drill headers | emits state through `setDataMask` |
+
+The information each stage needs:
+
+- **A** cannot name a `viz_type` and has no registry, so it reports what only it
+  can see: `composition` (`atomic` / `composite` / `control` / `container`) and
+  a provisional `stock_feasibility` lean with the visual evidence for it.
+- **C** owns the verdict, because only C compares thumbnails. It may overrule
+  A's lean and records why in `stock_feasibility_check`.
+- **B** emits one binding per child of a `composite` region (`r04_spend:1`, `:2`).
+- **E** gives a composing parent one grid node and its children none. This is
+  keyed on the presence of `children`, not on `decision == "wrap"` — a
+  generated composite composes identically, and keying on the word laid its
+  children out twice.
+- **F** writes to the archetype, and to the fork's house rules: ECharts for
+  charts, Ant Design for cards and tables, an `adapters/supersetAdapter.ts`
+  barrel, ~150 lines per file, `useTheme()` rather than literal colours.
+
 ## Tool use (stages B and C)
 
 B and C are **agentic**: they discover context through Superset 6.1's MCP tools rather than receiving a pre-dumped catalogue. This keeps their context proportional to the design, not to the instance.

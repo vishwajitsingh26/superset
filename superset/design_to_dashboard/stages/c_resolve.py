@@ -51,6 +51,9 @@ MAX_TOOL_CALLS = 6
 MAX_ITERATIONS = 6
 
 DECISIONS = {"reuse", "configure", "wrap", "new_plugin", "native_filter", "drop"}
+# What kind of component a `new_plugin` is. A plugin is a React component we
+# own, so this is not limited to "a chart shape Superset lacks".
+ARCHETYPES = {"viz", "composite", "filter_widget", "table", "navigation"}
 NON_DATA_ROLES = {"nav", "header", "text", "decoration"}
 
 
@@ -192,6 +195,21 @@ def validate(  # noqa: C901
             if viz_type in known_charts:
                 problems.append(
                     f"{region_id}: new_plugin for {viz_type!r}, which already exists"
+                )
+            # The archetype decides what stage F writes -- a hosting wrapper, a
+            # filter that emits a data mask, a table with drawn cells. Left
+            # unset, F falls back to a plain single-visualisation plugin and
+            # the structure the design showed is silently lost.
+            archetype = decision.get("plugin_archetype")
+            if archetype not in ARCHETYPES:
+                problems.append(
+                    f"{region_id}: new_plugin without a valid plugin_archetype "
+                    f"(got {archetype!r}, expected one of {sorted(ARCHETYPES)})"
+                )
+            elif archetype == "composite" and not (decision.get("children") or []):
+                problems.append(
+                    f"{region_id}: composite plugin without children -- a wrapper "
+                    "that hosts nothing is a plain viz plugin"
                 )
         if kind == "wrap":
             children = decision.get("children") or []

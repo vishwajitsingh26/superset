@@ -61,6 +61,64 @@ builds.
    every Superset upgrade.
 3. **A `viz_type` key** in `snake_case`, unique against the registry.
 
+## Build the archetype you were given
+
+Your decision carries a `plugin_archetype`. It changes what you write, not just
+how it looks:
+
+- **`viz`** — one visualisation. `buildQuery` → `transformProps` → component.
+  Emit **several query objects** when the design shows a value and its
+  comparison period; that is one chart, not two.
+- **`composite`** — a plugin that hosts other saved charts. Take chart ids
+  through the control panel, fetch each with `SupersetClient` from
+  `/api/v1/chart/<id>`, register it into the dashboard's chart store, and render
+  it with Superset's own chart container so the child keeps its query,
+  cross-filtering and drill. You own everything *around* the children: tabs,
+  header, per-card filters, download and expand controls. Never re-implement a
+  child's chart.
+- **`filter_widget`** — a plugin that *is* a filter. Declare
+  `Behavior.NativeFilter`, take `setDataMask` from `hooks`, and push:
+  ```ts
+  setDataMask({
+    extraFormData: { filters: [{ col, op: 'IN', val }] },
+    filterState: { value },
+    ownState: {},
+  });
+  ```
+  It sits in the grid like a card and drives every other chart.
+- **`table`** — cells that are not text. Draw ratio bars, sparklines, trend
+  arrows and chips as components per cell; expandable hierarchy rows keep their
+  expanded keys in a hook.
+- **`navigation`** — breadcrumbs and drill headers. State goes out through
+  `setDataMask`, the same as a filter.
+
+A control panel entry's `type` may be a **React component**, not just a stock
+control. Use that when the design needs configuration stock controls cannot
+express — picking child charts, ordering columns, editing tabs.
+
+## House rules for this codebase
+
+These are not style preferences; a plugin that breaks them fails review.
+
+- **Naming**: `plugin-chart-custom-{type}`, class `Custom{Name}Plugin`, viz key
+  `custom_{name}`.
+- **Charts are ECharts.** KPI cards, tables and filters are Ant Design
+  components from `@superset-ui/core/components`. Register only the ECharts
+  modules you use, so the bundle stays small.
+- **Import Superset through `src/adapters/supersetAdapter.ts`**, a barrel this
+  plugin owns. It is the fork's insulation against upstream churn — no file
+  outside it imports `@superset-ui/*` directly.
+- **Max ~150 lines per file**, licence header excluded. Split styles into
+  `*Styles.ts`, helpers into `utils/`, cells and sub-views into `components/`.
+- **Comments are single-line and rare** — only a non-obvious *why*. The licence
+  header is the only block comment.
+- **No `any`, no `.js`, functional components only**, `React.memo` where a
+  render is expensive.
+- **Colours come from `useTheme()`**, never a literal. See the colour rule
+  below.
+- **Handle all three states**: loading, empty and error. Do not poll — the
+  dashboard's own refresh drives updates.
+
 ## Fidelity is the point
 
 This plugin exists because the design could not be matched otherwise, so match

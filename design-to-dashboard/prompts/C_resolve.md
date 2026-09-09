@@ -82,25 +82,73 @@ Read the list before deciding. Entries marked **Custom plugins (this
 deployment)** are locally built and usually fit a bespoke design far better than
 an upstream generic — check them first.
 
+## What a custom plugin can be
+
+A plugin is a React component we own, so `new_plugin` is not limited to "a
+chart shape Superset lacks". These are the archetypes actually in production in
+this codebase; pick the one that matches the design, and name it in the plan.
+
+- **`viz`** — a single visualisation: bars, lines, a KPI card, a treemap, a
+  table. The common case.
+- **`composite`** — one plugin that **hosts other saved charts** inside its own
+  frame. It fetches each child chart by id and renders it through Superset's
+  own chart renderer, so children keep their queries, cross-filtering and
+  drill. This is how a card with a tab switcher, a segmented control, or
+  several charts under one shared header is built. Anything you can put around
+  a chart — tabs, a title bar, a download menu, a per-card filter row, an
+  expand button — belongs to the wrapper, not to the children.
+- **`filter_widget`** — a plugin that *is* a filter: it declares
+  `Behavior.NativeFilter` and pushes `extraFormData` into the dashboard, so it
+  drives every other chart while sitting in the grid like a card. Use this for
+  a period picker, a dropdown or a segmented toggle the design draws **inside**
+  the layout rather than in the filter bar.
+- **`table`** — a table whose cells are not text: ratio bars, sparklines,
+  trend arrows, chips, expandable hierarchy rows, resizable or reorderable
+  columns. Stock tables render strings and numbers; anything drawn inside a
+  cell means this archetype.
+- **`navigation`** — breadcrumbs, drill headers, or any element whose job is to
+  move the dashboard between states rather than to plot data.
+
+A plugin may also carry its **own control-panel UI** (a React component as a
+control `type`), issue **several queries** in one chart (a value and its
+comparison period), and declare `DrillBy` / `DrillToDetail` / `InteractiveChart`
+so it participates in cross-filtering. Say so in the plan when the design
+implies it.
+
 ### Multi-chart regions
 
-When one card holds several charts, look in the registry for a plugin that
-composes children:
+When one card holds several charts (`composition: composite` from stage A):
 
-- a **tabbed wrapper** (charts behind a tab switcher, often keyed `custom_wrapper`)
-- a **container** (several charts laid out in one grid cell, often keyed `container_chart`)
+1. Look in the registry for an existing composing plugin — a tabbed wrapper or
+   a container. If one fits, `wrap` and emit each child as its own decision.
+2. **If none exists, build one.** Use `new_plugin` with
+   `plugin_archetype: "composite"` and still emit the children as their own
+   decisions. Composition is a normal thing to build, not a last resort.
 
-If the registry has one, use `wrap` and emit the child charts as their own
-decisions. If it has neither, do not invent one: either lay the children out as
-sibling regions and say so in `fidelity_loss`, or raise a `new_plugin` decision
-if the composition is genuinely structural to the design.
+Falling back to sibling charts is a real answer only when the card is a loose
+grouping with no shared chrome — no tabs, no shared header, no shared filter.
+Say so in `fidelity_loss` when you do it.
 
 ## Filter routing
 
 - `role: filter` **and** `global.filter_bar.present` → `target: "native_filter"`; emit a `filterType` (`filter_select`, `filter_range`, `filter_time`, `filter_timegrain`, `filter_timecolumn`). **Not a chart.**
-- `role: filter` drawn inside the grid as a card → `target: "chart_widget"` via `custom_filter` or `custom_period_filter`.
+- `role: filter` drawn inside the grid as a card → `target: "chart_widget"`. Reuse an existing filter plugin if the registry has one that matches; otherwise `new_plugin` with `plugin_archetype: "filter_widget"`. Do not demote an in-grid control to a filter-bar filter because no plugin exists — that moves it out of the design.
 
 Backwards here produces a dashboard whose filters don't cross-filter. Check `global.filter_bar` before deciding.
+
+## Stage A's read is evidence, not instruction
+
+Every region arrives with `composition` and a provisional `stock_feasibility`
+lean. Stage A saw the image but has no registry, so treat its lean as a hint
+and the `why` as observation to be checked:
+
+- A leans `custom`, and a thumbnail shows a plugin that really does draw it →
+  reuse or configure it, and say in `thumbnail_evidence` which thumbnail
+  overturned the lean.
+- A leans `stock`, but no thumbnail matches the described treatment → build.
+  A's lean was a guess made without the registry; yours is made with it.
+
+You own the verdict. Record disagreement rather than silently following.
 
 ## Design-system contract
 
@@ -156,9 +204,12 @@ establishing which case you are in — case A is always achievable.
     "region_id": "...", "ref": "c1",
     "decision": "reuse|configure|wrap|new_plugin|native_filter|drop",
     "viz_type": "...|null", "existing_chart_id": null, "children": ["c2","c3"],
+    "plugin_archetype": "viz|composite|filter_widget|table|navigation|null",
+    "behaviors": ["InteractiveChart", "DrillToDetail"],
     "slice_name": "...", "rationale": "one sentence",
     "reuse_evidence": "what get_chart_info confirmed, or null",
     "thumbnail_evidence": "which plugin thumbnails you compared and what you saw",
+    "stock_feasibility_check": "whether you agree with stage A's lean, and what decided it",
     "fidelity_loss": "what will differ, or null",
     "confidence": "high|medium|low"
   }],
@@ -166,10 +217,18 @@ establishing which case you are in — case A is always achievable.
   "counts": { "reuse": 0, "configure": 0, "wrap": 0, "new_plugin": 0, "native_filter": 0, "drop": 0 },
   "plan_for_review": [
     { "step": 1,
+      "kind": "reuse|configure|wrap|new_plugin|native_filter",
+      "archetype": "viz|composite|filter_widget|table|navigation|null",
       "what": "Build a custom plugin for the 'Sales by genre' card",
       "why": "Its thumbnail comparison showed every bar plugin puts category labels in the axis gutter; the design puts them above each bar.",
       "exactness": "Matches the design exactly, including label placement and the M suffix.",
-      "cost": "Adds a plugin package and a frontend rebuild." }
+      "cost": "Adds a plugin package and a frontend rebuild." },
+    { "step": 2,
+      "kind": "new_plugin", "archetype": "composite",
+      "what": "Build a wrapper for the 'Spend' card and put the three provider charts inside it",
+      "why": "The card has one header and a tab switcher over three charts; no registry plugin composes children.",
+      "exactness": "Matches the design exactly. The three charts keep their own queries and cross-filtering.",
+      "cost": "One plugin package plus three child charts, and a frontend rebuild." }
   ],
   "tool_calls": 0,
   "summary": "N reused, M configured, K wrapped, J new plugins."
@@ -192,3 +251,18 @@ formatting).
 Where a step will not match the design exactly, say so plainly in `exactness`.
 The user is approving a specific outcome, and a step that oversells itself makes
 the approval meaningless.
+
+**Name the archetype in plain words.** The user is deciding whether the plan
+matches what they drew, and "a wrapper card holding your three provider charts
+behind tabs" tells them that; "custom plugin for r04" does not. Say what will be
+built, what goes inside it, and what it will drive:
+
+- composite → what the card holds and how the pieces are switched between
+- filter_widget → which sections it will filter, and that it sits in the grid
+  rather than the filter bar
+- table → which cells stop being plain text and what is drawn in them
+
+**Every section appears in the plan.** A section you dropped, demoted or read
+as decoration is exactly the one the user needs to see, so give it a step
+saying so. Silence reads as agreement, and the user is approving this list as
+the whole of what will be built.

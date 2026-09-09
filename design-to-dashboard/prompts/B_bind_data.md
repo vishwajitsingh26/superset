@@ -46,6 +46,8 @@ Regions with `role` in `nav | header | text | decoration` get `state: "not_appli
 - **Exact names only.** Copy column and metric names character-for-character from the tool response. Do not pluralise, case-correct, or prettify. `provider_name` is not `Provider Name`.
 - **Prefer an existing metric over an adhoc one.** If `get_dataset_info` returns a metric matching the region's measure, bind it by name; do not re-derive its SQL.
 - **One dataset per region.** A region genuinely needing a cross-dataset join is `unavailable` — say so. (A virtual dataset may resolve it, if permitted.)
+- **A `composite` region needs one binding per thing inside it.** Stage A marks a card holding several charts as `composition: composite` and lists what it holds in `observed`. Each of those becomes its own chart later, so emit a binding per piece using `region_id` values suffixed `:1`, `:2` … (`r04_spend:1`). Binding the card as a single measure leaves the inner charts with no data — they are built regardless, and they render empty.
+- **A `control` region usually binds too.** A period picker or dropdown reads its options from a column, so bind that column. Only a control whose options are hard-coded in the design is `unavailable`.
 - **`derivable` means expressible in SQL from columns that exist, and `execute_sql` confirmed it.** An unvalidated derivation is `validated: false` and lowers confidence.
 - **Type-check.** Measures bind to numeric columns or metrics; time grains require a temporal column. Report mismatches; never coerce.
 - **Never invent.** Nothing absent from a tool response may appear in your output, including inside `derivations`.
