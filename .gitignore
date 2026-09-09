@@ -141,6 +141,7 @@ oxc-custom-build/
 
 # Design-to-Dashboard local dev-server log
 design-to-dashboard/.devserver.log
+design-to-dashboard/.backend.log
 
 # Design-to-Dashboard run traces (local debugging output)
 design-to-dashboard/traces/

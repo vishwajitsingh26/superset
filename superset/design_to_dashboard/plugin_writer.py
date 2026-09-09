@@ -76,15 +76,13 @@ def write(scaffold: dict[str, Any], repo_root: str | pathlib.Path) -> WriteResul
         result.files_written.append(relative)
 
     # plugin/index.ts imports a thumbnail; without the file the build fails.
-    # Reuse the reference plugin's image rather than synthesising one.
+    # The placeholder lives in this feature's own tree rather than being
+    # borrowed from another plugin, so deleting any plugin cannot break the
+    # generator.
     thumbnail = root / directory / "src" / "images" / "thumbnail.png"
     if not thumbnail.exists():
         thumbnail.parent.mkdir(parents=True, exist_ok=True)
-        reference = (
-            root
-            / "superset-frontend/plugins/plugin-chart-hello-world"
-            / "src/images/thumbnail.png"
-        )
+        reference = root / "design-to-dashboard/assets/plugin-thumbnail-placeholder.png"
         if reference.exists():
             thumbnail.write_bytes(reference.read_bytes())
             result.notes.append("copied a placeholder thumbnail.png")

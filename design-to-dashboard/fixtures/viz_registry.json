@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 55,
+  "count": 53,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -272,47 +272,6 @@
       "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
       "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
-      "metadata_found": true
-    },
-    {
-      "viz_type": "custom_labeled_hbar",
-      "plugin_class": "SupersetPluginChartLabeledHbar",
-      "name": "Custom Labeled Horizontal Bar",
-      "category": "Ranking",
-      "description": "Horizontal bars ranked by value on a shared left baseline. Each category name sits above its bar and the formatted value sits outside the right end of the bar. No axis, ticks, gridlines or legend.",
-      "tags": [
-        "Bar",
-        "Categorical",
-        "Comparison",
-        "Ranking",
-        "Custom"
-      ],
-      "behaviors": [],
-      "custom": true,
-      "is_filter": false,
-      "source": "superset-frontend/plugins/plugin-chart-labeled-hbar/src/plugin/index.ts",
-      "thumbnail": "superset-frontend/plugins/plugin-chart-labeled-hbar/src/images/thumbnail.png",
-      "control_panel": "superset-frontend/plugins/plugin-chart-labeled-hbar/src/plugin/controlPanel.ts",
-      "metadata_found": true
-    },
-    {
-      "viz_type": "custom_ranked_bar",
-      "plugin_class": "RankedBarChartPlugin",
-      "name": "Custom Ranked Bar",
-      "category": "Ranking",
-      "description": "Ranked horizontal bars with the category label above each bar and the formatted value beside it. No axis, gridlines, ticks or legend, for compact \"top N\" cards where the labels are the axis.",
-      "tags": [
-        "Bar",
-        "Categorical",
-        "Comparison",
-        "Ranking"
-      ],
-      "behaviors": [],
-      "custom": true,
-      "is_filter": false,
-      "source": "superset-frontend/plugins/plugin-chart-ranked-bar/src/plugin/index.ts",
-      "thumbnail": "superset-frontend/plugins/plugin-chart-ranked-bar/src/images/thumbnail.png",
-      "control_panel": "superset-frontend/plugins/plugin-chart-ranked-bar/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
     {
@@ -731,17 +690,17 @@
     {
       "viz_type": "hello-world",
       "plugin_class": "SupersetPluginChartHelloWorld",
-      "name": "Hello World",
+      "name": "SupersetPluginChartHelloWorld",
       "category": null,
-      "description": "Superset Plugin Chart Hello World",
+      "description": null,
       "tags": [],
       "behaviors": [],
       "custom": false,
       "is_filter": false,
-      "source": "superset-frontend/plugins/plugin-chart-hello-world/src/plugin/index.ts",
-      "thumbnail": "superset-frontend/plugins/plugin-chart-hello-world/src/images/thumbnail.png",
-      "control_panel": "superset-frontend/plugins/plugin-chart-hello-world/src/plugin/controlPanel.ts",
-      "metadata_found": true
+      "source": null,
+      "thumbnail": null,
+      "control_panel": null,
+      "metadata_found": false
     },
     {
       "viz_type": "histogram_v2",
@@ -1229,6 +1188,7 @@
       "filter_select",
       "filter_timecolumn",
       "filter_timegrain",
+      "hello-world",
       "pivot_table_v2"
     ],
     "registered_without_thumbnail": [
@@ -1236,6 +1196,7 @@
       "filter_select",
       "filter_timecolumn",
       "filter_timegrain",
+      "hello-world",
       "mixed_timeseries",
       "pivot_table_v2",
       "pop_kpi"
@@ -1244,6 +1205,7 @@
       "filter_select",
       "filter_timecolumn",
       "filter_timegrain",
+      "hello-world",
       "time_table"
     ],
     "metadata_without_registration": [
