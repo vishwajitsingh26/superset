@@ -95,15 +95,24 @@ The numbers are true. Reach for this whenever the underlying data exists in
 *any* form: a summary over a master table beats both a placeholder and a
 blocking question. Validate the SQL with `execute_sql` before emitting it.
 
-**`placeholder` — literal rows, because no table holds this at all:**
+**`placeholder` — a real table of made-up rows, because no table holds this at
+all.** Give the columns and the rows, not SQL; the orchestrator creates the
+table in a dedicated `d2d_generated` schema and points a normal dataset at it:
 
-```sql
-SELECT 'Action' AS genre, 1751 AS global_sales
-UNION ALL SELECT 'Sports', 1442
+```json
+"columns": [{"name": "genre", "type": "TEXT"},
+            {"name": "global_sales", "type": "DOUBLE PRECISION"}],
+"rows": [["Action", 1751], ["Sports", 1442], ["Shooter", 1079]]
 ```
 
-The layout, the plugin and the chart are real; the numbers are not. A teammate
-repoints the chart at the true dataset later.
+It is a physical table on purpose: filters, distinct-value lookups, column
+typing and Explore then behave exactly as they will against the real data, so
+what you see is what the finished dashboard does. The numbers are invented; the
+layout and the behaviour are not. A teammate repoints the chart later.
+
+Column `type` is one of `TEXT`, `BIGINT`, `INTEGER`, `DOUBLE PRECISION`,
+`NUMERIC`, `BOOLEAN`, `DATE`, `TIMESTAMP`. Names must be lowercase
+`snake_case`.
 
 Rules for both:
 
@@ -148,8 +157,10 @@ Name regions by their visible title, not their slug. Write for a data analyst wh
     "name": "sales_by_genre",
     "kind": "derived | placeholder",
     "database_id": 1,
-    "sql": "SELECT genre, SUM(global_sales) AS global_sales FROM ... GROUP BY genre",
-    "columns": ["genre"], "metrics": ["global_sales"],
+    "sql": "SELECT ... GROUP BY genre          // derived only",
+    "columns": [{ "name": "genre", "type": "TEXT" }],
+    "rows": [["Action", 1751]],
+    "metrics": ["global_sales"],
     "region_ids": ["r07_sales_by_genre"],
     "reason": "the master table has row-level sales; the card needs them by genre"
   }],

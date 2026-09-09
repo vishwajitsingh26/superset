@@ -31,6 +31,7 @@ and *compensates* by deleting those objects if a later step fails.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -258,40 +259,132 @@ def plan_datasets(plan: dict[str, Any]) -> list[dict[str, Any]]:
             )
         if not spec.get("database_id"):
             raise ApplyError(f"dataset {spec['name']!r} has no database_id")
-        if not (spec.get("sql") or "").strip():
-            raise ApplyError(f"dataset {spec['name']!r} has no SQL")
+        if spec["kind"] == "derived" and not (spec.get("sql") or "").strip():
+            raise ApplyError(f"derived dataset {spec['name']!r} has no SQL")
+        if spec["kind"] == "placeholder" and not (spec.get("rows") or []):
+            raise ApplyError(f"placeholder dataset {spec['name']!r} has no rows")
         specs.append(spec)
     return specs
+
+
+# Placeholder tables are materialised here rather than as virtual datasets: a
+# physical table behaves identically to a real one everywhere in Superset --
+# distinct-value fetching for filters, column typing, Explore -- and matching
+# the design's behaviour exactly is the point of building it at all. Confining
+# them to one schema keeps them obvious and makes cleanup a single DROP SCHEMA.
+PLACEHOLDER_SCHEMA = "d2d_generated"
+_IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,60}$")
+_COLUMN_TYPES = {
+    "TEXT",
+    "BIGINT",
+    "INTEGER",
+    "DOUBLE PRECISION",
+    "NUMERIC",
+    "BOOLEAN",
+    "DATE",
+    "TIMESTAMP",
+}
+
+
+def _identifier(name: str, what: str) -> str:
+    """Reject anything that is not a plain lowercase identifier.
+
+    These names reach DDL, where they cannot be parameterised. The model writes
+    them, so they are validated rather than trusted.
+    """
+    if not _IDENTIFIER.match(name or ""):
+        raise ApplyError(f"unsafe {what} name: {name!r}")
+    return name
+
+
+def materialise_placeholder(
+    spec: dict[str, Any], schema: str = PLACEHOLDER_SCHEMA
+) -> None:
+    """Create a real table holding the design's own values.
+
+    Values are bound as parameters; only identifiers and the column type are
+    interpolated, and both are validated first. The table is dropped and
+    recreated so a re-run is idempotent.
+    """
+    from sqlalchemy import text
+
+    from superset import db as superset_db
+    from superset.models.core import Database
+
+    table = _identifier(spec["name"], "table")
+    schema = _identifier(schema, "schema")
+    columns = spec.get("columns") or []
+    rows = spec.get("rows") or []
+    if not columns or not rows:
+        raise ApplyError(f"placeholder {table!r} needs columns and rows")
+
+    names = [_identifier(c["name"], "column") for c in columns]
+    types = []
+    for column in columns:
+        column_type = (column.get("type") or "TEXT").upper()
+        if column_type not in _COLUMN_TYPES:
+            raise ApplyError(f"unsupported column type {column_type!r} in {table!r}")
+        types.append(column_type)
+
+    database = superset_db.session.query(Database).get(spec["database_id"])
+    if database is None:
+        raise ApplyError(f"database {spec['database_id']} not found")
+
+    definition = ", ".join(f"{n} {t}" for n, t in zip(names, types, strict=True))
+    placeholders = ", ".join(f":{n}" for n in names)
+    with database.get_sqla_engine() as engine, engine.begin() as connection:
+        connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+        connection.execute(text(f"DROP TABLE IF EXISTS {schema}.{table}"))
+        connection.execute(text(f"CREATE TABLE {schema}.{table} ({definition})"))
+        # S608: every identifier here has passed `_identifier`, and the row
+        # values are bound parameters -- DDL and column lists cannot be
+        # parameterised, so validation is the control.
+        columns_sql = ", ".join(names)
+        insert = (
+            f"INSERT INTO {schema}.{table} "  # noqa: S608
+            f"({columns_sql}) VALUES ({placeholders})"
+        )
+        connection.execute(
+            text(insert),
+            [dict(zip(names, row, strict=True)) for row in rows],
+        )
+    logger.info("materialised %s.%s with %d row(s)", schema, table, len(rows))
 
 
 PLACEHOLDER_PREFIX = "d2d_placeholder_"
 
 
-def create_virtual_dataset(spec: dict[str, Any], user_id: int) -> int:
-    """Create one virtual dataset from a SQL statement.
+def create_dataset(spec: dict[str, Any], user_id: int) -> int:
+    """Create the Superset dataset a spec describes.
 
-    Virtual means a saved SELECT, not a table: no DDL runs, nothing is written
-    to the source database, and swapping a chart onto real data later is a
-    datasource change rather than a migration.
-
-    A ``placeholder`` is name-prefixed so it is unmistakable in the dataset
-    list, in Explore's datasource picker, and in any audit of what this
-    pipeline created. A ``derived`` dataset holds real data and is named for
-    what it contains.
+    A ``derived`` dataset stays virtual -- a saved SELECT over real tables, so
+    the numbers are live and nothing is copied. A ``placeholder`` is
+    materialised as a real table first, because a physical dataset behaves
+    identically to any other everywhere in Superset, and matching the design's
+    behaviour exactly is the whole reason for building the section.
     """
     from superset.commands.dataset.create import CreateDatasetCommand
 
     name = spec["name"]
-    if spec["kind"] == "placeholder" and not name.startswith(PLACEHOLDER_PREFIX):
-        name = f"{PLACEHOLDER_PREFIX}{name}"
-    dataset = CreateDatasetCommand(
-        {
+    if spec["kind"] == "placeholder":
+        if not name.startswith(PLACEHOLDER_PREFIX):
+            name = f"{PLACEHOLDER_PREFIX}{name}"
+        spec = {**spec, "name": name}
+        materialise_placeholder(spec)
+        properties = {
+            "database": spec["database_id"],
+            "schema": PLACEHOLDER_SCHEMA,
+            "table_name": name,
+            "owners": [user_id],
+        }
+    else:
+        properties = {
             "database": spec["database_id"],
             "table_name": name,
             "sql": spec["sql"].strip(),
             "owners": [user_id],
         }
-    ).run()
+    dataset = CreateDatasetCommand(properties).run()
     logger.info("created %s dataset %s (id %s)", spec["kind"], name, dataset.id)
     return int(dataset.id)
 
@@ -329,7 +422,7 @@ def apply_plan(  # noqa: C901
     # the resulting id, and one dataset may serve several regions.
     region_dataset: dict[str, int] = {}
     for spec in plan_datasets(plan):
-        dataset_id = create_virtual_dataset(spec, user_id)
+        dataset_id = create_dataset(spec, user_id)
         created_datasets.append(dataset_id)
         for region_id in spec.get("region_ids") or []:
             region_dataset[region_id] = dataset_id
@@ -508,6 +601,8 @@ def _compensate(
     real rows behind. There is no transaction to roll back — the objects are
     deleted explicitly instead.
     """
+    from sqlalchemy import text
+
     from superset import db
     from superset.connectors.sqla.models import SqlaTable
     from superset.models.dashboard import Dashboard
@@ -522,12 +617,32 @@ def _compensate(
             chart = db.session.query(Slice).get(chart_id)
             if chart is not None:
                 db.session.delete(chart)
-        # Placeholder datasets are ours and nothing else can reference them yet,
-        # so a failed apply must not leave them in the dataset list.
+        # Datasets this run created are ours and nothing else references them
+        # yet. A placeholder also left a real table behind, which deleting the
+        # Superset dataset does not remove, so drop that too.
         for dataset_id in dataset_ids or []:
             dataset = db.session.query(SqlaTable).get(dataset_id)
-            if dataset is not None:
-                db.session.delete(dataset)
+            if dataset is None:
+                continue
+            if dataset.schema == PLACEHOLDER_SCHEMA and dataset.database:
+                try:
+                    with (
+                        dataset.database.get_sqla_engine() as engine,
+                        engine.begin() as connection,
+                    ):
+                        connection.execute(
+                            text(
+                                "DROP TABLE IF EXISTS "
+                                f"{PLACEHOLDER_SCHEMA}.{dataset.table_name}"
+                            )
+                        )
+                except Exception:  # noqa: BLE001 - cleanup is best-effort
+                    logger.exception(
+                        "could not drop placeholder table %s.%s",
+                        PLACEHOLDER_SCHEMA,
+                        dataset.table_name,
+                    )
+            db.session.delete(dataset)
         # Not a @transaction: this runs *after* the commands that created the
         # charts have already committed, so there is no unit of work left to
         # roll back -- the cleanup is itself the compensating write.
