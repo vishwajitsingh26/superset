@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 53,
+  "count": 52,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -688,21 +688,6 @@
       "metadata_found": true
     },
     {
-      "viz_type": "hello-world",
-      "plugin_class": "SupersetPluginChartHelloWorld",
-      "name": "SupersetPluginChartHelloWorld",
-      "category": null,
-      "description": null,
-      "tags": [],
-      "behaviors": [],
-      "custom": false,
-      "is_filter": false,
-      "source": null,
-      "thumbnail": null,
-      "control_panel": null,
-      "metadata_found": false
-    },
-    {
       "viz_type": "histogram_v2",
       "plugin_class": "EchartsHistogramChartPlugin",
       "name": "Histogram",
@@ -1188,7 +1173,6 @@
       "filter_select",
       "filter_timecolumn",
       "filter_timegrain",
-      "hello-world",
       "pivot_table_v2"
     ],
     "registered_without_thumbnail": [
@@ -1196,7 +1180,6 @@
       "filter_select",
       "filter_timecolumn",
       "filter_timegrain",
-      "hello-world",
       "mixed_timeseries",
       "pivot_table_v2",
       "pop_kpi"
@@ -1205,7 +1188,6 @@
       "filter_select",
       "filter_timecolumn",
       "filter_timegrain",
-      "hello-world",
       "time_table"
     ],
     "metadata_without_registration": [

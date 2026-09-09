@@ -147,7 +147,7 @@ exactly. C's rubric was rewritten so `new_plugin` is first-class, with named
 structural triggers (label-above-value, composed cards, fixed alignment, absent
 mark types) and an explicit ban on reaching for a plugin over a colour or format.
 
-`stages/f_scaffold.py` generates from `plugin-chart-hello-world` as the exemplar
+`stages/f_scaffold.py` generates from the exemplar vendored at `design-to-dashboard/assets/reference-plugin/`
 (correct 6.1 imports), validating: snake_case unique viz_type, **scoped** package
 name, required files, paths inside the declared directory, the moved-import trap
 (`styled` from `@apache-superset/core/theme`), no `any`, no TODOs.

@@ -46,7 +46,12 @@ logger = logging.getLogger(__name__)
 # and produced "Agent SDK timed out" mid-generation.
 SCAFFOLD_TIMEOUT = 1200
 
-REFERENCE_PLUGIN = "superset-frontend/plugins/plugin-chart-hello-world"
+# The exemplar the model copies conventions from. It is vendored into this
+# feature's own tree rather than pointed at a live plugin: a registered
+# plugin can be deleted (they are meant to be disposable), and stage F must
+# not depend on one existing. Refresh it from a real plugin when Superset's
+# import paths or plugin class shape change.
+REFERENCE_PLUGIN = "design-to-dashboard/assets/reference-plugin"
 REFERENCE_FILES = (
     "src/index.ts",
     "src/types.ts",
