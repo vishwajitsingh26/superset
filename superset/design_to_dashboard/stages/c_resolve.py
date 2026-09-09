@@ -92,6 +92,11 @@ def build_user_prompt(
         "bindings": binding_set.get("bindings", []),
         "datasets_used": binding_set.get("datasets_used", []),
     }
+    # The runner attaches the clarification answers to the binding. Dropping
+    # them here made every instruction about honouring them unreachable: the
+    # user answered, and stage C never saw it.
+    if answers := binding_set.get("user_answers"):
+        payload["user_answers"] = answers
     return (
         "The attached image is the PLUGIN CONTACT SHEET -- every registered "
         "plugin's thumbnail, labelled with its viz_type. It is not the user's "
@@ -139,6 +144,54 @@ def run(
     return result
 
 
+# Phrases that mean Superset's own chrome will not be rendered. When the chrome
+# is hidden a `native_filter` is invisible and a dropped heading is simply gone,
+# so those decisions contradict the user rather than merely differing from the
+# design. Two prompt-level instructions failed to prevent this, so it is checked.
+_CHROME_HIDDEN_HINTS = (
+    "chrome hidden",
+    "chrome is hidden",
+    "hide the filter bar",
+    "inside the grid",
+    "in the grid as widget",
+)
+
+
+def _answer_conflicts(
+    decisions: list[dict[str, Any]],
+    design_analysis: dict[str, Any],
+    binding_set: dict[str, Any],
+) -> list[str]:
+    """Decisions that contradict an answer the user already gave."""
+    answers = binding_set.get("user_answers") or {}
+    if not answers:
+        return []
+    blob = json.dumps(answers).lower()
+    if not any(hint in blob for hint in _CHROME_HIDDEN_HINTS):
+        return []
+
+    roles = {
+        r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
+    }
+    problems = []
+    for decision in decisions:
+        region_id = decision.get("region_id")
+        kind = decision.get("decision")
+        if kind == "native_filter":
+            problems.append(
+                f"{region_id}: native_filter, but the user said the dashboard "
+                "chrome is hidden -- the filter bar will not render, so this "
+                "filter would be invisible. Use a chart_widget in the grid."
+            )
+        if kind == "drop" and roles.get(region_id) in {"header", "text"}:
+            problems.append(
+                f"{region_id}: dropped to dashboard chrome, but the user said "
+                "the chrome is hidden -- the heading would not appear at all. "
+                "Put it in the grid."
+            )
+    return problems
+
+
 def validate(  # noqa: C901
     plan: dict[str, Any],
     design_analysis: dict[str, Any],
@@ -165,6 +218,8 @@ def validate(  # noqa: C901
     bound_states = {
         b.get("region_id"): b.get("state") for b in binding_set.get("bindings", [])
     }
+    problems.extend(_answer_conflicts(decisions, design_analysis, binding_set))
+
     refs = {d.get("ref") for d in decisions if d.get("ref")}
     seen_refs: set[str] = set()
     new_plugin_types: set[str] = set()
