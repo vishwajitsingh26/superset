@@ -16,12 +16,4 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-// eslint-disable-next-line import/prefer-default-export
-export { default as SupersetPluginChartHelloWorld } from './plugin';
-/**
- * Note: this file exports the default export from SupersetPluginChartHelloWorld.tsx.
- * If you want to export multiple visualization modules, you will need to
- * either add additional plugin folders (similar in structure to ./plugin)
- * OR export multiple instances of `ChartPlugin` extensions in ./plugin/index.ts
- * which in turn load exports from SupersetPluginChartHelloWorld.tsx
- */
+export { default as CustomPieChartPlugin } from './plugin';

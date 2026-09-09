@@ -1,0 +1,25 @@
+{
+  "name": "@superset-ui/plugin-chart-ck-lens-pie",
+  "version": "0.1.0",
+  "description": "Superset Chart - CK Lens Pie Chart (Production Stable)",
+  "sideEffects": false,
+  "main": "lib/index.js",
+  "module": "esm/index.js",
+  "files": [
+    "esm",
+    "lib"
+  ],
+  "keywords": ["superset", "ck_lens", "pie", "stable"],
+  "author": "Superset",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "echarts": "^5.0.0",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

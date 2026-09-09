@@ -69,28 +69,20 @@ how it looks:
 - **`viz`** — one visualisation. `buildQuery` → `transformProps` → component.
   Emit **several query objects** when the design shows a value and its
   comparison period; that is one chart, not two.
-- **`composite`** — a plugin that hosts other saved charts. Take chart ids
-  through the control panel, fetch each with `SupersetClient` from
-  `/api/v1/chart/<id>`, register it into the dashboard's chart store, and render
-  it with Superset's own chart container so the child keeps its query,
-  cross-filtering and drill. You own everything *around* the children: tabs,
-  header, per-card filters, download and expand controls. Never re-implement a
-  child's chart.
-- **`filter_widget`** — a plugin that *is* a filter. Declare
-  `Behavior.NativeFilter`, take `setDataMask` from `hooks`, and push:
-  ```ts
-  setDataMask({
-    extraFormData: { filters: [{ col, op: 'IN', val }] },
-    filterState: { value },
-    ownState: {},
-  });
-  ```
-  It sits in the grid like a card and drives every other chart.
-- **`table`** — cells that are not text. Draw ratio bars, sparklines, trend
-  arrows and chips as components per cell; expandable hierarchy rows keep their
-  expanded keys in a hook.
-- **`navigation`** — breadcrumbs and drill headers. State goes out through
-  `setDataMask`, the same as a filter.
+- **`composite`** — hosts other **saved charts** inside its own frame. You own
+  everything around them — tabs, header, per-card filters, download and expand
+  controls — and never re-implement a child's chart. The children keep their own
+  queries, cross-filtering and drill.
+- **`filter_widget`** — a plugin that *is* a filter: it sits in the grid like a
+  card and drives every other chart on the dashboard.
+- **`table`** — cells that are drawn rather than written: ratio bars,
+  sparklines, trend arrows, chips, expandable hierarchy rows.
+- **`navigation`** — breadcrumbs and drill headers, which move the dashboard
+  between states rather than plotting data.
+
+Where your archetype is not `viz`, production code for it is appended below the
+reference plugin. Reproduce that mechanism; the styling around it is not the
+point.
 
 A control panel entry's `type` may be a **React component**, not just a stock
 control. Use that when the design needs configuration stock controls cannot

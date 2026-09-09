@@ -52,15 +52,19 @@ SCAFFOLD_TIMEOUT = 1200
 # not depend on one existing. Refresh it from a real plugin when Superset's
 # import paths or plugin class shape change.
 REFERENCE_PLUGIN = "design-to-dashboard/assets/reference-plugin"
-REFERENCE_FILES = (
-    "src/index.ts",
-    "src/types.ts",
-    "src/plugin/index.ts",
-    "src/plugin/buildQuery.ts",
-    "src/plugin/controlPanel.ts",
-    "src/plugin/transformProps.ts",
-    "package.json",
-)
+
+# `base/` is one complete production plugin -- the conventions every plugin
+# shares. The archetype directories hold only the *mechanism* that archetype
+# needs, not a whole second plugin: hosting a saved chart, emitting a data
+# mask, drawing inside a table cell. A worker is shown its own archetype and
+# nothing else, so a plain `viz` job carries less context than it would if
+# every capability were pasted in for completeness.
+ARCHETYPE_REFERENCE = {
+    "composite": "composite",
+    "filter_widget": "filter_widget",
+    "table": "table",
+    "navigation": "filter_widget",  # navigation emits state the same way
+}
 
 REQUIRED_SUFFIXES = (
     "src/index.ts",
@@ -94,22 +98,42 @@ class ScaffoldResult:
         return self.scaffold is not None and not self.problems
 
 
-def _reference_source(repo_root: pathlib.Path) -> str:
-    """Concatenate the reference plugin so the model copies real conventions."""
-    base = repo_root / REFERENCE_PLUGIN
+def _read_tree(root: pathlib.Path, label: str) -> list[str]:
+    """Every source file under `root`, as labelled fenced blocks."""
     blocks = []
-    for relative in REFERENCE_FILES:
-        path = base / relative
-        if path.exists():
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.suffix in {".ts", ".tsx", ".json"}:
+            relative = path.relative_to(root)
             blocks.append(
-                f"### {REFERENCE_PLUGIN}/{relative}\n```\n{path.read_text()}\n```"
+                f"### {label}/{relative}\n```\n{path.read_text(encoding='utf-8')}\n```"
             )
+    return blocks
+
+
+def _reference_source(repo_root: pathlib.Path, archetype: str | None) -> str:
+    """The exemplars this archetype needs: the base plugin, plus its mechanism."""
+    root = repo_root / REFERENCE_PLUGIN
+    blocks = _read_tree(root / "base", "reference-plugin")
     if not blocks:
-        raise LLMError(f"Reference plugin not found at {base}")
+        raise LLMError(f"Reference plugin not found at {root / 'base'}")
+
+    if supplement := ARCHETYPE_REFERENCE.get(archetype or ""):
+        extra = _read_tree(root / supplement, f"reference-{supplement}")
+        if extra:
+            blocks.append(
+                f"## How a `{archetype}` plugin works\n\n"
+                "Production code for this archetype. The mechanism here is the "
+                "point -- reproduce it; the styling around it is not."
+            )
+            blocks.extend(extra)
     return "\n\n".join(blocks)
 
 
-def build_system_prompt(prompts_dir: pathlib.Path, repo_root: pathlib.Path) -> str:
+def build_system_prompt(
+    prompts_dir: pathlib.Path,
+    repo_root: pathlib.Path,
+    archetype: str | None = None,
+) -> str:
     preamble = (prompts_dir / "shared" / "_preamble.md").read_text(encoding="utf-8")
     stage = (prompts_dir / "F_scaffold_plugin.md").read_text(encoding="utf-8")
     return "\n\n---\n\n".join(
@@ -121,7 +145,7 @@ def build_system_prompt(prompts_dir: pathlib.Path, repo_root: pathlib.Path) -> s
                 "A working plugin from this checkout. Its import paths, plugin "
                 "class shape and package.json are correct for this Superset "
                 "version -- copy those conventions rather than recalling "
-                "older ones.\n\n" + _reference_source(repo_root)
+                "older ones.\n\n" + _reference_source(repo_root, archetype)
             ),
         ]
     )
@@ -224,7 +248,9 @@ def run_one(
     result = ScaffoldResult(region_id=decision.get("region_id", "?"))
     try:
         response = provider.complete(
-            build_system_prompt(prompts_dir, repo_root),
+            build_system_prompt(
+                prompts_dir, repo_root, decision.get("plugin_archetype")
+            ),
             build_user_prompt(region, binding, decision, design_system),
             timeout=SCAFFOLD_TIMEOUT,
             on_thinking=on_thinking,
