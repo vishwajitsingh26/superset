@@ -145,3 +145,4 @@ design-to-dashboard/.backend.log
 
 # Design-to-Dashboard run traces (local debugging output)
 design-to-dashboard/traces/
+design-to-dashboard/screenshots/

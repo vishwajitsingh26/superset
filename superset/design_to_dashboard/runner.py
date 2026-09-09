@@ -29,7 +29,7 @@ import sys
 import threading
 from typing import Any, Callable
 
-from superset.design_to_dashboard import trace
+from superset.design_to_dashboard import trace, visual_verify
 
 logger = logging.getLogger(__name__)
 
@@ -610,6 +610,43 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 fidelity_notes=checks.fidelity_notes,
             )
 
+            # ---- visual verify: does it look like the design? -------------
+            # Report only. `verify` above proves the charts return data; this
+            # is the only place anything looks at the result, and it must not
+            # turn a working dashboard into a failed run.
+            session.publish(
+                "stage_start", stage="visual", label="Comparing with your design"
+            )
+            visual = visual_verify.run(
+                provider,
+                session.image_paths,
+                applied.dashboard_url or "",
+                design_analysis,
+                plan.final,
+                PROMPTS,
+                REPO_ROOT,
+                session.id,
+                on_thinking=_thinking_for("visual"),
+            )
+            total_cost += visual.cost_usd
+            session.publish(
+                "stage_complete",
+                stage="visual",
+                label="Compared with your design",
+                summary=(
+                    visual.error
+                    or visual.blocked
+                    or f"{visual.verdict} — {visual.score}/60, "
+                    f"{len(visual.findings)} finding(s)"
+                ),
+                score=visual.score,
+                scores=visual.scores,
+                verdict=visual.verdict,
+                findings=visual.findings,
+                screenshot=visual.screenshot_path,
+                cost=round(total_cost, 4),
+            )
+
             session.status = "done"
             session.result = {
                 "trace_path": str(trace.path_for(session.id, REPO_ROOT)),
@@ -619,6 +656,10 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "charts_reused": applied.charts_reused,
                 "cost_usd": round(total_cost, 4),
                 "rendering": checks.rendering,
+                "visual_verdict": visual.verdict,
+                "visual_score": visual.score,
+                "visual_findings": visual.findings,
+                "screenshot_path": visual.screenshot_path,
                 "all_charts_ok": checks.all_ok,
                 "fidelity_notes": checks.fidelity_notes,
             }
