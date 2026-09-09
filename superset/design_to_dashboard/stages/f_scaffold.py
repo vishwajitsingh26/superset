@@ -202,6 +202,31 @@ def build_user_prompt(
     )
 
 
+# Symbols the barrel re-exports that a generated file can use without importing.
+# TypeScript catches this, but the pipeline has no compile step, so the plugin
+# lands, the dev server errors, and the chart renders blank -- observed as
+# "TS2304: Cannot find name 't'" in plugin/index.ts of the first plugin this
+# stage ever produced.
+BARREL_SYMBOLS = ("t", "styled", "useTheme", "supersetTheme", "css")
+
+
+def _missing_imports(path: str, contents: str) -> list[str]:
+    """Symbols a file uses but never imports."""
+    imported: set[str] = set()
+    for match in re.finditer(r"import\s+(?:type\s+)?\{([^}]*)\}", contents, re.S):
+        imported |= {
+            name.strip().split(" as ")[-1].strip() for name in match.group(1).split(",")
+        }
+    for match in re.finditer(r"^import\s+(\w+)\s+from", contents, re.M):
+        imported.add(match.group(1))
+    body = re.sub(r"import[^;]*;", "", contents, flags=re.S)
+    return [
+        f"{path}: uses `{symbol}` but never imports it"
+        for symbol in BARREL_SYMBOLS
+        if re.search(rf"\b{symbol}\s*[(`]", body) and symbol not in imported
+    ]
+
+
 def validate(scaffold: dict[str, Any], known_viz_types: set[str]) -> list[str]:  # noqa: C901
     """Checks that catch scaffolds which will not build."""
     problems: list[str] = []
@@ -248,6 +273,7 @@ def validate(scaffold: dict[str, Any], known_viz_types: set[str]) -> list[str]: 
                         f"{entry.get('path')}: imports {symbol!r} from "
                         f"@superset-ui/core; in 6.1 it lives in {module}"
                     )
+        problems.extend(_missing_imports(entry.get("path") or "?", contents))
         if re.search(r":\s*any\b", contents):
             problems.append(f"{entry.get('path')}: uses an `any` type")
         if "TODO" in contents:

@@ -21,6 +21,7 @@ import {
   ChartMetadata,
   ChartPlugin,
   ChartProps,
+  t,
 } from '../adapters/supersetAdapter';
 import buildQuery from './buildQuery';
 import controlPanel from './controlPanel';
