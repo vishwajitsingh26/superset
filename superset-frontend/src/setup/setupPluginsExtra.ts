@@ -19,11 +19,4 @@
 
 // For individual deployments to add custom overrides
 
-import { CustomLabelBarPlugin } from '@superset-ui/plugin-chart-custom-label-bar';
-
-import { CustomPlatformFilterPlugin } from '@superset-ui/plugin-chart-custom-platform-filter';
-
-export default function setupPluginsExtra() {
-  new CustomLabelBarPlugin().configure({ key: 'custom_label_bar' }).register();
-  new CustomPlatformFilterPlugin().configure({ key: 'custom_platform_filter' }).register();
-}
+export default function setupPluginsExtra() {}

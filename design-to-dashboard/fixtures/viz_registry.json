@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 54,
+  "count": 52,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -272,52 +272,6 @@
       "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
       "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
-      "metadata_found": true
-    },
-    {
-      "viz_type": "custom_label_bar",
-      "plugin_class": "CustomLabelBarPlugin",
-      "name": "Custom Label Bar",
-      "category": "Ranking",
-      "description": "Ranked horizontal bars drawn without axis chrome: each category label sits above its bar and every value is printed in a fixed right-hand column so values align with one another.",
-      "tags": [
-        "Categorical",
-        "Ranking",
-        "Comparison"
-      ],
-      "behaviors": [
-        "InteractiveChart",
-        "DrillToDetail",
-        "DrillBy"
-      ],
-      "custom": true,
-      "is_filter": false,
-      "source": "superset-frontend/plugins/plugin-chart-custom-label-bar/src/plugin/index.ts",
-      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-label-bar/src/images/thumbnail.png",
-      "control_panel": "superset-frontend/plugins/plugin-chart-custom-label-bar/src/plugin/controlPanel.ts",
-      "metadata_found": true
-    },
-    {
-      "viz_type": "custom_platform_filter",
-      "plugin_class": "CustomPlatformFilterPlugin",
-      "name": "Custom Platform Filter",
-      "category": "Custom Charts",
-      "description": "A full-width filter bar that lives in the dashboard grid: one categorical multi-select whose distinct values come from a column. An empty selection applies no filter, so every value is included by default.",
-      "tags": [
-        "Custom Charts",
-        "Filter",
-        "Dropdown",
-        "Categorical"
-      ],
-      "behaviors": [
-        "InteractiveChart",
-        "NativeFilter"
-      ],
-      "custom": true,
-      "is_filter": false,
-      "source": "superset-frontend/plugins/plugin-chart-custom-platform-filter/src/plugin/index.ts",
-      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-platform-filter/src/images/thumbnail.png",
-      "control_panel": "superset-frontend/plugins/plugin-chart-custom-platform-filter/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
     {
