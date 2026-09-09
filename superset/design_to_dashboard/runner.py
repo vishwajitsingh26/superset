@@ -389,6 +389,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                                 PROMPTS,
                                 REPO_ROOT,
                                 known,
+                                tag=f_scaffold.run_tag(session.id),
                                 on_thinking=_thinking_for("F"),
                             )
                         ),
