@@ -54,6 +54,12 @@ the question so the user can judge whether it matters to them.
 
 - Anything the design or the bindings already answer. Re-asking wastes the
   user's attention and makes the real questions easier to miss.
+- **Two questions whose answers can contradict each other.** Asking "embedded
+  or standalone?" and then "filter bar or in-grid filter?" invites an answer
+  pair that cannot both be honoured, and nothing downstream stops to resolve
+  it. Ask the usage question, then make the consequence part of *its* options
+  ("embedded, chrome hidden — the filter and title move into the grid"), or ask
+  the concrete question alone. One decision per question.
 - Anything you can settle downstream from the control panel.
 - More than about six questions. Rank by how much the answer changes the build.
 

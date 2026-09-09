@@ -110,9 +110,39 @@ def _read_tree(root: pathlib.Path, label: str) -> list[str]:
     return blocks
 
 
+def _check_exemplar(root: pathlib.Path) -> None:
+    """Fail if an exemplar teaches an import `validate` will reject.
+
+    The exemplars are vendored from a fork running an older Superset, where
+    `t` and `styled` still lived in `@superset-ui/core`. A model told to copy
+    the exemplar's conventions copies those too, and then its output is
+    rejected by the very rules this stage enforces -- a contradiction the model
+    cannot resolve and did not cause. Catch it here, where the message can name
+    the file, rather than after a ten-minute generation.
+    """
+    pattern = re.compile(
+        r"import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+'@superset-ui/core'", re.S
+    )
+    for path in sorted(root.rglob("*")):
+        if path.suffix not in {".ts", ".tsx"}:
+            continue
+        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            names = {
+                n.strip().split(" as ")[0].strip() for n in match.group(1).split(",")
+            }
+            stale = sorted(names & set(MOVED_SYMBOLS))
+            if stale:
+                raise LLMError(
+                    f"exemplar {path.relative_to(root)} imports {stale} from "
+                    "@superset-ui/core, which stage F rejects in generated code. "
+                    "Refresh the exemplar to this Superset version."
+                )
+
+
 def _reference_source(repo_root: pathlib.Path, archetype: str | None) -> str:
     """The exemplars this archetype needs: the base plugin, plus its mechanism."""
     root = repo_root / REFERENCE_PLUGIN
+    _check_exemplar(root)
     blocks = _read_tree(root / "base", "reference-plugin")
     if not blocks:
         raise LLMError(f"Reference plugin not found at {root / 'base'}")

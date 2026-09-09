@@ -53,12 +53,14 @@ import {
   Currency,
 } from '@superset-ui/core';
 
+// Superset 6.1 moved these out of @superset-ui/core. This barrel is exactly
+// why: call sites never change, only this file does.
+import { GenericDataType } from '@apache-superset/core/common';
 import {
-  GenericDataType,
   styled as styledComponent,
   useTheme as useThemeHook,
-  t as translate,
-} from '@superset-ui/core';
+} from '@apache-superset/core/theme';
+import { t as translate } from '@apache-superset/core/translation';
 import {
   ControlPanelConfig,
   D3_TIME_FORMAT_OPTIONS,

@@ -147,6 +147,28 @@ Say so in `fidelity_loss` when you do it.
 
 Backwards here produces a dashboard whose filters don't cross-filter. Check `global.filter_bar` before deciding.
 
+## The user's answers are settled
+
+If the binding carries `user_answers`, the user has already been asked those
+questions and has answered them. **Their answers are decisions, not opinions.**
+A plan step that contradicts one is a bug, and the user has no way to tell you
+so — the questions were their only turn, and everything after this runs without
+stopping.
+
+- Asked whether a table should be custom and told "custom" → `new_plugin`, not
+  `configure` with a stock table.
+- Told the dashboard is **embedded with chrome hidden** → the filter bar and
+  the dashboard title may not render at all. A filter must then be a
+  `chart_widget` in the grid, and a title must be a grid element. Routing
+  either to Superset's chrome hides it.
+- Told a cut is "all rows, sorted descending" → do not carry the design's
+  visible row count into `row_limit`.
+
+Where two answers conflict, follow the more specific one, and say in
+`rationale` which you followed and why. Where an answer conflicts with what you
+see in the design, follow the answer — they are looking at the same picture and
+know what they want.
+
 ## Stage A's read is evidence, not instruction
 
 Every region arrives with `composition` and a provisional `stock_feasibility`
