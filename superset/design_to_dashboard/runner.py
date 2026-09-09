@@ -29,6 +29,8 @@ import sys
 import threading
 from typing import Any, Callable
 
+from superset.design_to_dashboard import trace
+
 logger = logging.getLogger(__name__)
 
 
@@ -600,6 +602,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
             session.status = "done"
             session.result = {
+                "trace_path": str(trace.path_for(session.id, REPO_ROOT)),
                 "dashboard_id": applied.dashboard_id,
                 "dashboard_url": applied.dashboard_url,
                 "charts_created": applied.charts_created,
@@ -615,4 +618,14 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             logger.exception("pipeline failed for session %s", session.id)
             session.status = "failed"
             session.error = str(ex)
-            session.publish("error", label="Something went wrong", detail=str(ex)[:600])
+            session.publish(
+                "error",
+                label="Something went wrong",
+                detail=str(ex)[:600],
+                trace_path=str(trace.path_for(session.id, REPO_ROOT)),
+            )
+        finally:
+            # Every run leaves a trace, including one that failed or was
+            # cancelled -- a failed run is precisely the one worth reading.
+            # Written last so the terminal event is part of the record.
+            trace.write(session, REPO_ROOT)

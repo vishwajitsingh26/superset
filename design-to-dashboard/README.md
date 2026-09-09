@@ -15,6 +15,30 @@ Turns a Figma export or dashboard screenshot + a natural-language requirement in
 | `PLUGIN_DEPLOYMENT.md` | What it takes to make a generated plugin usable — static rebuild vs. dynamic loading |
 | `UI_PLAN.md` | Where the UI lives in Superset, how it's wired, and the six-state interaction model |
 
+## Run traces
+
+Every run writes its own trace when it ends -- succeeded, failed or cancelled:
+
+```
+design-to-dashboard/traces/<session-id>.md
+```
+
+Per stage: duration, cost, the reasoning, the tool calls, the decisions and the
+thumbnail evidence behind them, plus both human gates and what finally
+rendered. This is the artifact for judging how well the model performed.
+
+The directory is git-ignored, so traces are local to your machine and your
+editor may hide them. Sessions live in the web process's memory, so a trace is
+the *only* thing that survives a restart -- which is why the runner writes it
+rather than leaving it to be exported by hand.
+
+To re-export a session that is still in memory (to pick up events published
+after its trace was written, or to write it elsewhere):
+
+```bash
+python design-to-dashboard/scripts/export_trace.py <session-id> [--out FILE]
+```
+
 ## Why six stages and not one agent
 
 The viz registry is ~567 KB of control-panel source across 72 registered `viz_type`s (~140k tokens raw). Any single chart needs exactly one entry from it (~3k tokens). A single agent carrying the whole registry is both expensive and worse at choosing, so the pipeline splits **by what context each step needs**, not by task verb:
