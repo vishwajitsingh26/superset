@@ -35,6 +35,17 @@ Work section by section, in this order:
 3. **If no plugin renders the section, build one.** `new_plugin` is a normal
    outcome, not a failure. A plugin is a UI component and we control that
    codebase, so anything the design shows can be built.
+4. **Name the plugin you intend to create**, in `viz_type`, as
+   `custom_<something>`. It must not already be in the registry — that is what
+   `reuse` and `configure` are for.
+
+   **Regions that need the same component share one name.** Three KPI tiles
+   differing only in which measure they show are three decisions, one
+   `viz_type`, and one plugin: give all three `custom_kpi_card` and let each
+   one's configuration differ. Building a plugin per tile costs ten minutes and
+   a package each, and leaves near-identical code to maintain. Ask yourself
+   what would differ in the *component* — if the answer is only the data, it is
+   one plugin.
 
 ### Looking is not optional, and similar is not the same
 

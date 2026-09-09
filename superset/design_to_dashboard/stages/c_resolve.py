@@ -276,6 +276,20 @@ def validate(  # noqa: C901
             # filter that emits a data mask, a table with drawn cells. Left
             # unset, F falls back to a plain single-visualisation plugin and
             # the structure the design showed is silently lost.
+            # Naming it is what lets several regions share one plugin: the
+            # orchestrator dedupes on this before calling stage F, so three KPI
+            # tiles cost one generation instead of three.
+            if not viz_type:
+                problems.append(
+                    f"{region_id}: new_plugin without a viz_type -- name the "
+                    "plugin you intend to create (`custom_<name>`), and use the "
+                    "same name on every region that shares it"
+                )
+            elif not viz_type.startswith("custom_"):
+                problems.append(
+                    f"{region_id}: new_plugin viz_type {viz_type!r} must start "
+                    "with 'custom_'"
+                )
             archetype = decision.get("plugin_archetype")
             if archetype not in ARCHETYPES:
                 problems.append(

@@ -408,8 +408,22 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         continue
 
                     written = plugin_writer.write(scaffold.scaffold, REPO_ROOT)
+                    # `plugin_writer` adds the import to setupPluginsExtra.ts as
+                    # soon as the plugin lands, but webpack resolves that import
+                    # through a node_modules symlink that only `npm install`
+                    # creates. Linking now rather than once at the end of the
+                    # stage closes the window where the dev server reports
+                    # "Module not found" for every remaining plugin's build.
+                    from superset.design_to_dashboard import frontend
+
+                    frontend.link_plugins(REPO_ROOT)
                     built.append(scaffold.viz_type or "?")
-                    known.add(scaffold.viz_type or "")
+                    # Deliberately NOT added to `known`. `known` is what stage F
+                    # validates against, and a type built moments ago in this
+                    # same run is not a name clash -- it is the shared plugin
+                    # two regions asked for. Adding it made the second region
+                    # fail with "already exists in the registry", killing the
+                    # run before the dedup below could reuse it.
                     built_types[scaffold.viz_type or ""] = {
                         "params_hint": scaffold.scaffold.get("params_hint")
                     }
