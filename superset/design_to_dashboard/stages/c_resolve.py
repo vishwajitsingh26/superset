@@ -47,8 +47,13 @@ from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_CALLS = 6
-MAX_ITERATIONS = 6
+# Build-time metadata, like stage B's: a `get_chart_info` response is ~2 KB and
+# is read once. The waste to avoid is paging blindly through an instance that
+# holds thousands of charts -- not checking a candidate that might spare us
+# building a chart from scratch. Reuse is the cheapest outcome there is, so the
+# budget has to be large enough to actually look for it in every section.
+MAX_TOOL_CALLS = 24
+MAX_ITERATIONS = 10
 
 DECISIONS = {"reuse", "configure", "wrap", "new_plugin", "native_filter", "drop"}
 # What kind of component a `new_plugin` is. A plugin is a React component we

@@ -27,10 +27,11 @@ Work section by section, in this order:
 2. **Only then consider reusing an existing chart.** A chart is worth reusing
    when one already renders this section's bound data with that plugin. Search
    narrowly: one `list_charts` filtered to the bound dataset, or a name search
-   using the section's title. Confirm **at most two** candidates with
-   `get_chart_info`. Do not inspect every chart the instance holds — an
-   instance can have thousands, and a near-match is worth less than the time
-   spent finding it.
+   using the section's title. Confirm every plausible candidate with
+   `get_chart_info` — a section you never searched is a section you decided
+   about blind. Do not page through the instance's whole chart list; an
+   instance can hold thousands, and the way to find a match is a targeted
+   search by name, not enumeration.
 3. **If no plugin renders the section, build one.** `new_plugin` is a normal
    outcome, not a failure. A plugin is a UI component and we control that
    codebase, so anything the design shows can be built.
@@ -62,9 +63,19 @@ say so as a decision you made — never report the tools as unavailable.
 
 ### Budget
 
-You have **6 tool calls**. Plugin matching costs none of them — it is done by
-looking. Spend them only on the reuse check, and stop early: returning a good
-plan quickly is worth more than an exhaustive search.
+You have **24 tool calls**, and matching plugins by thumbnail costs none of
+them — that is done by looking. Spend them all on the reuse check if the design
+needs it.
+
+These are build-time reads of chart metadata. They run once, while the
+dashboard is being assembled, and nothing the user opens later is slower for
+them. Reuse is the cheapest outcome the pipeline has — no new chart, no new
+plugin, no rebuild — so a call spent confirming a candidate pays for itself the
+moment it lands. Deciding a section blind because you were saving calls is the
+expensive mistake, not the search.
+
+What is still waste: enumerating an instance's whole chart list. Search by the
+names the design gives you, and check what comes back.
 
 ## The registry is the only source of truth
 
