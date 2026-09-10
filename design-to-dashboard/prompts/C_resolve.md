@@ -187,6 +187,15 @@ without being a chart: it becomes a `MARKDOWN` or `HEADER` node, and its `text`
 field carries what to render. Do not reach for `configure` without a
 `viz_type` — a chart with no type is not something any later stage can build.
 
+**Build what the design shows, including controls whose result it does not.**
+A view toggle, a tab strip or an expand button drawn in the design is part of
+the design, even when only one of its states is pictured. Keep the control,
+build the state that *is* drawn, and leave the others empty or marked
+"Coming soon" — the design language here already uses that idiom. Do not drop
+the control because its other states are unknown, and do not invent content
+for them. A complete design is the designer's to supply; your job is to
+reproduce what you were given, faithfully, and no more.
+
 **Never build a plugin to render text.** A section title, a page heading, a
 caption, a static label: these are `grid_text`. A plugin costs ten minutes
 of generation, a package in the repo and a frontend rebuild, and buys

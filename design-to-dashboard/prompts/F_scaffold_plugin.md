@@ -111,6 +111,10 @@ These are not style preferences; a plugin that breaks them fails review.
   below.
 - **Handle all three states**: loading, empty and error. Do not poll — the
   dashboard's own refresh drives updates.
+- **A control whose result the design never shows is still built.** Render the
+  toggle, the tab strip, the expand button. The state the design draws gets the
+  real implementation; the others render an empty state or "Coming soon". Never
+  invent what an unpictured view contains.
 - **Assume the datasource will change.** A chart may be built on a dataset this
   run created and repointed at the real one later by a teammate in Explore.
   Take every column and metric through standard controls (`groupby`, `metric`,

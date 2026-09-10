@@ -87,6 +87,12 @@ the question so the user can judge whether it matters to them.
   ("embedded, chrome hidden — the filter and title move into the grid"), or ask
   the concrete question alone. One decision per question.
 - Anything you can settle downstream from the control panel.
+- **What is behind a control the design never opens.** A card with view toggles
+  showing only the list state, a tab strip with one tab drawn: build the toggle
+  and leave the unseen states empty. Supplying a complete design is the
+  designer's job, and asking them to narrate every hidden view spends the
+  user's attention on something they can answer better by sending another
+  screenshot.
 - More than about six questions. Rank by how much the answer changes the build.
 
 ## Form

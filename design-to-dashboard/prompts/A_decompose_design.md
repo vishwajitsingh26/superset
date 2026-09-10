@@ -50,7 +50,11 @@ Sweep the design top-left to bottom-right. For each distinct visual element emit
 - `title` — the element's visible label, verbatim, or `null`
 - `observed` — what is literally rendered. Be specific: mark type, orientation, stacking, series count, axis labels and units, legend presence and position, gridlines, number formatting (`$1.2M`, `12.4%`, `1,234`), currency symbols, date granularity, sort direction, colour roles, tab labels, column headers, row counts, conditional formatting, empty/loading states, icons, deltas and their arrows.
 - `implied_data` — the dimensions and measures this element must be reading, **in the design's own vocabulary**. Write `"monthly spend broken down by cloud provider"`, never `"SUM(cost) GROUP BY provider_name"`. You do not know the schema.
-- `interactions` — visible affordances: drill arrows, expand carets, tab switchers, range sliders, hover states, "view all" links.
+- `interactions` — visible affordances: drill arrows, expand carets, tab switchers, view toggles, range sliders, hover states, "view all" links.
+  **Record every one, including those whose result the design never shows.** A
+  card with list / chart / grid toggles where only the list view is drawn still
+  has three toggles: say so, and say which state is the one you can see. Do not
+  infer what the others contain — that is not in the picture.
 - `composition` — the section's structural shape. This decides which kind of
   component can render it, so read it off the picture carefully:
   - `atomic` — one visual, one card. A bar chart, a table, a single number.
