@@ -1,5 +1,5 @@
 {
-  "name": "@superset-ui/plugin-chart-custom-tile-table-panel",
+  "name": "@superset-ui/plugin-chart-custom-tile-table-panel-2cb7de",
   "version": "0.1.0",
   "description": "Superset Chart - Custom Tile Table Panel (composite card: KPI sub-tiles over a titled table)",
   "sideEffects": false,

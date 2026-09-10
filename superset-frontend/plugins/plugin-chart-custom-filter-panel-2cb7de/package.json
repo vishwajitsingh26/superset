@@ -1,5 +1,5 @@
 {
-  "name": "@superset-ui/plugin-chart-custom-filter-panel",
+  "name": "@superset-ui/plugin-chart-custom-filter-panel-2cb7de",
   "version": "0.1.0",
   "description": "Superset Chart - Custom Filter Panel (collapsed Filter button opening a multi-field filter panel)",
   "sideEffects": false,

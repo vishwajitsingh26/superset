@@ -92,6 +92,18 @@ REQUIRED_SUFFIXES = (
 
 # Symbols that moved out of @superset-ui/core in 6.1. Importing them from the
 # wrong module makes `styled` an implicit any and fails the build.
+# antd v5 renamed these. A model trained on v4 examples reaches for the old
+# name, TypeScript rejects it, and the chart renders blank on a dashboard that
+# otherwise looks finished.
+RENAMED_PROPS = {
+    "dropdownMatchSelectWidth": "popupMatchSelectWidth",
+    "dropdownClassName": "popupClassName",
+    "dropdownStyle": "popupStyle",
+    "visible": "open (on Modal, Drawer, Tooltip and Popover)",
+    "bodyStyle": "styles.body",
+    "overlayClassName": "classNames.root",
+}
+
 MOVED_SYMBOLS = {
     "t": "@apache-superset/core/translation",
     "styled": "@apache-superset/core/theme",
@@ -125,8 +137,23 @@ def _read_tree(root: pathlib.Path, label: str) -> list[str]:
     return blocks
 
 
+# Fields and props the vendored exemplars are known to have carried from the
+# fork's older Superset. An exemplar showing one of these teaches the model an
+# API this version rejects, and the model is right to copy it -- so the
+# exemplar is what must be fixed.
+# Matched as regexes, because the same field name is right on one object and
+# wrong on another: a slice entity really does carry `form_data`, while
+# `ChartState` renamed it in 6.1. Only the `initChart` spread is the error.
+STALE_EXEMPLAR_API = {
+    r"\.\.\.initChart[\s\S]{0,400}?\bform_data\s*:": (
+        "ChartState calls this `latestQueryFormData` in 6.1"
+    ),
+    r"\bdropdownMatchSelectWidth\s*=": ("antd v5 calls this `popupMatchSelectWidth`"),
+}
+
+
 def _check_exemplar(root: pathlib.Path) -> None:
-    """Fail if an exemplar teaches an import `validate` will reject.
+    """Fail if an exemplar teaches an import or API `validate` will reject.
 
     The exemplars are vendored from a fork running an older Superset, where
     `t` and `styled` still lived in `@superset-ui/core`. A model told to copy
@@ -141,14 +168,22 @@ def _check_exemplar(root: pathlib.Path) -> None:
     for path in sorted(root.rglob("*")):
         if path.suffix not in {".ts", ".tsx"}:
             continue
-        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+        contents = path.read_text(encoding="utf-8")
+        for stale, correction in STALE_EXEMPLAR_API.items():
+            if re.search(stale, contents):
+                raise LLMError(
+                    f"exemplar {path.relative_to(root)} teaches an API this "
+                    f"Superset rejects: {correction}. Refresh the exemplar "
+                    "rather than letting it teach a dead API."
+                )
+        for match in pattern.finditer(contents):
             names = {
                 n.strip().split(" as ")[0].strip() for n in match.group(1).split(",")
             }
-            stale = sorted(names & set(MOVED_SYMBOLS))
-            if stale:
+            stale_imports = sorted(names & set(MOVED_SYMBOLS))
+            if stale_imports:
                 raise LLMError(
-                    f"exemplar {path.relative_to(root)} imports {stale} from "
+                    f"exemplar {path.relative_to(root)} imports {stale_imports} from "
                     "@superset-ui/core, which stage F rejects in generated code. "
                     "Refresh the exemplar to this Superset version."
                 )
@@ -298,6 +333,15 @@ def validate(  # noqa: C901
             f"directory {directory!r} must end with the run tag '-{tag}' so the "
             "plugin can be traced to this run and cleaned up later"
         )
+    # tsconfig maps `@superset-ui/plugin-chart-*` to `./plugins/plugin-chart-*`,
+    # so the package name and the directory are the same wildcard. Tagging one
+    # and not the other makes every import unresolvable to the type checker.
+    if tag and package_name and not package_name.endswith(f"-{tag}"):
+        problems.append(
+            f"package name {package_name!r} must end with '-{tag}' too: "
+            "tsconfig resolves the package name to the directory of the same "
+            "name, so they cannot differ"
+        )
     for path in paths:
         if directory and not path.startswith(directory):
             problems.append(f"file outside the plugin directory: {path}")
@@ -314,6 +358,12 @@ def validate(  # noqa: C901
                         f"@superset-ui/core; in 6.1 it lives in {module}"
                     )
         problems.extend(_missing_imports(entry.get("path") or "?", contents))
+        for stale, replacement in RENAMED_PROPS.items():
+            if re.search(rf"\b{stale}\s*=", contents):
+                problems.append(
+                    f"{entry.get('path')}: uses the antd v4 prop {stale!r}; "
+                    f"in v5 it is {replacement}"
+                )
         if re.search(r":\s*any\b", contents):
             problems.append(f"{entry.get('path')}: uses an `any` type")
         if "TODO" in contents:

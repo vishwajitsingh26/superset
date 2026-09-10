@@ -191,7 +191,9 @@ function useBootstrapEmbeddedChart(
               {
                 ...initChart,
                 id: chartId,
-                form_data: formData,
+                // 6.1 renamed this on ChartState; `form_data` is the 6.0 name
+                // and is rejected by the type checker.
+                latestQueryFormData: formData,
               },
               chartId,
             ),

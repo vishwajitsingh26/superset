@@ -1,5 +1,5 @@
 {
-  "name": "@superset-ui/plugin-chart-custom-period-picker",
+  "name": "@superset-ui/plugin-chart-custom-period-picker-2cb7de",
   "version": "0.1.0",
   "description": "Superset Chart - Custom Period Picker (in-grid month filter widget)",
   "sideEffects": false,

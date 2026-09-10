@@ -39,7 +39,6 @@ const metadata = new ChartMetadata({
   tags: [t('Custom Charts'), t('Composite'), t('Tiles'), t('Table')],
   thumbnail,
   useLegacyApi: false,
-  skipDataFetch: true,
 });
 
 export default class CustomTileTablePanelPlugin extends ChartPlugin<TileTablePanelFormData> {

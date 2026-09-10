@@ -68,7 +68,7 @@ export default function useEmbeddedChart(chartId: number): boolean {
 
         if (!hasChart) {
           dispatch(
-            addChart({ ...initChart, id: chartId, form_data: formData }, chartId),
+            addChart({ ...initChart, id: chartId, latestQueryFormData: formData }, chartId),
           );
         }
         if (!hasSlice) {
@@ -80,7 +80,7 @@ export default function useEmbeddedChart(chartId: number): boolean {
                   slice_id: chartId,
                   slice_name: result.slice_name ?? '',
                   slice_url: result.url ?? '',
-                  form_data: formData,
+                  latestQueryFormData: formData,
                   viz_type: result.viz_type ?? '',
                   datasource,
                   description: result.description ?? '',

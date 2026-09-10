@@ -1,5 +1,5 @@
 {
-  "name": "@superset-ui/plugin-chart-custom-forecast-line",
+  "name": "@superset-ui/plugin-chart-custom-forecast-line-2cb7de",
   "version": "0.1.0",
   "description": "Superset Chart - Custom Forecast Line (actual vs forecast daily spend)",
   "sideEffects": false,

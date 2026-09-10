@@ -25,17 +25,17 @@ import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c
 
 import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
 
-import { CustomPeriodPickerPlugin } from '@superset-ui/plugin-chart-custom-period-picker';
+import { CustomPeriodPickerPlugin } from '@superset-ui/plugin-chart-custom-period-picker-2cb7de';
 
-import { CustomFilterPanelPlugin } from '@superset-ui/plugin-chart-custom-filter-panel';
+import { CustomFilterPanelPlugin } from '@superset-ui/plugin-chart-custom-filter-panel-2cb7de';
 
-import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card';
+import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card-2cb7de';
 
-import { CustomSpendTablePlugin } from '@superset-ui/plugin-chart-custom-spend-table';
+import { CustomSpendTablePlugin } from '@superset-ui/plugin-chart-custom-spend-table-2cb7de';
 
-import { CustomForecastLinePlugin } from '@superset-ui/plugin-chart-custom-forecast-line';
+import { CustomForecastLinePlugin } from '@superset-ui/plugin-chart-custom-forecast-line-2cb7de';
 
-import { CustomTileTablePanelPlugin } from '@superset-ui/plugin-chart-custom-tile-table-panel';
+import { CustomTileTablePanelPlugin } from '@superset-ui/plugin-chart-custom-tile-table-panel-2cb7de';
 
 export default function setupPluginsExtra() {
   new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();

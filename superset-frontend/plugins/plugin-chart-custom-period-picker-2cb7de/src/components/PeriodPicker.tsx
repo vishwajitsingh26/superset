@@ -103,7 +103,6 @@ function PeriodPicker({
         value={selectedMonth ?? undefined}
         onChange={handleChange}
         header={null}
-        dropdownMatchSelectWidth={false}
         css={{ height }}
       />
     </PickerRoot>

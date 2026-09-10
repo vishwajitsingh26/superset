@@ -1,5 +1,5 @@
 {
-  "name": "@superset-ui/plugin-chart-custom-spend-table",
+  "name": "@superset-ui/plugin-chart-custom-spend-table-2cb7de",
   "version": "0.1.0",
   "description": "Superset Chart - Custom Spend Table (expandable rows, in-cell MoM pill and sparkline)",
   "sideEffects": false,
