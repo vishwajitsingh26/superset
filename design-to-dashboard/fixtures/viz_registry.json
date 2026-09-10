@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 52,
+  "count": 53,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -272,6 +272,26 @@
       "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
       "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_text",
+      "plugin_class": "CustomTextPlugin",
+      "name": "Custom Text",
+      "category": "Text",
+      "description": "Styled free text for a dashboard: headings, captions and callouts. Font size, weight, alignment and colour are set per chart, so one plugin serves any design without a new package.",
+      "tags": [
+        "Text",
+        "Layout"
+      ],
+      "behaviors": [
+        "InteractiveChart"
+      ],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-custom-text/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-text/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-custom-text/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
     {

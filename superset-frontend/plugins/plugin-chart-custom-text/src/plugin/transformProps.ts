@@ -16,4 +16,34 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-export { default as CustomProviderSpendCardPlugin } from './plugin';
+import { ChartProps } from '../adapters/supersetAdapter';
+import { CustomTextFormData, CustomTextProps, TextAlign } from '../types';
+
+const DEFAULT_FONT_SIZE = 24;
+const DEFAULT_FONT_WEIGHT = 600;
+
+/** Everything comes from the control panel; the query result is ignored. */
+export default function transformProps(
+  chartProps: ChartProps,
+): CustomTextProps {
+  const { width, height, formData } = chartProps;
+  const {
+    bodyText = '',
+    fontSize = DEFAULT_FONT_SIZE,
+    fontWeight = DEFAULT_FONT_WEIGHT,
+    textAlign = 'left',
+    textColor = '',
+    subText = '',
+  } = formData as CustomTextFormData;
+
+  return {
+    width,
+    height,
+    bodyText,
+    fontSize,
+    fontWeight,
+    textAlign: textAlign as TextAlign,
+    textColor,
+    subText,
+  };
+}

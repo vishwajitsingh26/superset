@@ -197,10 +197,19 @@ for them. A complete design is the designer's to supply; your job is to
 reproduce what you were given, faithfully, and no more.
 
 **Never build a plugin to render text.** A section title, a page heading, a
-caption, a static label: these are `grid_text`. A plugin costs ten minutes
-of generation, a package in the repo and a frontend rebuild, and buys
-nothing a Markdown node does not already do. Reach for a plugin only when
-the section draws *data*.
+caption, a static label: text costs no generation at all. There are two ways
+to place it, and the design decides which:
+
+- **`configure` with `custom_text`** when the design's typography matters —
+  a specific size, weight, colour or alignment. That plugin already exists and
+  exposes all four as controls, so it matches any design and is reused across
+  every run. Set them from the design's `typography` and `palette`.
+- **`grid_text`** when plain Markdown in the dashboard's own styling is
+  enough — a note, a caption nobody measures.
+
+Building a *new* plugin for text is always wrong: it costs ten minutes of
+generation, a package in the repo and a frontend rebuild, to do what
+`custom_text` already does for nothing.
 
 ## The user's answers are settled
 

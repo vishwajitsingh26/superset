@@ -221,8 +221,10 @@ def _text_as_plugin(
     }
     return [
         f"{d.get('region_id')}: role is {roles.get(d.get('region_id'))!r}, which "
-        "draws no data -- use `grid_text`, not a plugin. A plugin costs a "
-        "package and a frontend rebuild to render a line of text."
+        "draws no data. Use `configure` with the existing `custom_text` plugin "
+        "when the design's typography matters, or `grid_text` for plain "
+        "Markdown. Building a plugin costs a package and a frontend rebuild to "
+        "render a line of text."
         for d in decisions
         if d.get("decision") == "new_plugin"
         and roles.get(d.get("region_id")) in TEXT_ROLES

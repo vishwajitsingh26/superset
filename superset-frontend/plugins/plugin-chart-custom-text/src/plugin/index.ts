@@ -21,40 +21,36 @@ import {
   ChartMetadata,
   ChartPlugin,
   ChartProps,
-  QueryFormData,
   t,
 } from '../adapters/supersetAdapter';
 import buildQuery from './buildQuery';
 import controlPanel from './controlPanel';
 import transformProps from './transformProps';
-import thumbnail from '../images/thumbnail';
-import { PeriodFilterFormData } from '../types';
+import thumbnail from '../images/thumbnail.png';
+import { CustomTextFormData } from '../types';
 
-const metadata = new ChartMetadata({
-  name: t('Custom Period Filter'),
-  category: t('Custom Charts'),
-  description: t(
-    'An in-grid control row: a single-month period dropdown and a Filter ' +
-      'button. Emits the month range and monthly grain to every other chart on ' +
-      'the dashboard, for embeds where the native filter bar is hidden.',
-  ),
-  behaviors: [Behavior.NativeFilter, Behavior.InteractiveChart],
-  tags: [t('Custom Charts'), t('Filter'), t('Dropdown'), t('Time')],
-  thumbnail,
-  useLegacyApi: false,
-  enableNoResults: false,
-});
-
-export default class CustomPeriodFilterPlugin extends ChartPlugin<
-  PeriodFilterFormData,
-  ChartProps<QueryFormData>
+export default class CustomTextPlugin extends ChartPlugin<
+  CustomTextFormData,
+  ChartProps<CustomTextFormData>
 > {
   constructor() {
     super({
       buildQuery,
       controlPanel,
-      loadChart: () => import('../components/PeriodFilter'),
-      metadata,
+      loadChart: () => import('../CustomText'),
+      metadata: new ChartMetadata({
+        behaviors: [Behavior.InteractiveChart],
+        category: t('Text'),
+        description: t(
+          'Styled free text for a dashboard: headings, captions and callouts. ' +
+            'Font size, weight, alignment and colour are set per chart, so one ' +
+            'plugin serves any design without a new package.',
+        ),
+        name: t('Custom Text'),
+        tags: [t('Text'), t('Layout')],
+        thumbnail,
+        useLegacyApi: false,
+      }),
       transformProps,
     });
   }

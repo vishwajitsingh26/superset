@@ -1,0 +1,12 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-text",
+  "version": "0.1.0",
+  "description": "Styled text for a dashboard grid: headings, captions and callouts.",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2"
+  }
+}

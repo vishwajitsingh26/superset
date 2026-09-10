@@ -16,4 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-export { default as CustomPeriodFilterPlugin } from './plugin';
+export { default as CustomTextPlugin } from './plugin';
+export { default as CustomText } from './CustomText';
+export * from './types';

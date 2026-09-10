@@ -16,27 +16,25 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { memo } from 'react';
+import { QueryFormData } from './adapters/supersetAdapter';
 
-// currentColor keeps the glyph on the button's theme token.
-function FunnelIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 14 14"
-      fill="none"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M1.75 2.33h10.5L8.17 7v4.67L5.83 12.83V7L1.75 2.33Z"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+export type TextAlign = 'left' | 'center' | 'right';
+
+export interface CustomTextCustomizeProps {
+  /** The text to render. Newlines are preserved. */
+  bodyText: string;
+  fontSize: number;
+  fontWeight: number;
+  textAlign: TextAlign;
+  /** Any CSS colour. Empty falls back to the theme's primary text colour. */
+  textColor: string;
+  /** Optional smaller line beneath the main text. */
+  subText: string;
 }
 
-export default memo(FunnelIcon);
+export type CustomTextFormData = QueryFormData & CustomTextCustomizeProps;
+
+export interface CustomTextProps extends CustomTextCustomizeProps {
+  width: number;
+  height: number;
+}

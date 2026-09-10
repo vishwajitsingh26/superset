@@ -16,67 +16,26 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+// The fork's insulation layer: no other file in this plugin imports
+// `@superset-ui/*` directly, so a move upstream is a one-file change here.
 import {
-  AdhocMetric,
   Behavior,
+  buildQueryContext,
   ChartMetadata,
   ChartPlugin,
   ChartProps,
-  DataRecord,
-  ExtraFormData,
-  QueryFormColumn,
   QueryFormData,
-  QueryFormMetric,
-  SetDataMaskHook,
-  buildQueryContext,
-  ensureIsArray,
-  getColumnLabel,
-  validateNonEmpty,
 } from '@superset-ui/core';
-
-// Superset 6.1 moved these out of @superset-ui/core. This barrel is exactly
-// why: call sites never change, only this file does.
+import { ControlPanelConfig } from '@superset-ui/chart-controls';
 import {
   styled as styledComponent,
   useTheme as useThemeHook,
 } from '@apache-superset/core/theme';
 import { t as translate } from '@apache-superset/core/translation';
-import {
-  ControlPanelConfig,
-  ControlPanelState,
-  Dataset,
-  sharedControls,
-} from '@superset-ui/chart-controls';
-import { Button, Popover, Select } from '@superset-ui/core/components';
 
 export const styled = styledComponent;
 export const useTheme = useThemeHook;
 export const t = translate;
 
-export {
-  Behavior,
-  ChartMetadata,
-  ChartPlugin,
-  buildQueryContext,
-  ensureIsArray,
-  getColumnLabel,
-  validateNonEmpty,
-  sharedControls,
-  Button,
-  Popover,
-  Select,
-};
-
-export type {
-  AdhocMetric,
-  ChartProps,
-  ControlPanelConfig,
-  ControlPanelState,
-  DataRecord,
-  Dataset,
-  ExtraFormData,
-  QueryFormColumn,
-  QueryFormData,
-  QueryFormMetric,
-  SetDataMaskHook,
-};
+export { Behavior, buildQueryContext, ChartMetadata, ChartPlugin };
+export type { ChartProps, ControlPanelConfig, QueryFormData };

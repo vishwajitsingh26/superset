@@ -16,30 +16,28 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { buildQueryContext, QueryFormData } from '../adapters/supersetAdapter';
 
-// The design draws a single month ("September 2025"), so the emitted grain is
-// always one month regardless of how wide the underlying data is.
-export const PERIOD_GRAIN = 'P1M';
-
-export const MONTH_LABELS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
-
-export const MIN_PERIOD_LABEL = '__min_period';
-export const MAX_PERIOD_LABEL = '__max_period';
-
-// Bounds a pathological min/max from producing thousands of dropdown rows.
-export const MAX_MONTH_OPTIONS = 240;
-
-export const DEFAULT_ROW_LIMIT = 1000;
+/**
+ * This chart draws no data, but every Superset chart must carry a query
+ * context or the data API rejects it outright. `SELECT 1` succeeds against any
+ * datasource and returns one row, so the chart is queryable without depending
+ * on a single column existing.
+ */
+export default function buildQuery(formData: QueryFormData) {
+  return buildQueryContext(formData, baseQueryObject => [
+    {
+      ...baseQueryObject,
+      columns: [],
+      metrics: [
+        {
+          expressionType: 'SQL',
+          sqlExpression: '1',
+          label: 'placeholder',
+          hasCustomLabel: true,
+        },
+      ],
+      row_limit: 1,
+    },
+  ]);
+}
