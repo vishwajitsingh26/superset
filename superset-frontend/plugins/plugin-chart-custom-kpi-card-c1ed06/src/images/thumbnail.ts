@@ -17,16 +17,9 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// Placeholder gallery thumbnail as a data URI so the package carries no binary.
+// Replace with src/images/thumbnail.png (and a matching import) when available.
+const thumbnail =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
-}
+export default thumbnail;

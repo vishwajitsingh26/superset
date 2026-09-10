@@ -101,6 +101,66 @@ def build_user_prompt(design_analysis: dict[str, Any], plan: dict[str, Any]) -> 
     )
 
 
+# Superset draws a header on every chart card that a design almost never shows,
+# and it eats into the content area. Sizing a card at the design's own ratio
+# therefore clips whatever is inside it -- measured at roughly 40px, so five
+# grid units.
+CHART_HEADER_UNITS = 5
+# A page heading needs room for a large font plus padding; the model has chosen
+# 4 (32px) for a 26px heading and clipped it.
+MIN_TEXT_HEIGHT = 8
+
+
+def normalise(position: dict[str, Any]) -> list[str]:
+    """Make the grid self-consistent, in place, and report what changed.
+
+    Stage E sizes every node from its own bbox, independently, so three
+    identical KPI tiles came back 27, 28 and 28 -- three roundings of the same
+    number. Superset lays a row out as one band, so siblings must agree; this
+    is arithmetic, not judgement, and belongs here rather than in a prompt that
+    can drift.
+    """
+    notes: list[str] = []
+    for row_id, row in position.items():
+        if not isinstance(row, dict) or row.get("type") != "ROW":
+            continue
+        children = [
+            position[c]
+            for c in row.get("children", [])
+            if isinstance(position.get(c), dict)
+        ]
+        if not children:
+            continue
+
+        for node in children:
+            meta = node.setdefault("meta", {})
+            if node.get("type") in {"MARKDOWN", "HEADER"}:
+                if (meta.get("height") or 0) < MIN_TEXT_HEIGHT:
+                    notes.append(
+                        f"{row_id}: heading height "
+                        f"{meta.get('height')} -> {MIN_TEXT_HEIGHT}"
+                    )
+                    meta["height"] = MIN_TEXT_HEIGHT
+                if len(children) == 1 and (meta.get("width") or 0) < GRID_COLUMN_COUNT:
+                    notes.append(
+                        f"{row_id}: heading width "
+                        f"{meta.get('width')} -> {GRID_COLUMN_COUNT}"
+                    )
+                    meta["width"] = GRID_COLUMN_COUNT
+
+        heights = [
+            n["meta"].get("height")
+            for n in children
+            if isinstance(n.get("meta"), dict) and n["meta"].get("height")
+        ]
+        if len(set(heights)) > 1:
+            tallest = max(heights)
+            notes.append(f"{row_id}: heights {sorted(set(heights))} -> {tallest}")
+            for node in children:
+                node["meta"]["height"] = tallest
+    return notes
+
+
 def run(
     provider: LLMProvider,
     design_analysis: dict[str, Any],
@@ -115,6 +175,12 @@ def run(
         on_thinking=on_thinking,
     )
     layout = extract_json(response.text)
+    if adjustments := normalise(layout.get("position_json") or {}):
+        layout.setdefault("adjustments", []).extend(
+            {"row_id": note.split(":")[0], "issue": note, "resolution": "normalised"}
+            for note in adjustments
+        )
+        logger.info("stage E normalised the grid: %s", "; ".join(adjustments))
     logger.info(
         "stage E complete: %d node(s), %d adjustment(s)",
         len(layout.get("position_json", {})),

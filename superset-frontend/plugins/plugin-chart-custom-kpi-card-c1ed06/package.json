@@ -1,0 +1,29 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-kpi-card-c1ed06",
+  "version": "0.1.0",
+  "description": "Superset Chart - Custom KPI Card (label above a large formatted value with unit suffix)",
+  "sideEffects": false,
+  "main": "lib/index.js",
+  "module": "esm/index.js",
+  "files": [
+    "esm",
+    "lib"
+  ],
+  "keywords": [
+    "superset",
+    "kpi",
+    "big number",
+    "card"
+  ],
+  "author": "Superset",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

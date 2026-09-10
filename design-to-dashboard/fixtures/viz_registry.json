@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 52,
+  "count": 55,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -272,6 +272,73 @@
       "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
       "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_kpi_card",
+      "plugin_class": "CustomKpiCardPlugin",
+      "name": "Custom KPI Card",
+      "category": "KPI",
+      "description": "A single-value card: a small caption above one large left-aligned number, with an optional literal unit suffix for values that are already scaled.",
+      "tags": [
+        "Big Number",
+        "Report",
+        "Formattable"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail"
+      ],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-custom-kpi-card-c1ed06/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-kpi-card-c1ed06/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-custom-kpi-card-c1ed06/src/plugin/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_ranked_bar_list",
+      "plugin_class": "CustomRankedBarListPlugin",
+      "name": "Custom Ranked Bar List",
+      "category": "Ranking",
+      "description": "A ranked list of horizontal bars with each category name captioned above its bar and each value in a right-aligned column. No axis, gridlines or legend.",
+      "tags": [
+        "Categorical",
+        "Ranking",
+        "Comparison"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail",
+        "DrillBy"
+      ],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-custom-ranked-bar-list-c1ed06/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-ranked-bar-list-c1ed06/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-custom-ranked-bar-list-c1ed06/src/plugin/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_select_filter",
+      "plugin_class": "CustomSelectFilterPlugin",
+      "name": "Custom Select Filter",
+      "category": "Custom Charts",
+      "description": "A full-width control strip that sits in the dashboard grid and drives every other chart. Reads its options from a categorical column and emits an IN filter as extra form data.",
+      "tags": [
+        "Custom Charts",
+        "Filter",
+        "Dropdown"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "NativeFilter"
+      ],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-custom-select-filter-c1ed06/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-select-filter-c1ed06/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-custom-select-filter-c1ed06/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
     {

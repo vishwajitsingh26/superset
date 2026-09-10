@@ -16,17 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { buildQueryContext } from '../adapters/supersetAdapter';
+import { KpiCardQueryFormData } from '../types';
 
-// For individual deployments to add custom overrides
-
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
+// One aggregate row is all the card draws, so one query object is enough.
+export default function buildQuery(formData: KpiCardQueryFormData) {
+  const { metric } = formData;
+  return buildQueryContext(formData, baseQueryObject => [
+    {
+      ...baseQueryObject,
+      groupby: [],
+      metrics: metric ? [metric] : [],
+      row_limit: 1,
+    },
+  ]);
 }

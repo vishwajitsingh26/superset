@@ -16,17 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-// For individual deployments to add custom overrides
-
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
-}
+export { default as CustomRankedBarListPlugin } from './plugin';
+export type {
+  RankedBarListProps,
+  RankedBarListItem,
+  RankedBarListQueryFormData,
+} from './types';

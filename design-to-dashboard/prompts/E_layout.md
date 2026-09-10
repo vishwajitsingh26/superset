@@ -19,7 +19,9 @@ Pure geometry. You translate pixel positions into Superset's 12-column grid. You
                  "parents": ["ROOT_ID","GRID_ID"], "meta": { "background": "BACKGROUND_TRANSPARENT" } },
   "CHART-1":   { "type": "CHART",  "id": "CHART-1",   "children": [],
                  "parents": ["ROOT_ID","GRID_ID","ROW-1"],
-                 "meta": { "chartId": "__REF__:c1", "sliceName": "...", "uuid": "<uuid4>", "width": 6, "height": 50 } }
+                 "meta": { "chartId": "__REF__:c1", "sliceName": "...",
+                           "sliceNameOverride": "what the design's card header says, or \"\"",
+                           "uuid": "<uuid4>", "width": 6, "height": 50 } }
 }
 ```
 
@@ -30,7 +32,18 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 - **Root chain is fixed.** `ROOT_ID → GRID_ID → rows`. When `global.tabs` is present: `ROOT_ID → TABS-<id> → TAB-<id> → ROW-...`, and each tab's rows sit under its `TAB` node.
 - **`width` is in twelfths.** Convert each region's `bbox.w` as a fraction of `global.canvas.w`, scale by 12, round to an integer ≥ 1.
 - **Every `ROW`'s child widths must sum to ≤ 12.** After rounding, if a row overflows, shrink the widest child until it fits and record the adjustment. If it underflows by 1–2, widen the widest child to fill the row.
-- **`height` is in units of `GRID_BASE_UNIT` (8px).** Convert `bbox.h` to that scale. Practical ranges: KPI tiles ~50, standard charts ~50–70, tall tables ~80–120.
+- **`height` is in units of `GRID_BASE_UNIT` (8px), and is proportional.** Compute it, do not pick it from memory:
+
+  `height = round(bbox.h / canvas.h × total_units) + 5`
+
+  where `total_units` is the whole design's height in grid units. The `+ 5`
+  is Superset's chart header — roughly 40px of chrome the design does not
+  draw, taken out of the card's content area. Omit it and the content is
+  clipped: a KPI card sized at the design's own ratio has no room left for
+  its number.
+- **A row's children all get the same height.** Superset lays a row out as one
+  band, so three KPI tiles are one height, not three roundings of the same
+  number. Use the tallest.
 - **Rows come from vertical bands, not from exact y values.** Regions whose `bbox.y` ranges overlap by more than half their height belong in the same `ROW`. Do not create one row per region.
 - **Preserve `global.reading_order`.** A dashboard that matches visually but scrambles the narrative order is wrong.
 - **Charts reference `__REF__:<ref>` placeholders**, never numeric ids — the orchestrator substitutes real ids after chart creation.
@@ -39,6 +52,12 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 - **Skip `decoration` regions** and any decision of `drop`. Skip `native_filter` decisions — those live in `json_metadata`, not the grid.
 - **Never lay out a wrapper's children.** When a decision has a `children` array (a `wrap`, or a `new_plugin` with `plugin_archetype: "composite"`), the parent gets **one** CHART node and the children get **none** — they are rendered inside the parent, by the parent. Giving a child its own grid node draws it twice: once in the wrapper and once loose on the dashboard.
 - **A `filter_widget` plugin does get a grid node.** It is a chart that happens to filter, so it sits in the layout where the design draws it — unlike a `native_filter`, which does not.
+- **Set `sliceNameOverride` to the label the design shows.** A chart's
+  `slice_name` is long on purpose so it is findable among hundreds
+  (`Video Game Sales Overview — Global Sales`), but the design's card says
+  `Global Sales`. `sliceNameOverride` changes the header on this dashboard
+  only and leaves the chart's real name alone. Where the design draws **no**
+  header on the card, set it to `""`.
 - **`header` / `text` regions** become `MARKDOWN` nodes with the visible text, or `HEADER` nodes for section titles. A `grid_text` decision is exactly this: place it where its bbox says, using its `text`. It occupies a cell but is not a chart, so it gets no `ref` in `meta`.
 
 ## Output

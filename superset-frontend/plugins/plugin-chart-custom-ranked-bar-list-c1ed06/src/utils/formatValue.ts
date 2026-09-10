@@ -17,16 +17,17 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
-
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
+// Grouped thousands with a fixed number of decimals and a magnitude suffix,
+// matching the design's "1,751M" treatment.
+export function formatValue(
+  value: number,
+  decimalPlaces: number,
+  suffix: string,
+): string {
+  const safeDecimals = Math.max(0, Math.min(6, Math.trunc(decimalPlaces)));
+  const rendered = value.toLocaleString('en-US', {
+    minimumFractionDigits: safeDecimals,
+    maximumFractionDigits: safeDecimals,
+  });
+  return `${rendered}${suffix}`;
 }

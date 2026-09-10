@@ -17,16 +17,8 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// Distinct-value lists stay short; this caps the dropdown, not the dashboard.
+export const DEFAULT_ROW_LIMIT = 1000;
 
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
-}
+// Design draws the strip as a single 46px-tall bar.
+export const BAR_MIN_HEIGHT = 40;

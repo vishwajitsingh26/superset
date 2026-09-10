@@ -16,17 +16,31 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { QueryFormData, QueryFormMetric } from './adapters/supersetAdapter';
 
-// For individual deployments to add custom overrides
-
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
+export interface KpiCardStylesProps {
+  height: number;
+  width: number;
 }
+
+export interface KpiCardCustomizeProps {
+  metric?: QueryFormMetric;
+  cardLabel?: string;
+  numberFormat?: string;
+  unitSuffix?: string;
+  valueColor?: string | null;
+}
+
+export type KpiCardQueryFormData = QueryFormData &
+  KpiCardStylesProps &
+  KpiCardCustomizeProps;
+
+export type KpiCardStatus = 'ok' | 'loading' | 'empty' | 'error';
+
+export type KpiCardProps = KpiCardStylesProps & {
+  cardLabel: string;
+  formattedValue: string;
+  valueColor: string | null;
+  status: KpiCardStatus;
+  errorMessage: string | null;
+};

@@ -17,16 +17,15 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// The design shows exactly five ranked bars.
+export const DEFAULT_MAX_ITEMS = 5;
 
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
+// Values in the design carry a magnitude suffix directly after the number.
+export const DEFAULT_VALUE_SUFFIX = 'M';
 
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
+export const DEFAULT_DECIMAL_PLACES = 0;
 
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
+// Width of the right-aligned value column, in theme size units.
+export const VALUE_COLUMN_UNITS = 10;
 
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
-}
+export const BAR_HEIGHT_UNITS = 2;

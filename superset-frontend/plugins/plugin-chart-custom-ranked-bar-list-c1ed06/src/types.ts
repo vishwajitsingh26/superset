@@ -16,17 +16,41 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import {
+  QueryFormColumn,
+  QueryFormData,
+  QueryFormMetric,
+} from './adapters/supersetAdapter';
 
-// For individual deployments to add custom overrides
-
-import { CustomSelectFilterPlugin } from '@superset-ui/plugin-chart-custom-select-filter-c1ed06';
-
-import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c1ed06';
-
-import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
-
-export default function setupPluginsExtra() {
-  new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
-  new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
-  new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
+export interface RankedBarListStylesProps {
+  height: number;
+  width: number;
 }
+
+export interface RankedBarListCustomizeProps {
+  groupby: QueryFormColumn[];
+  metric: QueryFormMetric;
+  chartTitle?: string;
+  barColor?: string;
+  valueSuffix?: string;
+  decimalPlaces?: number;
+  maxItems?: number;
+}
+
+export type RankedBarListQueryFormData = QueryFormData &
+  RankedBarListStylesProps &
+  RankedBarListCustomizeProps;
+
+export interface RankedBarListItem {
+  label: string;
+  value: number;
+  formatted: string;
+}
+
+export type RankedBarListProps = RankedBarListStylesProps & {
+  title: string;
+  items: RankedBarListItem[];
+  maxValue: number;
+  barColor: string;
+  error: string | null;
+};
