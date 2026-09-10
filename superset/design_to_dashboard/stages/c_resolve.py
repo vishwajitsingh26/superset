@@ -206,6 +206,58 @@ def _answer_conflicts(
     return problems
 
 
+# Roles that carry no data. A plugin for one of these is ten minutes of
+# generation, a package in the repo and a frontend rebuild, to render text a
+# MARKDOWN node already draws.
+TEXT_ROLES = {"header", "text"}
+
+
+def _text_as_plugin(
+    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+) -> list[str]:
+    """Text regions resolved to a plugin instead of `grid_text`."""
+    roles = {
+        r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
+    }
+    return [
+        f"{d.get('region_id')}: role is {roles.get(d.get('region_id'))!r}, which "
+        "draws no data -- use `grid_text`, not a plugin. A plugin costs a "
+        "package and a frontend rebuild to render a line of text."
+        for d in decisions
+        if d.get("decision") == "new_plugin"
+        and roles.get(d.get("region_id")) in TEXT_ROLES
+    ]
+
+
+def _split_composites(
+    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+) -> list[str]:
+    """Composite regions that became a plugin drawing nothing.
+
+    Stage A marks a card holding several things `composition: composite`. One
+    card is one plugin with `children`; splitting it into a frame plugin plus
+    sibling plugins for its contents produces two packages and two charts where
+    the design draws one card, with the contents beside the frame rather than
+    inside it.
+    """
+    composite = {
+        r.get("region_id")
+        for r in design_analysis.get("regions", [])
+        if r.get("composition") == "composite"
+    }
+    return [
+        f"{d.get('region_id')}: stage A read this as a composite -- one card "
+        "holding several things -- so it is one `new_plugin` with "
+        '`plugin_archetype: "composite"` and its contents in `children`, '
+        "not a plugin that draws only the frame."
+        for d in decisions
+        if d.get("decision") == "new_plugin"
+        and d.get("region_id") in composite
+        and d.get("plugin_archetype") != "composite"
+        and not (d.get("children") or [])
+    ]
+
+
 def validate(  # noqa: C901
     plan: dict[str, Any],
     design_analysis: dict[str, Any],
@@ -233,6 +285,8 @@ def validate(  # noqa: C901
         b.get("region_id"): b.get("state") for b in binding_set.get("bindings", [])
     }
     problems.extend(_answer_conflicts(decisions, design_analysis, binding_set))
+    problems.extend(_text_as_plugin(decisions, design_analysis))
+    problems.extend(_split_composites(decisions, design_analysis))
 
     refs = {d.get("ref") for d in decisions if d.get("ref")}
     seen_refs: set[str] = set()
