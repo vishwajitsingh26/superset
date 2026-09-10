@@ -59,6 +59,56 @@ def build_user_prompt(
     )
 
 
+# The user answers in a UI that keys each answer by the question's `id`. A
+# question without one loses its answer; two questions sharing one silently
+# overwrite each other. Both happened in run ac369eb5, where eight questions
+# produced seven answers and one arrived keyed "undefined".
+MAX_QUESTIONS = 6
+
+
+def normalise_questions(payload: dict[str, Any]) -> list[str]:
+    """Give every question a usable id and cap the batch, in place.
+
+    Repaired rather than rejected: the questions themselves are good, and
+    failing the stage would cost the whole discovery phase over a missing
+    field.
+    """
+    questions = [q for q in (payload.get("questions") or []) if isinstance(q, dict)]
+    notes: list[str] = []
+
+    # Keep the ids the model chose wherever they are usable, so an answer still
+    # names something meaningful; only the broken ones are replaced.
+    taken = {
+        str(q.get("id") or "").strip()
+        for q in questions
+        if str(q.get("id") or "").strip()
+    }
+    used: set[str] = set()
+    counter = 1
+    for position, question in enumerate(questions, 1):
+        given = str(question.get("id") or "").strip()
+        if given and given not in used:
+            used.add(given)
+            continue
+        while f"q{counter}" in taken or f"q{counter}" in used:
+            counter += 1
+        replacement = f"q{counter}"
+        notes.append(
+            f"question {position} had id {given or None!r}; using {replacement!r}"
+        )
+        question["id"] = replacement
+        used.add(replacement)
+
+    if len(questions) > MAX_QUESTIONS:
+        notes.append(
+            f"{len(questions)} questions asked; keeping the first "
+            f"{MAX_QUESTIONS}. Ranking by impact is the model's job, so the "
+            "tail is dropped rather than reordered."
+        )
+        payload["questions"] = questions[:MAX_QUESTIONS]
+    return notes
+
+
 def run(
     provider: LLMProvider,
     design_analysis: dict[str, Any],
@@ -73,5 +123,7 @@ def run(
         on_thinking=on_thinking,
     )
     payload = extract_json(response.text)
+    if repairs := normalise_questions(payload):
+        logger.info("clarify repaired its questions: %s", "; ".join(repairs))
     logger.info("clarify: %d question(s)", len(payload.get("questions") or []))
     return payload, response.cost_usd or 0.0

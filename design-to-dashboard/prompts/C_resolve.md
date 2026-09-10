@@ -151,6 +151,13 @@ Falling back to sibling charts is a real answer only when the card is a loose
 grouping with no shared chrome — no tabs, no shared header, no shared filter.
 Say so in `fidelity_loss` when you do it.
 
+**One card is one composite, not a composite and its siblings.** A panel
+holding three tiles above a table is *one* `new_plugin` with
+`plugin_archetype: "composite"` and three `children` — not a composite
+plugin for the frame plus a second plugin for the tiles. Splitting it
+produces two packages and two charts where the design draws one card, and
+the tiles land beside the panel rather than inside it.
+
 ## Filter routing
 
 **Check `user_answers` first — it overrides everything below.** If the user
@@ -179,6 +186,12 @@ Use **`grid_text`** for a heading or caption that must occupy a grid cell
 without being a chart: it becomes a `MARKDOWN` or `HEADER` node, and its `text`
 field carries what to render. Do not reach for `configure` without a
 `viz_type` — a chart with no type is not something any later stage can build.
+
+**Never build a plugin to render text.** A section title, a page heading, a
+caption, a static label: these are `grid_text`. A plugin costs ten minutes
+of generation, a package in the repo and a frontend rebuild, and buys
+nothing a Markdown node does not already do. Reach for a plugin only when
+the section draws *data*.
 
 ## The user's answers are settled
 
