@@ -16,14 +16,27 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import { memo } from 'react';
 
-// For individual deployments to add custom overrides
-
-import { CustomPeriodFilterPlugin } from '@superset-ui/plugin-chart-custom-period-filter-df2f70';
-
-import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card-df2f70';
-
-export default function setupPluginsExtra() {
-  new CustomPeriodFilterPlugin().configure({ key: 'custom_period_filter' }).register();
-  new CustomProviderSpendCardPlugin().configure({ key: 'custom_provider_spend_card' }).register();
+// currentColor keeps the glyph on the button's theme token.
+function FunnelIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M1.75 2.33h10.5L8.17 7v4.67L5.83 12.83V7L1.75 2.33Z"
+        stroke="currentColor"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
+
+export default memo(FunnelIcon);

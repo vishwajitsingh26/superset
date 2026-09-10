@@ -23,6 +23,7 @@ and the applier both require ``g.user`` inside a request context.
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import pathlib
 import sys
@@ -100,6 +101,12 @@ REGISTRY = (
     / "fixtures"
     / "viz_registry.json"
 )
+# Plugin generation is the longest stage: eight to ten minutes per plugin, and
+# each call is independent. Four at a time keeps a six-plugin design near the
+# cost of one rather than six, without opening more concurrent model calls than
+# the account's rate limits comfortably allow.
+F_MAX_WORKERS = 4
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 # One labelled image of every plugin's thumbnail. A plugin is a UI component, so
 # its thumbnail is the most direct evidence of whether it matches a design
@@ -372,96 +379,88 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     ),
                 )
                 built: list[str] = []
-                # Several regions can need the same plugin -- four identical KPI
-                # tiles are four decisions and one plugin. Build each distinct
-                # type once: generating it again would both waste 5-10 minutes
-                # and fail validation, since the viz_type now exists.
-                built_types: dict[str, dict[str, Any]] = {}
+                tag = f_scaffold.run_tag(session.id)
 
+                # Several regions can need the same plugin -- three identical
+                # provider cards are three decisions and one plugin. Stage C
+                # names each plugin, so the distinct set is known before any
+                # generation starts and each one is built exactly once.
+                by_type: dict[str, list[dict[str, Any]]] = {}
                 for decision in new_plugin_decisions:
-                    region_id = decision.get("region_id", "?")
-                    proposed = decision.get("viz_type")
-                    if proposed and proposed in built_types:
-                        earlier = built_types[proposed]
-                        decision["viz_type"] = proposed
-                        decision["decision"] = "configure"
-                        decision["built_by_stage_f"] = True
-                        if earlier.get("params_hint"):
-                            decision["params_hint"] = earlier["params_hint"]
+                    by_type.setdefault(decision.get("viz_type") or "", []).append(
+                        decision
+                    )
+                for viz_type, group in by_type.items():
+                    for extra in group[1:]:
                         session.publish(
                             "plugin_built",
-                            label=f"Reused {proposed} for {region_id}",
-                            viz_type=proposed,
+                            label=f"Reused {viz_type} for {extra.get('region_id')}",
+                            viz_type=viz_type,
                             reused=True,
                         )
-                        continue
-                    # F is a single-shot call like A and E, and equally prone
-                    # to a transient failure -- losing a 40-minute run to one is
-                    # not acceptable.
-                    scaffold = _retry(
+
+                def _build(viz_type: str, decision: dict[str, Any]) -> Any:
+                    region_id = decision.get("region_id", "?")
+                    # F is a single-shot call like A and E, and equally prone to
+                    # a transient failure -- losing a long run to one is not
+                    # acceptable.
+                    return viz_type, _retry(
                         session,
                         f"Building the plugin for {region_id}",
                         2,
-                        lambda region_id=region_id, decision=decision: (
-                            f_scaffold.run_one(
-                                provider,
-                                regions.get(region_id, {}),
-                                bindings.get(region_id, {}),
-                                decision,
-                                plan.final.get("design_system", {}),
-                                PROMPTS,
-                                REPO_ROOT,
-                                known,
-                                tag=f_scaffold.run_tag(session.id),
-                                on_thinking=_thinking_for("F"),
-                            )
+                        lambda: f_scaffold.run_one(
+                            provider,
+                            regions.get(region_id, {}),
+                            bindings.get(region_id, {}),
+                            decision,
+                            plan.final.get("design_system", {}),
+                            PROMPTS,
+                            REPO_ROOT,
+                            known,
+                            tag=tag,
+                            on_thinking=_thinking_for("F"),
                         ),
                     )
-                    total_cost += scaffold.cost_usd
+
+                # Generation is the slow part -- eight to ten minutes each --
+                # and each call is independent, so they run together. Writing is
+                # not: every plugin patches the same package.json and
+                # setupPluginsExtra.ts, and concurrent read-modify-write on
+                # those loses entries.
+                scaffolds: dict[str, Any] = {}
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(len(by_type), F_MAX_WORKERS)
+                ) as pool:
+                    futures = [
+                        pool.submit(_build, viz_type, group[0])
+                        for viz_type, group in by_type.items()
+                    ]
+                    for future in concurrent.futures.as_completed(futures):
+                        viz_type, scaffold = future.result()
+                        scaffolds[viz_type] = scaffold
+                        total_cost += scaffold.cost_usd
+
+                for viz_type, group in by_type.items():
+                    scaffold = scaffolds[viz_type]
                     if not scaffold.ok:
                         raise RuntimeError(
-                            f"plugin for {region_id} failed: "
+                            f"plugin for {group[0].get('region_id')} failed: "
                             f"{scaffold.error or scaffold.problems}"
                         )
-                    # The model may land on a type it already produced this
-                    # run; reuse rather than rewriting or failing.
-                    if scaffold.viz_type in built_types:
+                    written = plugin_writer.write(scaffold.scaffold, REPO_ROOT)
+                    built.append(scaffold.viz_type or "?")
+                    for decision in group:
                         decision["viz_type"] = scaffold.viz_type
+                        if scaffold.scaffold.get("params_hint"):
+                            # Stage D needs params for a control panel that did
+                            # not exist when the registry manifest was generated.
+                            decision["params_hint"] = scaffold.scaffold["params_hint"]
+                        # The plugin now exists, so these regions are
+                        # configurable like any other. Without this the decision
+                        # stays "new_plugin", which stage D skips -- the plugin
+                        # gets built and no chart is ever created for it.
                         decision["decision"] = "configure"
                         decision["built_by_stage_f"] = True
-                        continue
-
-                    written = plugin_writer.write(scaffold.scaffold, REPO_ROOT)
-                    # `plugin_writer` adds the import to setupPluginsExtra.ts as
-                    # soon as the plugin lands, but webpack resolves that import
-                    # through a node_modules symlink that only `npm install`
-                    # creates. Linking now rather than once at the end of the
-                    # stage closes the window where the dev server reports
-                    # "Module not found" for every remaining plugin's build.
-                    from superset.design_to_dashboard import frontend
-
-                    frontend.link_plugins(REPO_ROOT)
-                    built.append(scaffold.viz_type or "?")
-                    # Deliberately NOT added to `known`. `known` is what stage F
-                    # validates against, and a type built moments ago in this
-                    # same run is not a name clash -- it is the shared plugin
-                    # two regions asked for. Adding it made the second region
-                    # fail with "already exists in the registry", killing the
-                    # run before the dedup below could reuse it.
-                    built_types[scaffold.viz_type or ""] = {
-                        "params_hint": scaffold.scaffold.get("params_hint")
-                    }
-                    # Stage D needs params for a control panel that did not exist
-                    # when the registry manifest was generated.
-                    if scaffold.scaffold.get("params_hint"):
-                        decision["params_hint"] = scaffold.scaffold["params_hint"]
-                    decision["viz_type"] = scaffold.viz_type
-                    # The plugin now exists, so this region is configurable like
-                    # any other. Without this the decision stays "new_plugin",
-                    # which stage D skips -- the plugin gets built and no chart
-                    # is ever created for it.
-                    decision["decision"] = "configure"
-                    decision["built_by_stage_f"] = True
                     session.publish(
                         "plugin_built",
                         label=f"Built {scaffold.viz_type}",
@@ -469,6 +468,15 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         files=len(written.files_written),
                         registered=written.registered,
                     )
+
+                # Linked once, after every plugin has landed: `plugin_writer`
+                # registers each import as it writes, and webpack resolves those
+                # through node_modules symlinks that only `npm install` creates.
+                # Doing it per plugin left the dev server broken for the rest of
+                # the stage.
+                from superset.design_to_dashboard import frontend
+
+                frontend.link_plugins(REPO_ROOT)
 
                 # Regenerate the manifest so the new viz types are known to
                 # stage D's validation and to the layout stage.

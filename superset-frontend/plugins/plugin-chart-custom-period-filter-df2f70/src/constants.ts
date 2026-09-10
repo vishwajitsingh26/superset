@@ -17,13 +17,29 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// The design draws a single month ("September 2025"), so the emitted grain is
+// always one month regardless of how wide the underlying data is.
+export const PERIOD_GRAIN = 'P1M';
 
-import { CustomPeriodFilterPlugin } from '@superset-ui/plugin-chart-custom-period-filter-df2f70';
+export const MONTH_LABELS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+] as const;
 
-import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card-df2f70';
+export const MIN_PERIOD_LABEL = '__min_period';
+export const MAX_PERIOD_LABEL = '__max_period';
 
-export default function setupPluginsExtra() {
-  new CustomPeriodFilterPlugin().configure({ key: 'custom_period_filter' }).register();
-  new CustomProviderSpendCardPlugin().configure({ key: 'custom_provider_spend_card' }).register();
-}
+// Bounds a pathological min/max from producing thousands of dropdown rows.
+export const MAX_MONTH_OPTIONS = 240;
+
+export const DEFAULT_ROW_LIMIT = 1000;

@@ -40,6 +40,14 @@ import {
 import { DEFAULT_TOP_N, CHART_COLORS, FONT } from './constants';
 import { NoDataScreen } from 'src/components/NoDataScreen';
 
+// ECharts types its label callback payload loosely; these are the fields
+// this chart actually reads.
+interface EChartsLabelParams {
+  name?: string;
+  value?: number;
+  percent?: number;
+}
+
 echarts.use([
   PieChartType,
   GridComponent,
@@ -115,7 +123,7 @@ export default function PieChart({
           fontSize: 10,
           fontWeight: 500,
         },
-        formatter: (params: any) => {
+        formatter: (params: EChartsLabelParams) => {
           const provider = params.name ?? '';
           const providerData = providerMap[provider];
           if (!providerData) return '';
@@ -222,7 +230,7 @@ export default function PieChart({
             fontFamily: FONT.INTER,
             fontSize: 10,
             color: CHART_COLORS.LABEL_PRIMARY,
-            formatter: (params: any) =>
+            formatter: (params: EChartsLabelParams) =>
               `{value|${currencySymbol}${formatNumber(params.value, showDecimals)}} {percent|(${params.percent}%)}\n{name|${params.name}}`,
             rich: {
               value: {

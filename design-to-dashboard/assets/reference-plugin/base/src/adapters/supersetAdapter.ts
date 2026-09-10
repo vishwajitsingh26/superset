@@ -63,6 +63,7 @@ import {
 import { t as translate } from '@apache-superset/core/translation';
 import {
   ControlPanelConfig,
+  ControlPanelState,
   D3_TIME_FORMAT_OPTIONS,
   Dataset,
   getStandardizedControls,
@@ -117,7 +118,12 @@ export {
   GenericDataType,
 };
 
-export type { ControlPanelConfig, Dataset, ColorFormatters };
+export type {
+  ControlPanelConfig,
+  ControlPanelState,
+  Dataset,
+  ColorFormatters,
+};
 export {
   D3_TIME_FORMAT_OPTIONS,
   getStandardizedControls,
@@ -126,16 +132,16 @@ export {
 };
 
 export interface StableChartInput {
-  data: any[];
+  data: DataRecord[];
   width: number;
   height: number;
   groupby: string[];
   metric: string;
-  formData: any;
+  formData: QueryFormData;
 }
 
 export interface StableFormatter {
-  (value: any): string;
+  (value: number | string | null): string;
 }
 
 export function adaptChartProps(
@@ -143,7 +149,7 @@ export function adaptChartProps(
 ): StableChartInput {
   const { queriesData, formData, width, height } = props;
 
-  const groupby = ensureIsArray(formData?.groupby).map((item: any) =>
+  const groupby = ensureIsArray<QueryFormColumn>(formData?.groupby).map(item =>
     getColumnLabel(item),
   );
   const metricLabel =
@@ -163,7 +169,7 @@ export function adaptChartProps(
 
 export function createFormatter(
   valueFormat: string,
-  currencyFormat?: any,
+  currencyFormat?: Currency,
 ): StableFormatter {
   if (currencyFormat?.symbol) {
     return new CurrencyFormatter({
@@ -174,7 +180,9 @@ export function createFormatter(
   return getNumberFormatter(valueFormat);
 }
 
-export function extractMetricNames(metrics: any[]): string[] {
+export function extractMetricNames(
+  metrics: (string | AdhocMetric)[],
+): string[] {
   return metrics.map((metric: string | AdhocMetric) =>
     typeof metric === 'string' ? metric : (metric.label as string),
   );

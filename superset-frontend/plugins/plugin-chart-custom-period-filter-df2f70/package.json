@@ -1,0 +1,29 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-period-filter-df2f70",
+  "version": "0.1.0",
+  "description": "Superset Chart - Custom Period Filter (in-grid month picker and filter panel)",
+  "sideEffects": false,
+  "main": "lib/index.js",
+  "module": "esm/index.js",
+  "files": [
+    "esm",
+    "lib"
+  ],
+  "keywords": [
+    "superset",
+    "filter",
+    "period",
+    "month"
+  ],
+  "author": "Superset",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

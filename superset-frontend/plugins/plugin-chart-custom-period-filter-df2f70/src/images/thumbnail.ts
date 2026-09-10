@@ -17,13 +17,9 @@
  * under the License.
  */
 
-// For individual deployments to add custom overrides
+// Placeholder thumbnail: a transparent 1x1 PNG data URI. Replace with a real
+// images/thumbnail.png and import that file instead once one is designed.
+const thumbnail =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-import { CustomPeriodFilterPlugin } from '@superset-ui/plugin-chart-custom-period-filter-df2f70';
-
-import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card-df2f70';
-
-export default function setupPluginsExtra() {
-  new CustomPeriodFilterPlugin().configure({ key: 'custom_period_filter' }).register();
-  new CustomProviderSpendCardPlugin().configure({ key: 'custom_provider_spend_card' }).register();
-}
+export default thumbnail;

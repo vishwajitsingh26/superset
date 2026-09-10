@@ -1,0 +1,1 @@
+PLACEHOLDER-THUMBNAIL: replace this file with a real PNG screenshot of the rendered card (copy the byte layout conventions of any existing plugin thumbnail). The file must exist because plugin/index.ts imports it; webpack asset handling does not validate its contents.

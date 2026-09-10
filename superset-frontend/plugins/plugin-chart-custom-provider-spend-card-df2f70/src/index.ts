@@ -16,14 +16,4 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
-// For individual deployments to add custom overrides
-
-import { CustomPeriodFilterPlugin } from '@superset-ui/plugin-chart-custom-period-filter-df2f70';
-
-import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card-df2f70';
-
-export default function setupPluginsExtra() {
-  new CustomPeriodFilterPlugin().configure({ key: 'custom_period_filter' }).register();
-  new CustomProviderSpendCardPlugin().configure({ key: 'custom_provider_spend_card' }).register();
-}
+export { default as CustomProviderSpendCardPlugin } from './plugin';

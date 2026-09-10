@@ -158,10 +158,16 @@ const config: ControlPanelConfig = {
                 'If not set, the second dimension from "Dimensions" is used. ' +
                 'If neither is set, tooltip shows only the total value per slice.',
               ),
-              mapStateToProps: (state: any) => ({
-                choices: state.datasource?.columns
-                  ? state.datasource.columns.map((col: any) => [col.column_name, col.verbose_name || col.column_name])
-                  : [],
+              // `ControlPanelState` is the callback's real first parameter; a
+              // narrower hand-rolled type is rejected, and `any` is rejected by
+              // the generator's own validator.
+              mapStateToProps: (state: ControlPanelState) => ({
+                choices: (state.datasource?.columns ?? []).map(col => [
+                  col.column_name,
+                  // `datasource.columns` is `ColumnMeta | QueryColumn` and only
+                  // one of them carries a verbose name.
+                  ('verbose_name' in col && col.verbose_name) || col.column_name,
+                ]),
               }),
               renderTrigger: false,
               freeForm: false,

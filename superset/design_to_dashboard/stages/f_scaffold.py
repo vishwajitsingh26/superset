@@ -169,6 +169,17 @@ def _check_exemplar(root: pathlib.Path) -> None:
         if path.suffix not in {".ts", ".tsx"}:
             continue
         contents = path.read_text(encoding="utf-8")
+        # An exemplar must satisfy the rules its output is held to. `any` was
+        # in the exemplar's `mapStateToProps` while `validate` rejected it in
+        # generated code, so the model avoided `any`, invented a narrower type
+        # and produced something that did not compile. A contradiction the
+        # model cannot win.
+        if re.search(r":\s*any\b", contents):
+            raise LLMError(
+                f"exemplar {path.relative_to(root)} uses an `any` type, which "
+                "stage F rejects in generated code. An exemplar must obey the "
+                "rules its output is held to."
+            )
         for stale, correction in STALE_EXEMPLAR_API.items():
             if re.search(stale, contents):
                 raise LLMError(
