@@ -275,9 +275,21 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 on_thinking=_thinking_for("clarify"),
             )
             total_cost += clarify_cost
-            questions = list(binding_questions) + list(
-                clarification.get("questions") or []
-            )
+            # Two producers, two schemas: stage B emits a blocking question
+            # per `unavailable` binding (`why_blocking`, no `id`), clarify emits
+            # its own (`why_it_matters`, with an `id`). Only clarify's were
+            # normalised, inside `clarify.run`, so a stage B question reached
+            # the UI with `id: None` and its answer landed under "undefined".
+            # Normalising the merged list is the only place that covers both.
+            merged = {
+                "questions": list(binding_questions)
+                + list(clarification.get("questions") or [])
+            }
+            if repairs := clarify.normalise_questions(
+                merged, clarify.question_budget(design_analysis)
+            ):
+                logger.info("clarify questions repaired: %s", "; ".join(repairs))
+            questions = merged["questions"]
             _reasoning = session.take_thinking()
             session.publish(
                 "stage_complete",

@@ -63,10 +63,24 @@ def build_user_prompt(
 # question without one loses its answer; two questions sharing one silently
 # overwrite each other. Both happened in run ac369eb5, where eight questions
 # produced seven answers and one arrived keyed "undefined".
-MAX_QUESTIONS = 6
+#
+# The budget scales with the design, because a seventeen-region page has more
+# that can genuinely be ambiguous than a six-region one, and a fixed cap turns
+# the surplus into silent assumptions -- the opposite of what this stage is for.
+MIN_QUESTIONS = 6
+MAX_QUESTIONS = 14
+QUESTIONS_PER_REGION = 0.5
 
 
-def normalise_questions(payload: dict[str, Any]) -> list[str]:
+def question_budget(design_analysis: dict[str, Any]) -> int:
+    """How many questions this design earns."""
+    regions = len(design_analysis.get("regions") or [])
+    return int(min(MAX_QUESTIONS, max(MIN_QUESTIONS, regions * QUESTIONS_PER_REGION)))
+
+
+def normalise_questions(
+    payload: dict[str, Any], budget: int = MIN_QUESTIONS
+) -> list[str]:
     """Give every question a usable id and cap the batch, in place.
 
     Repaired rather than rejected: the questions themselves are good, and
@@ -99,13 +113,13 @@ def normalise_questions(payload: dict[str, Any]) -> list[str]:
         question["id"] = replacement
         used.add(replacement)
 
-    if len(questions) > MAX_QUESTIONS:
+    if len(questions) > budget:
         notes.append(
-            f"{len(questions)} questions asked; keeping the first "
-            f"{MAX_QUESTIONS}. Ranking by impact is the model's job, so the "
-            "tail is dropped rather than reordered."
+            f"{len(questions)} questions asked; this design's budget is "
+            f"{budget}. Ranking by impact is the model's job, so the tail is "
+            "dropped rather than reordered."
         )
-        payload["questions"] = questions[:MAX_QUESTIONS]
+        payload["questions"] = questions[:budget]
     return notes
 
 
