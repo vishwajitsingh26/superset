@@ -30,7 +30,18 @@ column or switch measures.
 say precisely what would differ and ask whether that is acceptable or whether a
 custom plugin should be built. Do not decide this silently.
 
-**4. Datasets this run would create.** If the binding carries
+**4. What a set of images is, when stage A could not tell.** If
+`global.image_set.confidence` is `low`, ask — this is the one question whose
+wrong answer misbuilds the entire dashboard, and A has already written down
+what it saw. Put its reasoning in the question and offer the two readings it
+was choosing between:
+
+- **Tabs** — one dashboard with a tab strip, each image a different tab. Built
+  as tabs, so only one is visible at a time.
+- **One long page** — the design captured in scrolled pieces, built as a single
+  continuous page.
+
+**5. Datasets this run would create.** If the binding carries
 `created_datasets`, ask before any of them is made — this is the only chance.
 
 - A **`derived`** dataset summarises or joins real tables to get the grain the
@@ -45,7 +56,7 @@ custom plugin should be built. Do not decide this silently.
 
 Never present a placeholder as though it were data.
 
-**5. Structure the design implies but does not settle.** A custom plugin is a
+**6. Structure the design implies but does not settle.** A custom plugin is a
 component we write, so the answer is rarely "Superset can't". Ask which shape
 the user wants, and say plainly that either is buildable:
 

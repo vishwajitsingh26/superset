@@ -132,7 +132,7 @@ export function useDesignToDashboard() {
   useEffect(() => stopPolling, [stopPolling]);
 
   const start = useCallback(
-    async (file: File, requirement: string) => {
+    async (files: File[], requirement: string) => {
       setEvents([]);
       setError(null);
       setState('uploading');
@@ -144,12 +144,17 @@ export function useDesignToDashboard() {
         const { id } = created.json as { id: string };
         setSessionId(id);
 
-        const body = new FormData();
-        body.append('file', file);
-        await SupersetClient.post({
-          endpoint: `${ENDPOINT}/session/${id}/asset/`,
-          postPayload: body,
-        });
+        // Uploaded one at a time and in order: the endpoint names them
+        // design_0, design_1 … and stage A refers to them by that index.
+        for (const file of files) {
+          const body = new FormData();
+          body.append('file', file);
+          // eslint-disable-next-line no-await-in-loop
+          await SupersetClient.post({
+            endpoint: `${ENDPOINT}/session/${id}/asset/`,
+            postPayload: body,
+          });
+        }
 
         await SupersetClient.post({
           endpoint: `${ENDPOINT}/session/${id}/run/`,

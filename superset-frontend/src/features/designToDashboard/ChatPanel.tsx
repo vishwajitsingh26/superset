@@ -279,9 +279,9 @@ type Props = {
   error: string | null;
   requirement: string;
   previewUrl: string | null;
-  onStart: (file: File, requirement: string) => void;
+  onStart: (files: File[], requirement: string) => void;
   onReset: () => void;
-  onFileChosen: (file: File | null) => void;
+  onFileChosen: (files: File[]) => void;
   onRequirementChange: (value: string) => void;
 };
 
@@ -301,7 +301,7 @@ export default function ChatPanel({
   onFileChosen,
   onRequirementChange,
 }: Props) {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   const busy = state === 'running' || state === 'uploading';
@@ -322,8 +322,8 @@ export default function ChatPanel({
   }, [busy, events.length, thinking]);
 
   const choose = (e: ChangeEvent<HTMLInputElement>) => {
-    const chosen = e.target.files?.[0] ?? null;
-    setFile(chosen);
+    const chosen = Array.from(e.target.files ?? []);
+    setFiles(chosen);
     onFileChosen(chosen);
   };
 
@@ -420,7 +420,7 @@ export default function ChatPanel({
       </Thread>
 
       <Composer>
-        {file && <Hint>{file.name}</Hint>}
+        {files.length > 0 && <Hint>{files.map(f => f.name).join(', ')}</Hint>}
         <Textarea
           value={requirement}
           placeholder={t(
@@ -431,19 +431,20 @@ export default function ChatPanel({
         />
         <Row>
           <Ghost type="button" onClick={() => inputRef.current?.click()}>
-            {file ? t('Change design') : t('Attach design')}
+            {files.length > 0 ? t('Change design') : t('Attach design')}
           </Ghost>
           <input
             ref={inputRef}
             type="file"
             accept="image/png,image/jpeg,image/webp,application/pdf"
+              multiple
             hidden
             onChange={choose}
           />
           <Button
             type="button"
-            disabled={!file || busy}
-            onClick={() => file && onStart(file, requirement)}
+            disabled={files.length === 0 || busy}
+            onClick={() => files.length > 0 && onStart(files, requirement)}
           >
             {busy ? t('Building…') : t('Build')}
           </Button>

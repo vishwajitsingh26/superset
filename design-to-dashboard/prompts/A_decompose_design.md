@@ -8,6 +8,38 @@
 
 Read the design and describe what is *visually there*. You are a careful observer, not a Superset engineer. Downstream stages decide how to build it; you decide what it is.
 
+## When you are given more than one image
+
+Decide first what the set *is*, because it changes everything after it. Read
+the images against each other and classify:
+
+- **`tabs`** — the same page chrome in every image (same title, same header,
+  same filter bar) with a tab strip showing a different tab selected in each.
+  Put the tab labels in `global.tabs` in the order they appear, and give every
+  region a `tab` naming the one it belongs to.
+- **`continuation`** — one page captured in pieces, usually scrolled. The
+  giveaway is **overlap**: the bottom band of one image is the top band of the
+  next. Treat the set as a single page.
+- **`separate`** — different titles, different palettes, no shared chrome.
+  These are different dashboards. Set `status: "separate_designs"`, explain in
+  `notes`, and emit no regions: welding unrelated designs into one dashboard is
+  worse than stopping.
+
+Record the verdict in `global.image_set` with the evidence and your confidence.
+When you genuinely cannot tell — most often between `tabs` and `continuation` —
+say `confidence: "low"` and give your reasoning. The next stage asks the user
+rather than letting you guess, and a wrong guess here misbuilds the whole
+dashboard.
+
+**In a `continuation` set, a section that appears in two images is ONE region.**
+Overlap is how scrolled captures work, and the commonest failure is emitting
+the same card twice because it was photographed twice. Number regions once,
+across the whole set, in the order a human scrolling would meet them.
+
+Give every region a `source_image`: the 0-based index of the image you read it
+from. For a section spanning an overlap, name the image where it is most fully
+visible.
+
 ## Method
 
 Sweep the design top-left to bottom-right. For each distinct visual element emit one `Region`:
@@ -41,6 +73,8 @@ Sweep the design top-left to bottom-right. For each distinct visual element emit
   Lean `stock` for an ordinary bar/line/pie/table with no unusual treatment.
   A later stage compares your evidence against real plugin thumbnails and makes
   the call; a precise `why` is worth far more to it than your verdict.
+- `source_image` — 0-based index of the image this was read from; `0` when there is only one.
+- `tab` — the tab this region belongs to, when `global.image_set.kind` is `tabs`; otherwise `null`.
 - `confidence` — `high | medium | low`
 - `ambiguity` — `null`, or what you could not resolve and how you read it: `"the third card's micro-chart may be a sparkline or a bar strip; read as sparkline"`.
 
@@ -49,6 +83,7 @@ Then emit `global`:
 - `canvas` — `{w, h}` in design pixels
 - `column_count` — the number of columns the *page layout* divides into, if inferable (the repeating unit the widest row is built on — not the count of cards in any one row). `null` when the layout is freeform.
 - `tabs` — top-level tab labels in order, or `null`
+- `image_set` — `{ "kind": "tabs|continuation|separate|single", "why": "...", "confidence": "high|medium|low" }`
 - `filter_bar` — `{ present, position: "top"|"left"|"none", controls: [...] }`
 - `palette` — hex values in order of prominence
 - `typography` — observed size/weight scale
@@ -71,7 +106,7 @@ Then emit `global`:
 
 ```json
 {
-  "status": "ok" | "unreadable",
+  "status": "ok" | "unreadable" | "separate_designs",
   "regions": [ Region ],
   "global": { ... },
   "conflicts": [{ "region_id": "...|null", "design_says": "...", "user_says": "..." }],

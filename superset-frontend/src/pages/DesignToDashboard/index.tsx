@@ -141,8 +141,9 @@ export default function DesignToDashboard() {
     [],
   );
 
+  // The preview shows the first image; stage A reads all of them.
   const onFileChosen = useCallback(
-    (file: File | null) => setPreview(file),
+    (files: File[]) => setPreview(files[0] ?? null),
     [setPreview],
   );
 

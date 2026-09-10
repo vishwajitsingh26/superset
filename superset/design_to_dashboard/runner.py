@@ -112,6 +112,15 @@ THUMBNAIL_SHEET = (
 )
 
 
+def _stage_a_summary(design_analysis: dict[str, Any], images: list[str]) -> str:
+    """One line saying what was read, and from how many images."""
+    regions = len(design_analysis.get("regions", []))
+    if len(images) < 2:
+        return f"{regions} regions found"
+    kind = ((design_analysis.get("global") or {}).get("image_set") or {}).get("kind")
+    return f"{regions} regions found across {len(images)} images ({kind})"
+
+
 def start(app: Any, session: Any) -> None:
     """Kick off the pipeline for ``session`` in a background thread."""
     thread = threading.Thread(
@@ -191,13 +200,27 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
             design_analysis = extract_json(response.text)
             session.artifacts["design_analysis"] = design_analysis
+
+            # Unrelated designs must not be welded into one dashboard. Stage A
+            # can see that the images share no chrome; nothing downstream can,
+            # and it would silently merge them.
+            if design_analysis.get("status") == "separate_designs":
+                raise RuntimeError(
+                    "these images look like different dashboards, not one: "
+                    f"{design_analysis.get('notes') or 'no shared title or chrome'}. "
+                    "Run them separately."
+                )
+            if design_analysis.get("status") == "unreadable":
+                raise RuntimeError(
+                    f"the design could not be read: {design_analysis.get('notes')}"
+                )
             _reasoning = session.take_thinking()
             session.publish(
                 "stage_complete",
                 stage="A",
                 thinking=_reasoning,
                 label="Read the design",
-                summary=f"{len(design_analysis.get('regions', []))} regions found",
+                summary=_stage_a_summary(design_analysis, session.image_paths),
                 regions=design_analysis.get("regions", []),
                 cost=round(total_cost, 4),
             )
