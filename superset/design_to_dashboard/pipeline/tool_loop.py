@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from superset.design_to_dashboard.llm.base import LLMError, LLMProvider
 from superset.design_to_dashboard.mcp.gateway import MCPError, MCPGateway
@@ -83,6 +83,49 @@ class ToolBudgetExceededError(LLMError):
     """Raised when the loop hits its call or iteration ceiling."""
 
 
+# Raw control characters are illegal inside a JSON string, but they are what a
+# model produces when it forgets to escape one newline in a source file.
+_ESCAPES = {"\n": "\\n", "\r": "\\r", "\t": "\\t"}
+
+
+def escape_control_chars(payload: str) -> str:
+    """Escape raw newlines, returns and tabs that sit inside JSON strings.
+
+    Characters outside strings -- the whitespace between keys -- are left
+    alone, so the document's own formatting is untouched.
+    """
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for char in payload:
+        if in_string and not escaped and char in _ESCAPES:
+            out.append(_ESCAPES[char])
+            continue
+        out.append(char)
+        if escaped:
+            escaped = False
+        elif char == "\\" and in_string:
+            escaped = True
+        elif char == '"':
+            in_string = not in_string
+    return "".join(out)
+
+
+def _loads(payload: str) -> dict[str, Any]:
+    """Parse JSON, tolerating raw control characters inside strings.
+
+    Stage F returns whole source files as JSON string values. A model that
+    escapes thousands of newlines correctly will occasionally emit one raw, and
+    strict JSON then rejects the document -- losing an eight-minute generation,
+    and with it a forty-minute run, over a single byte. The content is exactly
+    what was intended, so it is repaired rather than refused.
+    """
+    try:
+        return cast(dict[str, Any], json.loads(payload))
+    except ValueError:
+        return cast(dict[str, Any], json.loads(escape_control_chars(payload)))
+
+
 def extract_json(text: str) -> dict[str, Any]:
     """Pull a JSON object out of a model reply, tolerating code fences."""
     stripped = text.strip()
@@ -91,12 +134,12 @@ def extract_json(text: str) -> dict[str, Any]:
         stripped = stripped.rsplit("```", 1)[0]
     stripped = stripped.strip()
     try:
-        return json.loads(stripped)
+        return _loads(stripped)
     except ValueError:
         start, end = stripped.find("{"), stripped.rfind("}")
         if start == -1 or end <= start:
             raise LLMError(f"No JSON object in reply: {text[:400]}") from None
-        return json.loads(stripped[start : end + 1])
+        return _loads(stripped[start : end + 1])
 
 
 def run_tool_loop(
