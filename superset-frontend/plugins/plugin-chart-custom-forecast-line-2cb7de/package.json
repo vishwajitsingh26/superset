@@ -1,0 +1,30 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-forecast-line",
+  "version": "0.1.0",
+  "description": "Superset Chart - Custom Forecast Line (actual vs forecast daily spend)",
+  "sideEffects": false,
+  "main": "lib/index.js",
+  "module": "esm/index.js",
+  "files": [
+    "esm",
+    "lib"
+  ],
+  "keywords": [
+    "superset",
+    "forecast",
+    "line",
+    "timeseries"
+  ],
+  "author": "Superset",
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "echarts": "^5.0.0",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

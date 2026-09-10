@@ -25,8 +25,26 @@ import { CustomKpiCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-card-c
 
 import { CustomRankedBarListPlugin } from '@superset-ui/plugin-chart-custom-ranked-bar-list-c1ed06';
 
+import { CustomPeriodPickerPlugin } from '@superset-ui/plugin-chart-custom-period-picker';
+
+import { CustomFilterPanelPlugin } from '@superset-ui/plugin-chart-custom-filter-panel';
+
+import { CustomProviderSpendCardPlugin } from '@superset-ui/plugin-chart-custom-provider-spend-card';
+
+import { CustomSpendTablePlugin } from '@superset-ui/plugin-chart-custom-spend-table';
+
+import { CustomForecastLinePlugin } from '@superset-ui/plugin-chart-custom-forecast-line';
+
+import { CustomTileTablePanelPlugin } from '@superset-ui/plugin-chart-custom-tile-table-panel';
+
 export default function setupPluginsExtra() {
   new CustomSelectFilterPlugin().configure({ key: 'custom_select_filter' }).register();
   new CustomKpiCardPlugin().configure({ key: 'custom_kpi_card' }).register();
   new CustomRankedBarListPlugin().configure({ key: 'custom_ranked_bar_list' }).register();
+  new CustomPeriodPickerPlugin().configure({ key: 'custom_period_picker' }).register();
+  new CustomFilterPanelPlugin().configure({ key: 'custom_filter_panel' }).register();
+  new CustomProviderSpendCardPlugin().configure({ key: 'custom_provider_spend_card' }).register();
+  new CustomSpendTablePlugin().configure({ key: 'custom_spend_table' }).register();
+  new CustomForecastLinePlugin().configure({ key: 'custom_forecast_line' }).register();
+  new CustomTileTablePanelPlugin().configure({ key: 'custom_tile_table_panel' }).register();
 }

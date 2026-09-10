@@ -111,6 +111,55 @@ CHART_HEADER_UNITS = 5
 MIN_TEXT_HEIGHT = 8
 
 
+def drop_composed_children(  # noqa: C901
+    position: dict[str, Any], plan: dict[str, Any]
+) -> list[str]:
+    """Remove grid nodes for charts a composing parent renders itself.
+
+    A composite parent fetches and draws its children, so a child also placed
+    on the grid appears twice: once inside the panel and once loose beside it.
+    Stage E is told this and did it anyway, failing the whole layout after
+    eighteen charts had already been configured -- so the grid is corrected
+    here rather than the run rejected.
+    """
+    children = {
+        child
+        for decision in plan.get("decisions", [])
+        for child in decision.get("children") or []
+    }
+    if not children:
+        return []
+
+    removed: dict[str, str] = {}
+    for node_id, node in list(position.items()):
+        if not isinstance(node, dict) or node.get("type") != "CHART":
+            continue
+        ref = (node.get("meta") or {}).get("ref")
+        if isinstance(ref, str) and ref in children:
+            removed[node_id] = ref
+            del position[node_id]
+
+    notes = [
+        f"{node_id}: ref {ref!r} is drawn by its parent, not the grid"
+        for node_id, ref in removed.items()
+    ]
+    for row_id, row in list(position.items()):
+        if not isinstance(row, dict) or row.get("type") != "ROW":
+            continue
+        kept = [c for c in row.get("children", []) if c not in removed]
+        if len(kept) != len(row.get("children", [])):
+            row["children"] = kept
+        if not kept:
+            del position[row_id]
+            notes.append(f"{row_id}: left empty, removed")
+            for parent in position.values():
+                if isinstance(parent, dict) and row_id in (
+                    parent.get("children") or []
+                ):
+                    parent["children"] = [c for c in parent["children"] if c != row_id]
+    return notes
+
+
 def normalise(position: dict[str, Any]) -> list[str]:
     """Make the grid self-consistent, in place, and report what changed.
 
@@ -175,7 +224,9 @@ def run(
         on_thinking=on_thinking,
     )
     layout = extract_json(response.text)
-    if adjustments := normalise(layout.get("position_json") or {}):
+    position = layout.get("position_json") or {}
+    corrections = drop_composed_children(position, plan) + normalise(position)
+    if adjustments := corrections:
         layout.setdefault("adjustments", []).extend(
             {"row_id": note.split(":")[0], "issue": note, "resolution": "normalised"}
             for note in adjustments
