@@ -62,7 +62,7 @@
       "observed": "White card, 1px light border, small radius, ~20px padding. Three stacked text rows plus a micro-chart. Row 1: label 'AWS' in muted grey ~14px regular. Row 2: big value '$1.24M' in dark navy, ~32px, weight ~700 — currency-prefixed, abbreviated to millions with two decimals. Row 3: a green downward-pointing solid triangle followed by green text '8.2% vs last month'. Bottom of the card holds a single-series cyan sparkline (thin ~2px line, no fill, no axes, no gridlines, no dots) running the full inner width, trending gently upward left-to-right with small wobble. Green colour on a downward arrow signals cost decrease treated as good.",
       "implied_data": "Total cloud spend attributable to one provider (AWS) for the current period, its percent change against the prior month, and that provider's spend trend across a recent series of periods.",
       "interactions": [],
-      "composition": "composite",
+      "composition": "atomic",
       "stock_feasibility": {
         "lean": "custom",
         "why": "One card holds a big number, a delta with an arrow and an unaxised sparkline -- three things a single stock big-number chart does not draw together."
@@ -85,7 +85,7 @@
       "observed": "Identical card treatment to r03. Label 'Azure' muted grey ~14px. Value '$842K' dark navy ~32px bold — currency-prefixed, abbreviated to thousands, no decimals. Delta row uses a RED upward-pointing solid triangle with red text '3.1% vs last month' — the only card of the four with an upward/red delta. Bottom holds the same style cyan single-series sparkline, gently rising left-to-right.",
       "implied_data": "Total cloud spend attributable to one provider (Azure) for the current period, its percent change against the prior month, and that provider's spend trend across recent periods.",
       "interactions": [],
-      "composition": "composite",
+      "composition": "atomic",
       "stock_feasibility": {
         "lean": "custom",
         "why": "One card holds a big number, a delta with an arrow and an unaxised sparkline -- three things a single stock big-number chart does not draw together."
@@ -108,7 +108,7 @@
       "observed": "Identical card treatment to r03. Label 'GCP' muted grey ~14px. Value '$391K' dark navy ~32px bold — currency-prefixed, thousands abbreviation, no decimals. Delta row: green downward triangle, green text '1.4% vs last month'. Bottom holds the same style cyan single-series sparkline, slightly flatter than the others but still rising.",
       "implied_data": "Total cloud spend attributable to one provider (GCP) for the current period, its percent change against the prior month, and that provider's spend trend across recent periods.",
       "interactions": [],
-      "composition": "composite",
+      "composition": "atomic",
       "stock_feasibility": {
         "lean": "custom",
         "why": "One card holds a big number, a delta with an arrow and an unaxised sparkline -- three things a single stock big-number chart does not draw together."
@@ -131,7 +131,7 @@
       "observed": "Identical card treatment to r03-r05, fourth in the row. Label 'Total' muted grey ~14px. Value '$2.47M' dark navy ~32px bold — currency-prefixed, millions with two decimals. Delta row: green downward triangle, green text '4.6% vs last month'. Bottom holds the same style cyan single-series sparkline, rising. Note the three provider values ($1.24M + $842K + $391K = $2.473M) sum to this card's value, so it reads as an aggregate of the other three rather than an independent measure.",
       "implied_data": "Total cloud spend across all providers for the current period, its percent change against the prior month, and the overall spend trend across recent periods.",
       "interactions": [],
-      "composition": "composite",
+      "composition": "atomic",
       "stock_feasibility": {
         "lean": "custom",
         "why": "One card holds a big number, a delta with an arrow and an unaxised sparkline -- three things a single stock big-number chart does not draw together."
@@ -182,7 +182,7 @@
         "tab switcher with three options (Compute / Storage / Network) that swaps the bar chart's contents",
         "bars may be hoverable for a tooltip, though no hover state is drawn"
       ],
-      "composition": "composite",
+      "composition": "container",
       "stock_feasibility": {
         "lean": "unsure",
         "why": "One card wraps a three-way tab switcher over a single bar chart; whether a registry plugin composes tabs is not knowable here."

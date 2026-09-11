@@ -28,7 +28,9 @@ from typing import Any
 
 import pytest
 
-from superset.design_to_dashboard.stages.c_resolve import _split_composites
+from superset.design_to_dashboard.stages.c_resolve import (
+    _containers_without_children,
+)
 from superset.design_to_dashboard.stages.e_layout import (
     content_box,
     drop_composed_children,
@@ -128,10 +130,10 @@ def test_a_plan_with_no_children_is_left_alone() -> None:
 # --- stage C has to say which pieces a card draws ----------------------------
 
 
-DESIGN = {"regions": [{"region_id": "r07_card", "composition": "composite"}]}
+DESIGN = {"regions": [{"region_id": "r07_card", "composition": "container"}]}
 
 
-def test_a_composing_configure_without_children_is_reported() -> None:
+def test_a_container_configured_without_children_is_reported() -> None:
     """`children` is the only thing that tells the layout a piece is drawn
     inside the card. Without it the piece gets its own node and appears twice,
     and no check anywhere says so."""
@@ -139,7 +141,10 @@ def test_a_composing_configure_without_children_is_reported() -> None:
         {"ref": "c2", "region_id": "r07_card", "decision": "configure"},
         {"ref": "c1", "region_id": "r07_card:2", "decision": "configure"},
     ]
-    assert any("names no `children`" in p for p in _split_composites(decisions, DESIGN))
+    assert any(
+        "names no `children`" in p
+        for p in _containers_without_children(decisions, DESIGN)
+    )
 
 
 def test_naming_the_children_clears_it() -> None:
@@ -152,15 +157,15 @@ def test_naming_the_children_clears_it() -> None:
         },
         {"ref": "c1", "region_id": "r07_card:2", "decision": "configure"},
     ]
-    assert _split_composites(decisions, DESIGN) == []
+    assert _containers_without_children(decisions, DESIGN) == []
 
 
-def test_a_composite_whose_pieces_have_no_decisions_is_fine() -> None:
+def test_a_container_whose_charts_have_no_decisions_is_fine() -> None:
     """The card draws them itself and no separate chart was planned."""
     decisions: list[dict[str, Any]] = [
         {"ref": "c2", "region_id": "r07_card", "decision": "configure"}
     ]
-    assert _split_composites(decisions, DESIGN) == []
+    assert _containers_without_children(decisions, DESIGN) == []
 
 
 # --- unplaced distinguishes "nowhere" from "inside its parent" ---------------

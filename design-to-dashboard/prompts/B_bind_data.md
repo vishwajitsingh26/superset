@@ -63,7 +63,16 @@ them.
 - **Exact names only.** Copy column and metric names character-for-character from the tool response. Do not pluralise, case-correct, or prettify. `provider_name` is not `Provider Name`.
 - **Prefer an existing metric over an adhoc one.** If `get_dataset_info` returns a metric matching the region's measure, bind it by name; do not re-derive its SQL.
 - **One dataset per region.** A region genuinely needing a cross-dataset join is `unavailable` — say so. (A virtual dataset may resolve it, if permitted.)
-- **A `composite` region needs one binding per thing inside it.** Stage A marks a card holding several charts as `composition: composite` and lists what it holds in `observed`. Each of those becomes its own chart later, so emit a binding per piece using `region_id` values suffixed `:1`, `:2` … (`r04_spend:1`). Binding the card as a single measure leaves the inner charts with no data — they are built regardless, and they render empty.
+- **A `container` region needs one binding per chart inside it.** Stage A marks
+  a frame holding several *different* charts as `composition: container` and
+  lists what it holds in `observed`. Each of those becomes its own chart later,
+  so emit a binding per piece using `region_id` values suffixed `:1`, `:2` …
+  (`r04_spend:1`). Binding the frame as a single measure leaves the inner
+  charts with no data — they are built regardless, and they render empty.
+- **An `atomic` region is one binding, however much it draws.** A KPI card
+  showing a number, a delta and a sparkline is one card about one measure: one
+  binding, no suffix. Splitting it invents pieces nothing downstream will
+  reassemble, and each piece then needs a datasource it does not have.
 - **`is_dttm` is a claim, not a fact.** A dataset can mark a column temporal
   while its physical type is `BIGINT`, `INT` or `DOUBLE` — a `year` column
   holding `1985` is the common case. A time grain on such a column makes
@@ -129,7 +138,7 @@ Rules for both:
   summary is one dataset with three `region_ids`, not three datasets. Create as
   many as the dashboard genuinely needs, and no more.
 - **`region_ids` must be the ids you used on the bindings, suffixes included.**
-  If you split a composite card into `r07_card:1` and `r07_card:2`, list *those*
+  If you split a container into `r07_card:1` and `r07_card:2`, list *those*
   — not `r07_card`. The orchestrator matches the two lists by exact string to
   decide which chart gets which new dataset. A child listed only by its parent
   is a chart pointed at a dataset that does not exist, and Superset refuses to

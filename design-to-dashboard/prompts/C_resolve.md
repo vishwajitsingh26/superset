@@ -112,13 +112,17 @@ this codebase; pick the one that matches the design, and name it in the plan.
 
 - **`viz`** — a single visualisation: bars, lines, a KPI card, a treemap, a
   table. The common case.
-- **`composite`** — one plugin that **hosts other saved charts** inside its own
+- **`container`** — one plugin that **hosts other saved charts** inside its own
   frame. It fetches each child chart by id and renders it through Superset's
   own chart renderer, so children keep their queries, cross-filtering and
   drill. This is how a card with a tab switcher, a segmented control, or
-  several charts under one shared header is built. Anything you can put around
-  a chart — tabs, a title bar, a download menu, a per-card filter row, an
-  expand button — belongs to the wrapper, not to the children.
+  several *different* charts under one shared header is built. Anything you can
+  put around a chart — tabs, a title bar, a download menu, a per-card filter
+  row, an expand button — belongs to the container, not to the children.
+  **Only use it when the children are genuinely separate charts.** A KPI card
+  drawing a number, a delta and a sparkline about one measure is not hosting
+  anything: it is one `viz` that happens to draw several elements. A container
+  with no children is a contradiction, and means you wanted `viz`.
 - **`filter_widget`** — a plugin that *is* a filter: it declares
   `Behavior.NativeFilter` and pushes `extraFormData` into the dashboard, so it
   drives every other chart while sitting in the grid like a card. Use this for
@@ -137,26 +141,37 @@ comparison period), and declare `DrillBy` / `DrillToDetail` / `InteractiveChart`
 so it participates in cross-filtering. Say so in the plan when the design
 implies it.
 
-### Multi-chart regions
+### Regions that hold several charts
 
-When one card holds several charts (`composition: composite` from stage A):
+Stage A marks a frame holding **separate subjects** as `composition: container`
+— a panel with one card per cloud provider, a card with tabs over three
+different charts. Only those:
 
 1. Look in the registry for an existing composing plugin — a tabbed wrapper or
    a container. If one fits, `wrap` and emit each child as its own decision.
 2. **If none exists, build one.** Use `new_plugin` with
-   `plugin_archetype: "composite"` and still emit the children as their own
-   decisions. Composition is a normal thing to build, not a last resort.
+   `plugin_archetype: "container"` and still emit the children as their own
+   decisions, listing their refs in `children`. Composition is a normal thing
+   to build, not a last resort.
+
+**Children exist only when the frame holds charts that are genuinely
+different.** A region stage A called `atomic` has no children, whatever it
+draws: a KPI card with a number, a delta and a sparkline is one chart about one
+measure, so it is a single `configure` or a single `new_plugin` with
+`plugin_archetype: "viz"` — never a container, and never split into pieces.
+Splitting a rich card invents children that nothing can bind, configure or
+place.
+
+**One frame is one container, not a container and its siblings.** A panel
+holding three tiles above a table is *one* `new_plugin` with
+`plugin_archetype: "container"` and four `children` — not a container for the
+frame plus separate plugins beside it. Splitting it produces two packages and
+two charts where the design draws one card, and the tiles land beside the panel
+rather than inside it.
 
 Falling back to sibling charts is a real answer only when the card is a loose
 grouping with no shared chrome — no tabs, no shared header, no shared filter.
 Say so in `fidelity_loss` when you do it.
-
-**One card is one composite, not a composite and its siblings.** A panel
-holding three tiles above a table is *one* `new_plugin` with
-`plugin_archetype: "composite"` and three `children` — not a composite
-plugin for the frame plus a second plugin for the tiles. Splitting it
-produces two packages and two charts where the design draws one card, and
-the tiles land beside the panel rather than inside it.
 
 ## Filter routing
 
@@ -313,7 +328,7 @@ not argue with a problem: if it says a heading must not be its own plugin, use
     "decision": "reuse|configure|wrap|new_plugin|native_filter|grid_text|drop",
     "text": "markdown to render, for grid_text only",
     "viz_type": "...|null", "existing_chart_id": null, "children": ["c2","c3"],
-    "plugin_archetype": "viz|composite|filter_widget|table|navigation|null",
+    "plugin_archetype": "viz|container|filter_widget|table|navigation|null",
     "behaviors": ["InteractiveChart", "DrillToDetail"],
     "slice_name": "...", "rationale": "one sentence",
     "reuse_evidence": "what get_chart_info confirmed, or null",
@@ -328,13 +343,13 @@ not argue with a problem: if it says a heading must not be its own plugin, use
   "plan_for_review": [
     { "step": 1,
       "kind": "reuse|configure|wrap|new_plugin|native_filter",
-      "archetype": "viz|composite|filter_widget|table|navigation|null",
+      "archetype": "viz|container|filter_widget|table|navigation|null",
       "what": "Build a custom plugin for the 'Sales by genre' card",
       "why": "Its thumbnail comparison showed every bar plugin puts category labels in the axis gutter; the design puts them above each bar.",
       "exactness": "Matches the design exactly, including label placement and the M suffix.",
       "cost": "Adds a plugin package and a frontend rebuild." },
     { "step": 2,
-      "kind": "new_plugin", "archetype": "composite",
+      "kind": "new_plugin", "archetype": "container",
       "what": "Build a wrapper for the 'Spend' card and put the three provider charts inside it",
       "why": "The card has one header and a tab switcher over three charts; no registry plugin composes children.",
       "exactness": "Matches the design exactly. The three charts keep their own queries and cross-filtering.",
@@ -367,7 +382,7 @@ matches what they drew, and "a wrapper card holding your three provider charts
 behind tabs" tells them that; "custom plugin for r04" does not. Say what will be
 built, what goes inside it, and what it will drive:
 
-- composite → what the card holds and how the pieces are switched between
+- container → what the frame holds and how the pieces are switched between
 - filter_widget → which sections it will filter, and that it sits in the grid
   rather than the filter bar
 - table → which cells stop being plain text and what is drawn in them
@@ -380,7 +395,7 @@ the whole of what will be built.
 **Say what the dashboard will cost to load.** In `cost`, state how many queries
 the step adds — meaning queries the *finished* chart will run, every time
 anyone opens the dashboard. Your own tool calls and the discovery stage's are
-not part of this; they happen once, while building, and nobody waits on them. A composite hosting four charts issues four queries; a card showing a
+not part of this; they happen once, while building, and nobody waits on them. A container hosting four charts issues four queries; a card showing a
 total and its breakdown should issue one. Where a section could be built with
 fewer queries at some cost to fidelity, say so — that is the user's trade to
 make, not yours.

@@ -425,7 +425,7 @@ def prune_unresolved(position: dict[str, Any], ref_to_id: dict[str, int]) -> lis
 def _dataset_for(region_dataset: dict[str, int], region_id: str | None) -> int | None:
     """The dataset this run created for a region, matched in either direction.
 
-    A composite card is one region to stage A, several bindings to stage B
+    A container is one region to stage A, several bindings to stage B
     (`r07_card:1`, `:2`) and -- as the traces show -- decisions for *both* the
     bare parent and some of the children in stage C. Which of those two
     namespaces a created dataset is filed under is not fixed: stage B's prompt

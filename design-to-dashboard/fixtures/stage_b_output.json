@@ -24,7 +24,7 @@
       "evidence": "t4 get_dataset_info(42) returned column provider_name (VARCHAR). Design's default 'All providers' maps to an unset selector, i.e. no filter value, not a literal option."
     },
     {
-      "region_id": "r03_kpi_aws:1",
+      "region_id": "r03_kpi_aws",
       "state": "bound",
       "dataset_id": 42,
       "dataset_name": "finops.cloud_cost_daily",
@@ -49,73 +49,10 @@
           "why": "also numeric and available, but the design says plain 'spend'; unblended is the more literal reading. Swappable at one place if the analyst prefers amortized."
         }
       ],
-      "evidence": "t4 get_dataset_info(42): metric total_cost = SUM(unblended_cost); columns provider_name, usage_date (is_dttm). Value filter 'AWS' assumes provider_name is stored with that exact casing - not verified against data, which is why confidence is medium. t6/t7 execute_sql returned success but the gateway noted SQL is not really executed, so the delta expression is syntax-plausible only, hence validated: false. Split :1 = the card's primary number."
+      "evidence": "t4 get_dataset_info(42): metric total_cost = SUM(unblended_cost); columns provider_name, usage_date (is_dttm). Value filter 'AWS' assumes provider_name is stored with that exact casing - not verified against data, which is why confidence is medium. t6/t7 execute_sql returned success but the gateway noted SQL is not really executed, so the delta expression is syntax-plausible only, hence validated: false."
     },
     {
-      "region_id": "r03_kpi_aws:2",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [
-        {
-          "col": "provider_name",
-          "op": "==",
-          "val": "AWS"
-        }
-      ],
-      "derivations": [
-        {
-          "label": "percent change vs last month",
-          "sql_expression": "100.0 * (SUM(unblended_cost) - LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date))) / NULLIF(LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date)), 0)",
-          "rationale": "No stored metric expresses month-over-month delta; it is computable from the existing total_cost measure over the usage_date temporal column. Prefer Superset's built-in time-comparison on the metric total_cost over an adhoc window metric if the renderer supports it.",
-          "validated": false
-        }
-      ],
-      "confidence": "medium",
-      "alternatives": [
-        {
-          "rejected": "total_amortized_cost",
-          "why": "also numeric and available, but the design says plain 'spend'; unblended is the more literal reading. Swappable at one place if the analyst prefers amortized."
-        }
-      ],
-      "evidence": "t4 get_dataset_info(42): metric total_cost = SUM(unblended_cost); columns provider_name, usage_date (is_dttm). Value filter 'AWS' assumes provider_name is stored with that exact casing - not verified against data, which is why confidence is medium. t6/t7 execute_sql returned success but the gateway noted SQL is not really executed, so the delta expression is syntax-plausible only, hence validated: false. Split :2 = the month-over-month delta."
-    },
-    {
-      "region_id": "r03_kpi_aws:3",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [
-        {
-          "col": "provider_name",
-          "op": "==",
-          "val": "AWS"
-        }
-      ],
-      "derivations": [],
-      "confidence": "medium",
-      "alternatives": [
-        {
-          "rejected": "total_amortized_cost",
-          "why": "also numeric and available, but the design says plain 'spend'; unblended is the more literal reading. Swappable at one place if the analyst prefers amortized."
-        }
-      ],
-      "evidence": "t4 get_dataset_info(42): metric total_cost = SUM(unblended_cost); columns provider_name, usage_date (is_dttm). Value filter 'AWS' assumes provider_name is stored with that exact casing - not verified against data, which is why confidence is medium. t6/t7 execute_sql returned success but the gateway noted SQL is not really executed, so the delta expression is syntax-plausible only, hence validated: false. Split :3 = the unaxised sparkline over usage_date."
-    },
-    {
-      "region_id": "r04_kpi_azure:1",
+      "region_id": "r04_kpi_azure",
       "state": "bound",
       "dataset_id": 42,
       "dataset_name": "finops.cloud_cost_daily",
@@ -135,63 +72,10 @@
       "derivations": [],
       "confidence": "medium",
       "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'Azure' unverified against stored values. Split :1 = the card's primary number."
+      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'Azure' unverified against stored values."
     },
     {
-      "region_id": "r04_kpi_azure:2",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [
-        {
-          "col": "provider_name",
-          "op": "==",
-          "val": "Azure"
-        }
-      ],
-      "derivations": [
-        {
-          "label": "percent change vs last month",
-          "sql_expression": "100.0 * (SUM(unblended_cost) - LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date))) / NULLIF(LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date)), 0)",
-          "rationale": "Same month-over-month derivation as r03, scoped to Azure.",
-          "validated": false
-        }
-      ],
-      "confidence": "medium",
-      "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'Azure' unverified against stored values. Split :2 = the month-over-month delta."
-    },
-    {
-      "region_id": "r04_kpi_azure:3",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [
-        {
-          "col": "provider_name",
-          "op": "==",
-          "val": "Azure"
-        }
-      ],
-      "derivations": [],
-      "confidence": "medium",
-      "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'Azure' unverified against stored values. Split :3 = the unaxised sparkline over usage_date."
-    },
-    {
-      "region_id": "r05_kpi_gcp:1",
+      "region_id": "r05_kpi_gcp",
       "state": "bound",
       "dataset_id": 42,
       "dataset_name": "finops.cloud_cost_daily",
@@ -211,63 +95,10 @@
       "derivations": [],
       "confidence": "medium",
       "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'GCP' unverified against stored values. Split :1 = the card's primary number."
+      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'GCP' unverified against stored values."
     },
     {
-      "region_id": "r05_kpi_gcp:2",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [
-        {
-          "col": "provider_name",
-          "op": "==",
-          "val": "GCP"
-        }
-      ],
-      "derivations": [
-        {
-          "label": "percent change vs last month",
-          "sql_expression": "100.0 * (SUM(unblended_cost) - LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date))) / NULLIF(LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date)), 0)",
-          "rationale": "Same month-over-month derivation as r03, scoped to GCP.",
-          "validated": false
-        }
-      ],
-      "confidence": "medium",
-      "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'GCP' unverified against stored values. Split :2 = the month-over-month delta."
-    },
-    {
-      "region_id": "r05_kpi_gcp:3",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [
-        {
-          "col": "provider_name",
-          "op": "==",
-          "val": "GCP"
-        }
-      ],
-      "derivations": [],
-      "confidence": "medium",
-      "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost, columns provider_name, usage_date. Literal 'GCP' unverified against stored values. Split :3 = the unaxised sparkline over usage_date."
-    },
-    {
-      "region_id": "r06_kpi_total:1",
+      "region_id": "r06_kpi_total",
       "state": "bound",
       "dataset_id": 42,
       "dataset_name": "finops.cloud_cost_daily",
@@ -281,48 +112,7 @@
       "derivations": [],
       "confidence": "high",
       "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost with no filter is the natural aggregate; Stage A observed the three provider values sum to this card. No provider literal is required here, so this binding carries no value-casing risk. Split :1 = the card's primary number."
-    },
-    {
-      "region_id": "r06_kpi_total:2",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [],
-      "derivations": [
-        {
-          "label": "percent change vs last month",
-          "sql_expression": "100.0 * (SUM(unblended_cost) - LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date))) / NULLIF(LAG(SUM(unblended_cost)) OVER (ORDER BY DATE_TRUNC('month', usage_date)), 0)",
-          "rationale": "Unfiltered month-over-month delta across all providers.",
-          "validated": false
-        }
-      ],
-      "confidence": "high",
-      "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost with no filter is the natural aggregate; Stage A observed the three provider values sum to this card. No provider literal is required here, so this binding carries no value-casing risk. Split :2 = the month-over-month delta."
-    },
-    {
-      "region_id": "r06_kpi_total:3",
-      "state": "bound",
-      "dataset_id": 42,
-      "dataset_name": "finops.cloud_cost_daily",
-      "dimensions": [],
-      "measures": [
-        "total_cost"
-      ],
-      "time_column": "usage_date",
-      "time_grain": "P1M",
-      "filters": [],
-      "derivations": [],
-      "confidence": "high",
-      "alternatives": [],
-      "evidence": "t4 get_dataset_info(42): metric total_cost with no filter is the natural aggregate; Stage A observed the three provider values sum to this card. No provider literal is required here, so this binding carries no value-casing risk. Split :3 = the unaxised sparkline over usage_date."
+      "evidence": "t4 get_dataset_info(42): metric total_cost with no filter is the natural aggregate; Stage A observed the three provider values sum to this card. No provider literal is required here, so this binding carries no value-casing risk."
     },
     {
       "region_id": "r07_spend_over_time",

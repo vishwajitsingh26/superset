@@ -64,7 +64,7 @@ def test_reference_plan_is_valid(
     assert validate(plan, design, bindings, REGISTRY) == []
 
 
-def test_composite_children_are_not_unknown_regions(
+def test_container_children_are_not_unknown_regions(
     plan: dict[str, Any], design: dict[str, Any], bindings: dict[str, Any]
 ) -> None:
     """`_base_region` exists so `r03_kpi_aws:3` resolves to its parent."""
@@ -176,10 +176,10 @@ def test_dataset_for_matches_in_either_direction(
 
 
 def test_children_resolve_to_real_charts(plan: dict[str, Any]) -> None:
-    """A ref means nothing to the author of a wrapper."""
-    resolved = resolve_children({"children": ["c1"]}, plan["decisions"])
-    assert resolved[0]["region_id"] == "r03_kpi_aws:3"
-    assert resolved[0]["viz_type"] == "echarts_timeseries_line"
+    """A ref means nothing to the author of a container."""
+    resolved = resolve_children({"children": ["c5"]}, plan["decisions"])
+    assert resolved[0]["region_id"] == "r08_by_service:1"
+    assert resolved[0]["viz_type"] == "echarts_timeseries_bar"
     assert resolved[0]["slice_name"]
 
 
@@ -188,8 +188,8 @@ def test_unknown_refs_are_dropped_not_guessed(plan: dict[str, Any]) -> None:
 
 
 def test_a_wrapper_is_told_what_it_hosts(plan: dict[str, Any]) -> None:
-    children = resolve_children({"children": ["c9"]}, plan["decisions"])
-    prompt = build_user_prompt({}, {}, {"children": ["c9"]}, {}, None, children)
+    children = resolve_children({"children": ["c5"]}, plan["decisions"])
+    prompt = build_user_prompt({}, {}, {"children": ["c5"]}, {}, None, children)
     assert "What this wrapper hosts" in prompt
     assert "echarts_timeseries_bar" in prompt
     assert "do not re-implement what they draw" in prompt
@@ -201,8 +201,8 @@ def test_a_wrapper_is_told_about_tabs(plan: dict[str, Any]) -> None:
             "tab switcher with three options (Compute / Storage / Network)"
         ]
     }
-    children = resolve_children({"children": ["c9"]}, plan["decisions"])
-    prompt = build_user_prompt(region, {}, {"children": ["c9"]}, {}, None, children)
+    children = resolve_children({"children": ["c5"]}, plan["decisions"])
+    prompt = build_user_prompt(region, {}, {"children": ["c5"]}, {}, None, children)
     assert "Compute / Storage / Network" in prompt
     assert "Coming soon" in prompt
 

@@ -75,7 +75,7 @@ REFERENCE_PLUGIN = "design-to-dashboard/assets/reference-plugin"
 # nothing else, so a plain `viz` job carries less context than it would if
 # every capability were pasted in for completeness.
 ARCHETYPE_REFERENCE = {
-    "composite": "composite",
+    "container": "container",
     "filter_widget": "filter_widget",
     "table": "table",
     "navigation": "filter_widget",  # navigation emits state the same way

@@ -450,9 +450,9 @@ def run_all(
     design_system = plan.get("design_system", {})
 
     def region_for(region_id: str) -> dict[str, Any]:
-        """The region a decision draws, including a composite's children.
+        """The region a decision draws, including a container's children.
 
-        Stage B splits a composite card into one binding per child and names
+        Stage B splits a container into one binding per chart it holds and names
         them `r07_card:1`, `:2`; stage A emitted only the card itself. Looking
         the child up directly always missed, so every child chart was
         configured with no bbox, no observed detail and no title -- the model
@@ -463,14 +463,14 @@ def run_all(
     def binding_for(region_id: str) -> dict[str, Any]:
         """The data a decision reads, matched in either direction.
 
-        Stage C emits a decision for the composite card *itself* as well as for
+        Stage C emits a decision for the container *itself* as well as for
         some of its children -- the card plugin draws the number and the delta,
         a child draws the sparkline beside it. Stage B bound only the children,
         so the card's own decision matched nothing and the most important chart
         on it was configured with no dataset and no columns. The model then
         invented a `datasource_id`, which is the failure this lookup removes.
 
-        A parent inherits from its first child because they are pieces of one
+        A frame inherits from its first child because they are pieces of one
         card and share its dataset by construction.
         """
         if exact := bindings.get(region_id):

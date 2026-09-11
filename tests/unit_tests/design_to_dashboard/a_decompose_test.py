@@ -80,8 +80,8 @@ def test_malformed_region_id_is_rejected(
     assert any("expected the form" in p for p in validate(analysis))
 
 
-def test_composite_child_id_is_accepted(analysis: dict[str, Any]) -> None:
-    """Stage B mints `r07_card:1`; the shared grammar must allow it."""
+def test_container_child_id_is_accepted(analysis: dict[str, Any]) -> None:
+    """Stage B mints `r07_card:1` for a container; the grammar must allow it."""
     analysis["regions"][1]["region_id"] = "r02_spend:1"
     analysis["global"]["reading_order"] = ["r01_header", "r02_spend:1"]
     assert validate(analysis) == []

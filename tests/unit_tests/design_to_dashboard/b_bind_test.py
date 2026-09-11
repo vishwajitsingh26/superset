@@ -30,12 +30,12 @@ from superset.design_to_dashboard.stages.clarify import _dedupe
 
 @pytest.fixture
 def design() -> dict[str, Any]:
-    """Two atomic regions and one composite card."""
+    """Two atomic regions and one container."""
     return {
         "regions": [
             {"region_id": "r01_title", "role": "header", "composition": "atomic"},
             {"region_id": "r02_trend", "role": "chart", "composition": "atomic"},
-            {"region_id": "r03_card", "role": "kpi", "composition": "composite"},
+            {"region_id": "r03_card", "role": "kpi", "composition": "container"},
         ]
     }
 
@@ -71,7 +71,7 @@ def test_valid_binding_set(bindings: dict[str, Any], design: dict[str, Any]) -> 
     assert validate(bindings, design) == []
 
 
-def test_composite_children_are_not_unknown_regions(
+def test_container_children_are_not_unknown_regions(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
     """The `:N` suffix is the contract, not an error."""
@@ -94,21 +94,21 @@ def test_binding_for_unknown_region_is_reported(
     assert "binding for unknown region: r09_ghost" in validate(bindings, design)
 
 
-def test_composite_bound_as_a_single_measure_is_reported(
+def test_container_bound_as_a_single_measure_is_reported(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
     bindings["bindings"] = [_binding("r02_trend"), _binding("r03_card")]
     assert any(
-        "is composite but has one unsuffixed" in p for p in validate(bindings, design)
+        "is a container but has one unsuffixed" in p for p in validate(bindings, design)
     )
 
 
-def test_atomic_region_split_into_children_is_reported(
+def test_an_atomic_region_split_into_children_is_reported(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
     bindings["bindings"].append(_binding("r02_trend:1"))
     assert any(
-        "is not composite but has 2 bindings" in p for p in validate(bindings, design)
+        "is not a container but has 2 bindings" in p for p in validate(bindings, design)
     )
 
 
@@ -137,7 +137,7 @@ def test_unavailable_binding_requires_needs_input(
 
 
 def _pending(bindings: dict[str, Any], region_ids: list[str]) -> dict[str, Any]:
-    """Composite children waiting on a dataset this run will create."""
+    """Container children waiting on a dataset this run will create."""
     pending = copy.deepcopy(bindings)
     for binding in pending["bindings"]:
         if binding["region_id"].startswith("r03_card"):

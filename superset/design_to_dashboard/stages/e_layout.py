@@ -167,7 +167,7 @@ def drop_composed_children(  # noqa: C901
 ) -> list[str]:
     """Remove grid nodes for charts a composing parent renders itself.
 
-    A composite parent fetches and draws its children, so a child also placed
+    A container fetches and draws its children, so a child also placed
     on the grid appears twice: once inside the panel and once loose beside it.
     Stage E is told this and did it anyway, failing the whole layout after
     eighteen charts had already been configured -- so the grid is corrected
@@ -320,7 +320,7 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
     }
     # A composing parent renders its children itself, so they get no grid node
     # of their own. This is keyed on `children` rather than on `decision ==
-    # "wrap"` because a generated composite plugin composes exactly the same
+    # "wrap"` because a generated container plugin composes exactly the same
     # way; keying on the decision word laid its children out twice.
     child_refs = {
         child

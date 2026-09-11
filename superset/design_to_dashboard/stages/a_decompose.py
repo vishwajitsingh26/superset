@@ -36,13 +36,18 @@ from superset.design_to_dashboard.pipeline.tool_loop import extract_json
 logger = logging.getLogger(__name__)
 
 # `r<NN>_<slug>`, per the stage prompt. The optional `:<N>` suffix is the
-# pipeline's shared grammar for one child of a composite region -- stage A does
-# not mint those (it emits the parent card as one region) but the grammar is
-# shared with stage B, which does, so the pattern accepts them.
+# pipeline's shared grammar for one chart inside a container -- stage A does
+# not mint those (it emits the frame as one region) but the grammar is shared
+# with stage B, which does, so the pattern accepts them.
 REGION_ID = re.compile(r"^r\d{2}_[a-z0-9_]+(:\d+)?$")
 
 ROLES = {"kpi", "chart", "table", "filter", "nav", "header", "text", "decoration"}
-COMPOSITIONS = {"atomic", "composite", "control", "container"}
+# `composite` is deliberately absent: it meant "a card holding several
+# things", which a rich single card also is, and the ambiguity split KPI
+# cards into pieces nothing could reassemble. A card about one subject is
+# `atomic` however much it draws; only a frame over separate subjects is a
+# `container`.
+COMPOSITIONS = {"atomic", "container", "control"}
 
 # Boxes are read off a picture by eye, so they do not land on exact pixels.
 # This slack is for rounding, not for a different coordinate space: a box in

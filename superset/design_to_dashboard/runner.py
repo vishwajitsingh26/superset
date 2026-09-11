@@ -857,7 +857,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 def _region_for(region_id: str) -> dict[str, Any]:
                     """The region a plugin decision describes.
 
-                    A composite card's pieces are resolved under `r07:1`,
+                    A container's charts are resolved under `r07:1`,
                     `r07:2` (`B_bind_data.md`), and stage A's list has no such
                     ids -- so a plain lookup returned {} and the plugin for a
                     child was generated with no description of what it draws
@@ -870,7 +870,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 def _binding_for(region_id: str) -> dict[str, Any]:
                     """The data behind a plugin, matched in either direction.
 
-                    A composing decision names the card itself, which stage B
+                    A composing decision names the frame itself, which stage B
                     never bound -- it bound the pieces. Looked up directly, the
                     wrapper was written with no dataset and no column names.
                     """

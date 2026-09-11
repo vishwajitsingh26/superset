@@ -70,7 +70,7 @@ DECISIONS = {
 }
 # What kind of component a `new_plugin` is. A plugin is a React component we
 # own, so this is not limited to "a chart shape Superset lacks".
-ARCHETYPES = {"viz", "composite", "filter_widget", "table", "navigation"}
+ARCHETYPES = {"viz", "container", "filter_widget", "table", "navigation"}
 NON_DATA_ROLES = {"nav", "header", "text", "decoration"}
 
 
@@ -185,10 +185,10 @@ def tally(decisions: list[dict[str, Any]]) -> dict[str, int]:
 def _base_region(region_id: Any) -> str:
     """The region a decision belongs to.
 
-    A composite card is bound and resolved one piece at a time, with ids
-    suffixed `:1`, `:2` (`B_bind_data.md`). Those children belong to the parent
-    region; comparing them against stage A's list, which has no suffixes, reads
-    every one as a decision for a region that does not exist.
+    A container is bound and resolved one chart at a time, with ids suffixed
+    `:1`, `:2` (`B_bind_data.md`). Those children belong to the frame;
+    comparing them against stage A's list, which has no suffixes, reads every
+    one as a decision for a region that does not exist.
     """
     return str(region_id or "").split(":", 1)[0]
 
@@ -252,20 +252,20 @@ def _text_as_plugin(
 ) -> list[str]:
     """Text regions resolved to a plugin instead of `grid_text`.
 
-    A `composite` region is exempt, and the exemption is the whole point: a
-    header row that also carries a currency toggle is a card holding several
+    A `container` region is exempt, and the exemption is the whole point: a
+    header row that also carries a currency toggle is a frame holding separate
     things, not a line of prose, and a MARKDOWN node cannot draw a control.
     Without this, that region is caught by this rule *and* by
-    `_split_composites` -- one demanding no plugin, the other demanding a
-    composite plugin -- and no plan can satisfy both.
+    `_containers_without_children` -- one demanding no plugin, the other demanding a
+    container plugin -- and no plan can satisfy both.
     """
     roles = {
         r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
     }
-    composite = {
+    containers = {
         r.get("region_id")
         for r in design_analysis.get("regions", [])
-        if r.get("composition") == "composite"
+        if r.get("composition") == "container"
     }
     return [
         f"{d.get('region_id')}: role is {roles.get(d.get('region_id'))!r}, which "
@@ -276,40 +276,44 @@ def _text_as_plugin(
         for d in decisions
         if d.get("decision") == "new_plugin"
         and roles.get(d.get("region_id")) in TEXT_ROLES
-        and d.get("region_id") not in composite
+        and d.get("region_id") not in containers
     ]
 
 
-def _split_composites(
+def _containers_without_children(
     decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
 ) -> list[str]:
-    """Composite regions that became a plugin drawing nothing.
+    """Containers that became a plugin hosting nothing.
 
-    Stage A marks a card holding several things `composition: composite`. One
-    card is one plugin with `children`; splitting it into a frame plugin plus
-    sibling plugins for its contents produces two packages and two charts where
-    the design draws one card, with the contents beside the frame rather than
-    inside it.
+    Stage A marks a frame holding several *different* charts
+    `composition: container`. One frame is one plugin with `children`; splitting
+    it into a frame plugin plus sibling plugins for its contents produces two
+    packages and two charts where the design draws one card, with the contents
+    beside the frame rather than inside it.
+
+    A region stage A called `atomic` is not checked here at all: however much a
+    card draws, if it is about one subject it is one chart with no children.
     """
-    composite = {
+    containers = {
         r.get("region_id")
         for r in design_analysis.get("regions", [])
-        if r.get("composition") == "composite"
+        if r.get("composition") == "container"
     }
     problems = [
-        f"{d.get('region_id')}: stage A read this as a composite -- one card "
-        "holding several things -- so it is one `new_plugin` with "
-        '`plugin_archetype: "composite"` and its contents in `children`, '
-        "not a plugin that draws only the frame."
+        f"{d.get('region_id')}: stage A read this as a container -- a frame over "
+        "several different charts -- so it is one `new_plugin` with "
+        '`plugin_archetype: "container"` and its contents in `children`, not a '
+        "plugin that draws only the frame. If the card is really about one "
+        "subject, stage A was wrong and this is a `viz`."
         for d in decisions
         if d.get("decision") == "new_plugin"
-        and d.get("region_id") in composite  # the parent, not a `:N` child
-        and d.get("plugin_archetype") != "composite"
+        and d.get("region_id") in containers  # the frame, not a `:N` child
+        and d.get("plugin_archetype") != "container"
         and not (d.get("children") or [])
     ]
 
-    # The same card, resolved with `configure` instead. Checking only
-    # `new_plugin` let a composite parent reuse an existing plugin and name no
+    # The same frame, resolved with `configure` instead. Checking only
+    # `new_plugin` let a container reuse an existing plugin and name no
     # children at all -- and `children` is the *only* thing that tells stage E a
     # piece is drawn inside the card. Without it E gives the piece its own grid
     # node and it appears twice: once in the card, once loose beside it. No
@@ -317,7 +321,7 @@ def _split_composites(
     decided = {d.get("region_id") for d in decisions}
     for decision in decisions:
         region_id = decision.get("region_id")
-        if decision.get("decision") != "configure" or region_id not in composite:
+        if decision.get("decision") != "configure" or region_id not in containers:
             continue
         if decision.get("children"):
             continue
@@ -434,13 +438,13 @@ def _tabs_flattened(
     }
     return [
         f"{d.get('region_id')}: stage A saw a tab switcher here, but this "
-        "decision hosts nothing -- a tabbed card is a composite with one child "
+        "decision hosts nothing -- a tabbed card is a container with one child "
         'per tab, unseen ones built as "Coming soon"'
         for d in decisions
         if d.get("region_id") in tabbed
         and d.get("decision") in DRAWS_DATA
         and not (d.get("children") or [])
-        and d.get("plugin_archetype") != "composite"
+        and d.get("plugin_archetype") != "container"
     ]
 
 
@@ -512,7 +516,7 @@ def validate(  # noqa: C901
     unanswered = _unanswered_regions(binding_set)
     problems.extend(_answer_conflicts(decisions, design_analysis, binding_set))
     problems.extend(_text_as_plugin(decisions, design_analysis))
-    problems.extend(_split_composites(decisions, design_analysis))
+    problems.extend(_containers_without_children(decisions, design_analysis))
     problems.extend(_binding_coverage(decisions, design_analysis, binding_set))
     problems.extend(_evidence_missing(decisions))
     problems.extend(_tabs_flattened(decisions, design_analysis))
@@ -579,10 +583,12 @@ def validate(  # noqa: C901
                     f"{region_id}: new_plugin without a valid plugin_archetype "
                     f"(got {archetype!r}, expected one of {sorted(ARCHETYPES)})"
                 )
-            elif archetype == "composite" and not (decision.get("children") or []):
+            elif archetype == "container" and not (decision.get("children") or []):
                 problems.append(
-                    f"{region_id}: composite plugin without children -- a wrapper "
-                    "that hosts nothing is a plain viz plugin"
+                    f"{region_id}: container plugin without children -- a frame "
+                    "that hosts nothing is a plain `viz`. Either list the refs of "
+                    "the charts it holds, or set plugin_archetype to 'viz' "
+                    "because this card is one chart about one subject."
                 )
         if kind == "wrap":
             children = decision.get("children") or []

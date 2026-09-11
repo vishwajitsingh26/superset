@@ -87,7 +87,7 @@ how it looks:
   One query object by default. A second is right when the design needs data the
   first cannot carry — a prior period, a different grain — and wrong when the
   numbers could have been derived from rows you already fetched.
-- **`composite`** — hosts other **saved charts** inside its own frame. You own
+- **`container`** — hosts other **saved charts** inside its own frame. You own
   everything around them — tabs, header, per-card filters, download and expand
   controls — and never re-implement a child's chart. The children keep their own
   queries, cross-filtering and drill.
@@ -113,7 +113,7 @@ which nothing here checks until after the plugin is written. Neither is
 catchable by reading the code back.
 
 - **Do not invent fields on `ChartMetadata`.** `skipDataFetch: true` was set on
-  a composite plugin's metadata; the property does not exist on
+  a container plugin's metadata; the property does not exist on
   `ChartMetadataConfig` and the build failed. A wrapper that draws no data of
   its own says so by emitting no query in `buildQuery`, not by a metadata flag.
   Set only fields the exemplar sets.

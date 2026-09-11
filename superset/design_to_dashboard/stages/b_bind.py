@@ -138,7 +138,7 @@ def _validate_created_datasets(
 
     A binding with no `dataset_id` is fine while a dataset this run will create
     covers it -- but the cover is matched by exact `region_id`, so a spec that
-    lists the parent card while the binding names `:1` leaves that chart with
+    lists the parent frame while the binding names `:1` leaves that chart with
     nothing. The applier then creates it with whatever id stage D invented and
     Superset rejects the chart, one chart into a run that has already paid for
     every stage.
@@ -173,7 +173,7 @@ def _validate_created_datasets(
 def parent_of(region_id: str) -> str:
     """The stage A region a binding belongs to.
 
-    A composite card is one region to stage A and several bindings to stage B,
+    A container is one region to stage A and several bindings to stage B,
     which names them `r07_card:1`, `:2`. Everything that joins stage B's output
     back to stage A's regions has to strip that suffix first.
     """
@@ -213,17 +213,17 @@ def validate(  # noqa: C901
     for extra in sorted(set(per_region) - expected):
         problems.append(f"binding for unknown region: {extra}")
 
-    # A composite card becomes one chart per thing inside it. Bound as a single
+    # A container becomes one chart per thing it holds. Bound as a single
     # measure, the inner charts are built anyway and render empty.
     for region_id, ids in sorted(per_region.items()):
-        if composition.get(region_id) == "composite" and ids == [region_id]:
+        if composition.get(region_id) == "container" and ids == [region_id]:
             problems.append(
-                f"{region_id} is composite but has one unsuffixed binding; "
-                "emit one binding per thing the card holds (`:1`, `:2`, ...)"
+                f"{region_id} is a container but has one unsuffixed binding; "
+                "emit one binding per chart the frame holds (`:1`, `:2`, ...)"
             )
-        if composition.get(region_id) != "composite" and len(ids) > 1:
+        if composition.get(region_id) != "container" and len(ids) > 1:
             problems.append(
-                f"{region_id} is not composite but has {len(ids)} bindings: "
+                f"{region_id} is not a container but has {len(ids)} bindings: "
                 f"{sorted(ids)}"
             )
 

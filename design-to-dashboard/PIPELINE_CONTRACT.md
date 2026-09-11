@@ -25,7 +25,7 @@ A plugin is a React component this fork owns, so `new_plugin` is not limited to
 | Archetype | What it is | Key mechanism |
 |---|---|---|
 | `viz` | one visualisation | `buildQuery` → `transformProps` → component; may emit several query objects |
-| `composite` | hosts other **saved charts** in its own frame | fetches each child by id, renders it through Superset's chart container; children keep their queries, cross-filtering and drill |
+| `container` | hosts other **saved charts** in its own frame | fetches each child by id, renders it through Superset's chart container; children keep their queries, cross-filtering and drill. Only for a frame over genuinely separate charts -- a rich single card is a `viz`. |
 | `filter_widget` | a card in the grid that *is* a filter | declares `Behavior.NativeFilter`, pushes `extraFormData` via `setDataMask` |
 | `table` | cells that are not text | ratio bars, sparklines, chips, expandable hierarchy rows |
 | `navigation` | breadcrumbs, drill headers | emits state through `setDataMask` |
@@ -33,14 +33,14 @@ A plugin is a React component this fork owns, so `new_plugin` is not limited to
 The information each stage needs:
 
 - **A** cannot name a `viz_type` and has no registry, so it reports what only it
-  can see: `composition` (`atomic` / `composite` / `control` / `container`) and
+  can see: `composition` (`atomic` / `container` / `control`) and
   a provisional `stock_feasibility` lean with the visual evidence for it.
 - **C** owns the verdict, because only C compares thumbnails. It may overrule
   A's lean and records why in `stock_feasibility_check`.
-- **B** emits one binding per child of a `composite` region (`r04_spend:1`, `:2`).
+- **B** emits one binding per child of a `container` region (`r04_spend:1`, `:2`) -- and only for a container. An `atomic` card, however many elements it draws, is one binding.
 - **E** gives a composing parent one grid node and its children none. This is
   keyed on the presence of `children`, not on `decision == "wrap"` — a
-  generated composite composes identically, and keying on the word laid its
+  generated container composes identically, and keying on the word laid its
   children out twice.
 - **F** writes to the archetype, and to the fork's house rules: ECharts for
   charts, Ant Design for cards and tables, an `adapters/supersetAdapter.ts`

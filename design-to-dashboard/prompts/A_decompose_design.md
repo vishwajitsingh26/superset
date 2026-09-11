@@ -80,17 +80,24 @@ Sweep the design top-left to bottom-right. For each distinct visual element emit
   infer what the others contain — that is not in the picture.
 - `composition` — the section's structural shape. This decides which kind of
   component can render it, so read it off the picture carefully:
-  - `atomic` — one visual, one card. A bar chart, a table, a single number.
-  - `composite` — **one card holding two or more things that each need their own
-    component to render**, whether side by side, stacked, or behind a tab
-    switcher. Count them: a chart, a table, a big number, a control, a search
-    box each count as one; a title, a caption or a static label counts as none.
-    Two or more means `composite`. A KPI card holding a number, a delta and a
-    sparkline is three, so it is composite.
+  - `atomic` — **one card about one subject**, however many things it draws to
+    say it. A KPI card showing a number, a delta arrow, a sparkline and a
+    caption is `atomic`: every element describes the same measure, so one
+    component renders the whole card. A bar chart, a table, a single number
+    are all `atomic` too.
+  - `container` — **a frame holding two or more sections that are about
+    different things**, and usually its own header or controls: a panel
+    holding one card per cloud provider, a card with a tab switcher over
+    three different charts. The test is not how many elements are drawn — it
+    is whether they are separate subjects that would still make sense as
+    separate cards.
   - `control` — a widget whose purpose is to change *other* sections: a period
     picker, a dropdown, a segmented toggle, a search box.
-  - `container` — a frame that groups other sections without drawing data of
-    its own: a bordered panel, a titled group.
+
+  When you are unsure between `atomic` and `container`, ask what the card is
+  *about*. One subject rendered richly is `atomic`; several subjects gathered
+  under one frame is a `container`. Calling a rich single card a container
+  splits it into pieces nothing can reassemble.
 - `stock_feasibility` — `{ "lean": "stock|custom|unsure", "why": "..." }`. A
   **provisional** read of whether an off-the-shelf chart could draw this, and
   the visual evidence for it. You have no registry, so you are not deciding —
@@ -133,8 +140,12 @@ Then emit `global`:
   into the header it becomes text downstream, and a text node cannot draw a
   switch — the control disappears from the dashboard.
 - **Distinguish filter bar from filter widget.** A control in a dedicated top/left bar is `role: filter` with `global.filter_bar.present = true`. A filter drawn as a card inside the grid is `role: filter` sitting in the reading order. This distinction decides native-filter vs. chart-widget downstream — get it right.
-- **A wrapper is one region with tabs.** If a single card contains a tab switcher over several charts, emit one region, `role: chart`, `composition: composite`, and put the tab labels in `observed`. Do not split it into one region per tab. Describe each thing the card holds in `observed` — a later stage builds one child chart per item, and it can only build what you described.
-- **Composite is about one card, not one row.** Four separate KPI cards in a row are four `atomic` regions. One card containing a number *and* a sparkline *and* a delta is a single `composite` region.
+- **A wrapper is one region with tabs.** If a single card contains a tab switcher over several *different* charts, emit one region, `role: chart`, `composition: container`, and put the tab labels in `observed`. Do not split it into one region per tab. Describe each thing the card holds in `observed` — a later stage builds one child chart per item, and it can only build what you described.
+- **A container is a frame, not a rich card.** Four separate KPI cards in a
+  row are four `atomic` regions. One card containing a number *and* a delta
+  *and* a sparkline — all describing the same measure — is a single `atomic`
+  region, not a container. A bordered panel holding those four cards *is* a
+  container.
 - **Nothing you see is off-limits.** Custom components are written for this design when no stock chart fits, so never soften an observation to make it sound buildable. Report the labels above the bars, the bar inside the table cell, the breadcrumb above the grid. A design detail you smooth over is a detail the dashboard will not have.
 - **Decoration is not a chart.** Logos, dividers, background art → `role: decoration`. Downstream drops them.
 - **Do not infer intent.** If the design shows a number with no label, say so. Do not name it.
