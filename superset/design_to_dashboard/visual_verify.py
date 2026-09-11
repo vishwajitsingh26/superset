@@ -63,10 +63,79 @@ class VisualResult:
     screenshot_path: str | None = None
     cost_usd: float = 0.0
     error: str | None = None
+    # Ways the report broke its own contract -- a total that does not match the
+    # dimensions, a verdict that does not match the total.
+    problems: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return self.error is None and self.blocked is None
+
+
+# The six dimensions the stage prompt asks for, each scored 0-10.
+DIMENSIONS = ("presence", "position", "chart_type", "labels", "numbers", "styling")
+MAX_DIMENSION = 10
+# The bands the prompt defines. A verdict is derived from the score rather than
+# taken alongside it, so the two cannot disagree.
+BANDS = ((54, "pass"), (40, "needs_improvement"), (0, "fail"))
+
+
+def band_for(score: int) -> str:
+    """The verdict a score earns."""
+    for floor, verdict in BANDS:
+        if score >= floor:
+            return verdict
+    return "fail"
+
+
+def validate(report: dict[str, Any]) -> list[str]:  # noqa: C901
+    """Check the report against its own contract.
+
+    Nothing here judges the dashboard; it judges the judgement. `score` and
+    `verdict` were taken on trust, so a report could rate six dimensions at
+    five apiece and call the total 58, or score 43 and call it a pass -- and
+    the prompt's closing instruction is exactly that a generous score "becomes
+    a dashboard nobody re-checks". Scored arithmetic is checkable, so it is
+    checked.
+    """
+    problems: list[str] = []
+    if report.get("blocked"):
+        # A render that could not be judged is not a fidelity result, and the
+        # prompt says to score nothing. There is no arithmetic to check.
+        return problems
+
+    scores = report.get("scores")
+    if not isinstance(scores, dict):
+        return ["scores is missing"]
+    for dimension in DIMENSIONS:
+        value = scores.get(dimension)
+        if not isinstance(value, int) or not 0 <= value <= MAX_DIMENSION:
+            problems.append(
+                f"scores.{dimension} is {value!r}, expected 0-{MAX_DIMENSION}"
+            )
+    if unknown := sorted(set(scores) - set(DIMENSIONS)):
+        problems.append(f"scores has dimensions that are not scored: {unknown}")
+
+    total = sum(v for v in scores.values() if isinstance(v, int))
+    reported = report.get("score")
+    if not isinstance(reported, int):
+        problems.append(f"score is {reported!r}, expected an integer")
+    elif reported != total:
+        problems.append(f"score is {reported} but the six dimensions sum to {total}")
+
+    if (verdict := report.get("verdict")) != (earned := band_for(total)):
+        problems.append(f"verdict is {verdict!r} but {total}/60 is {earned!r}")
+
+    for index, finding in enumerate(report.get("findings") or []):
+        if not isinstance(finding, dict):
+            problems.append(f"finding {index} is not an object")
+            continue
+        if finding.get("severity") not in {"critical", "medium", "low"}:
+            problems.append(
+                f"finding {index}: severity {finding.get('severity')!r} is not "
+                "critical, medium or low"
+            )
+    return problems
 
 
 def capture(
@@ -204,12 +273,30 @@ def run(
         result.error = f"comparison failed: {ex}"
         return result
 
-    result.verdict = report.get("verdict") or "unknown"
-    result.score = int(report.get("score") or 0)
     result.scores = report.get("scores") or {}
     result.findings = report.get("findings") or []
     result.summary = report.get("summary") or ""
     result.blocked = report.get("blocked")
+    result.problems = validate(report)
+
+    # Derived, not accepted. The six dimensions are the assessment; the total
+    # and the verdict are arithmetic over them, and arithmetic is not something
+    # to take a second opinion on. A report that disagrees keeps its numbers in
+    # `problems` so the disagreement itself is visible.
+    if result.blocked:
+        result.verdict = "blocked"
+        result.score = 0
+    else:
+        result.score = sum(
+            value
+            for dimension, value in result.scores.items()
+            if dimension in DIMENSIONS and isinstance(value, int)
+        )
+        result.verdict = band_for(result.score)
+    if result.problems:
+        logger.warning(
+            "visual report failed its own contract: %s", "; ".join(result.problems)
+        )
     logger.info(
         "visual verify: %s %s/60 with %d finding(s)",
         result.verdict,

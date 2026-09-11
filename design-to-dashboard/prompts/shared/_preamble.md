@@ -23,12 +23,12 @@ These bind every stage that emits code or configuration:
 7. **Dashboard grid is 12 columns** (`GRID_COLUMN_COUNT = 12`, `GRID_BASE_UNIT = 8`).
 8. **Nothing destructive.** Never delete or overwrite an existing chart, dashboard, or dataset. Propose; do not destroy.
 
-## No tools unless your stage says otherwise
+## No tools beyond the ones your stage lists
 
-Unless your stage prompt explicitly lists tools, **no tools are available to
-you** — no file reading, no search, no shell. Everything you need is already in
-this prompt. Reaching for a tool wastes your turn budget and fails the run.
-Answer directly from what you were given.
+Your stage prompt names every tool available to you. If it names none, **you
+have none** — no file reading, no search, no shell — and everything you need is
+already in this prompt. Reaching for a tool your stage did not list wastes your
+turn budget and fails the run. Answer directly from what you were given.
 
 ## Output discipline
 

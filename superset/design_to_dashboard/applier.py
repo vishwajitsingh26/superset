@@ -35,12 +35,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from superset.design_to_dashboard.stages.e_layout import ensure_uuids
+from superset.design_to_dashboard.stages.e_layout import ensure_uuids, REF_PREFIX
 from superset.utils import json
 
 logger = logging.getLogger(__name__)
-
-REF_PREFIX = "__REF__:"
 
 
 class ApplyError(Exception):
@@ -389,6 +387,122 @@ def create_dataset(spec: dict[str, Any], user_id: int) -> int:
     return int(dataset.id)
 
 
+def prune_unresolved(position: dict[str, Any], ref_to_id: dict[str, int]) -> list[str]:
+    """Drop layout nodes whose chart was never created. Returns what went.
+
+    Stages D and E run in parallel, so E places every chart C planned and has
+    no way to know which of them D failed to configure. A chart D could not
+    produce is skipped at creation, and its `__REF__:` placeholder then had
+    nothing to resolve to -- which aborted the whole apply over one missing
+    card, throwing away every chart that *had* been built.
+
+    Removing the node instead loses that one section and keeps the dashboard,
+    which is the right trade: the section is already unbuildable, and the run
+    has been paid for.
+    """
+    doomed = [
+        node_id
+        for node_id, node in position.items()
+        if isinstance(node, dict)
+        and isinstance((node.get("meta") or {}).get("chartId"), str)
+        and node["meta"]["chartId"].startswith(REF_PREFIX)
+        and node["meta"]["chartId"][len(REF_PREFIX) :] not in ref_to_id
+    ]
+    if not doomed:
+        return []
+    for node_id in doomed:
+        position.pop(node_id, None)
+    # A parent still listing a removed child renders an empty slot, so the
+    # references have to go too.
+    for node in position.values():
+        if isinstance(node, dict) and isinstance(node.get("children"), list):
+            node["children"] = [
+                child for child in node["children"] if child not in doomed
+            ]
+    return sorted(doomed)
+
+
+def _dataset_for(region_dataset: dict[str, int], region_id: str | None) -> int | None:
+    """The dataset this run created for a region, matched in either direction.
+
+    A composite card is one region to stage A, several bindings to stage B
+    (`r07_card:1`, `:2`) and -- as the traces show -- decisions for *both* the
+    bare parent and some of the children in stage C. Which of those two
+    namespaces a created dataset is filed under is not fixed: stage B's prompt
+    example once showed the parent, and now asks for the children.
+
+    So the match cannot assume a direction. An exact hit wins; then the
+    parent; then any child of the same parent. Matching one way only meant a
+    chart kept the `datasource_id` the model invented for a dataset that did
+    not exist yet, and Superset rejected it as "Chart parameters are invalid"
+    after the run had been paid for.
+    """
+    if not region_id:
+        return None
+    if exact := region_dataset.get(region_id):
+        return exact
+    parent = region_id.split(":")[0]
+    if inherited := region_dataset.get(parent):
+        return inherited
+    # A decision for the bare parent, against a dataset filed under a child.
+    # Sorted so the same plan always resolves to the same dataset.
+    for key, dataset_id in sorted(region_dataset.items()):
+        if key.split(":")[0] == parent:
+            return dataset_id
+    return None
+
+
+def _assert_datasets_exist(specs: list[dict[str, Any]]) -> None:
+    """Fail before creating anything if a chart points at no real dataset.
+
+    The first check on a `datasource_id` used to be Superset's own command,
+    reached one chart at a time after the datasets and the earlier charts were
+    already committed. A bad id there costs the entire run and compensation
+    deletes the evidence, so the same check runs here, up front, where it costs
+    nothing and names every offender at once.
+    """
+    from superset import db
+    from superset.connectors.sqla.models import SqlaTable
+
+    wanted = {
+        spec["spec"]["request"]["body"].get("datasource_id")
+        for spec in specs
+        if spec.get("spec") and not spec.get("error")
+    }
+    wanted.discard(None)
+    if not wanted:
+        return
+    found = {
+        row[0]
+        for row in db.session.query(SqlaTable.id).filter(SqlaTable.id.in_(wanted)).all()
+    }
+    if missing := sorted(wanted - found):
+        raise ApplyError(
+            f"no dataset exists with id(s) {missing}: the plan points at "
+            "datasets that are neither in this instance nor created by this "
+            "run. Nothing was created."
+        )
+
+
+def _why(ex: Exception) -> str:
+    """The detail Superset's own errors carry but do not print.
+
+    `ChartInvalidError` says only "Chart parameters are invalid" -- which field
+    of which chart is in its `exceptions` list, and losing it means the next
+    run repeats the failure with nothing to act on.
+    """
+    parts: list[str] = []
+    for sub in (
+        getattr(ex, "_exceptions", None) or getattr(ex, "exceptions", None) or []
+    ):
+        messages = getattr(sub, "normalized_messages", None)
+        try:
+            parts.append(str(messages() if callable(messages) else sub))
+        except Exception:  # noqa: BLE001 - reporting must not raise
+            parts.append(repr(sub))
+    return f" -- {'; '.join(parts)}" if parts else ""
+
+
 def apply_plan(  # noqa: C901
     design_analysis: dict[str, Any],
     plan: dict[str, Any],
@@ -457,19 +571,39 @@ def apply_plan(  # noqa: C901
         result.warnings.append(
             f"chart {spec.get('ref')} skipped: {spec.get('error') or 'no spec'}"
         )
+    # A chart that failed stage D's checks is still created -- skipping it
+    # would leave a hole in a layout built around it -- but it is created
+    # knowingly. Without this the only record was a count in a progress line.
+    for spec in usable:
+        if problems := spec.get("problems"):
+            result.warnings.append(
+                f"chart {spec.get('ref')} created with "
+                f"{len(problems)} unresolved problem(s): {'; '.join(problems)[:300]}"
+            )
+
+    # Repoint every chart at the dataset this run created for it *before*
+    # anything is written, so the existence check below sees the ids the charts
+    # will really be created with rather than the placeholders stage D wrote.
+    for entry in usable:
+        if created_id := _dataset_for(region_dataset, entry.get("region_id")):
+            body = entry["spec"]["request"]["body"]
+            body["datasource_id"] = created_id
+            body["datasource_type"] = "table"
+    _assert_datasets_exist(usable)
 
     created_charts: list[int] = []
     created_dashboard_id: int | None = None
+    # What the failing chart was, kept outside the loop: `_compensate` deletes
+    # every chart, dataset and table this run made, so once it has run there is
+    # nothing left to inspect. Without this a failed apply reports only that
+    # something was invalid.
+    attempting: dict[str, Any] = {}
 
     try:
         for entry in _order_charts(usable, plan):
+            # Already repointed at any dataset this run created, and every id
+            # confirmed to exist, before the loop started.
             body = dict(entry["spec"]["request"]["body"])
-            # A chart on a dataset this run creates cannot know its id: the
-            # dataset was created moments ago, in this function. Stage D wrote
-            # whatever it was given, so the real id is substituted here.
-            if created_id := region_dataset.get(entry.get("region_id") or ""):
-                body["datasource_id"] = created_id
-                body["datasource_type"] = "table"
             params = entry["spec"].get("params_decoded")
             if not isinstance(params, dict):
                 params = json.loads(body.get("params") or "{}")
@@ -496,6 +630,14 @@ def apply_plan(  # noqa: C901
                     build_query_context(params, body["datasource_id"], datasource_type)
                 )
 
+            attempting = {
+                "region_id": entry.get("region_id"),
+                "ref": entry.get("ref"),
+                "slice_name": body.get("slice_name"),
+                "viz_type": body.get("viz_type"),
+                "datasource_id": body.get("datasource_id"),
+                "datasource_type": datasource_type,
+            }
             chart = CreateChartCommand(
                 {
                     "slice_name": body["slice_name"],
@@ -510,9 +652,12 @@ def apply_plan(  # noqa: C901
             created_charts.append(chart.id)
             result.ref_to_id[entry["ref"]] = chart.id
 
-        position = substitute_refs(
-            dict(layout.get("position_json") or {}), result.ref_to_id
-        )
+        position = dict(layout.get("position_json") or {})
+        for dropped in prune_unresolved(position, result.ref_to_id):
+            result.warnings.append(
+                f"layout node {dropped} removed: its chart was not created"
+            )
+        position = substitute_refs(position, result.ref_to_id)
         position = ensure_uuids(position)
 
         title = dashboard_title or _derive_title(design_analysis)
@@ -559,10 +704,12 @@ def apply_plan(  # noqa: C901
         result.dashboard_url = f"/superset/dashboard/{dashboard.id}/"
 
     except Exception as ex:  # noqa: BLE001
+        logger.error("apply failed while creating chart %s", attempting)
         _compensate(created_charts, created_dashboard_id, created_datasets)
         raise ApplyError(
             f"apply failed after {len(created_charts)} chart(s); "
-            f"created objects were removed: {ex}"
+            f"created objects were removed: {ex}{_why(ex)}"
+            + (f" -- while creating {attempting}" if attempting else "")
         ) from ex
 
     logger.info(

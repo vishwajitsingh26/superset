@@ -118,32 +118,126 @@ def run(
     return result
 
 
-def validate(binding_set: dict[str, Any], design_analysis: dict[str, Any]) -> list[str]:
+def _covered_regions(binding_set: dict[str, Any]) -> set[str]:
+    """Regions a dataset this run will create is promised to serve."""
+    return {
+        str(region_id)
+        for spec in binding_set.get("created_datasets") or []
+        if isinstance(spec, dict)
+        for region_id in spec.get("region_ids") or []
+    }
+
+
+def _validate_created_datasets(
+    binding_set: dict[str, Any],
+    bindings: list[dict[str, Any]],
+    expected: set[str],
+    covered: set[str],
+) -> list[str]:
+    """Every binding must end up with a datasource, existing or promised.
+
+    A binding with no `dataset_id` is fine while a dataset this run will create
+    covers it -- but the cover is matched by exact `region_id`, so a spec that
+    lists the parent card while the binding names `:1` leaves that chart with
+    nothing. The applier then creates it with whatever id stage D invented and
+    Superset rejects the chart, one chart into a run that has already paid for
+    every stage.
+    """
+    problems: list[str] = []
+    for spec in binding_set.get("created_datasets") or []:
+        if not isinstance(spec, dict):
+            continue
+        name = spec.get("name") or "?"
+        region_ids = spec.get("region_ids") or []
+        if not region_ids:
+            problems.append(f"created dataset {name!r} serves no region")
+        for region_id in region_ids:
+            if parent_of(str(region_id)) not in expected:
+                problems.append(
+                    f"created dataset {name!r} names an unknown region: {region_id}"
+                )
+
+    for binding in bindings:
+        region_id = binding.get("region_id")
+        if binding.get("state") == "unavailable" or not isinstance(region_id, str):
+            continue
+        if not binding.get("dataset_id") and region_id not in covered:
+            problems.append(
+                f"{region_id}: no dataset_id and no created dataset lists it "
+                "-- the chart would be created against a dataset that does "
+                "not exist"
+            )
+    return problems
+
+
+def parent_of(region_id: str) -> str:
+    """The stage A region a binding belongs to.
+
+    A composite card is one region to stage A and several bindings to stage B,
+    which names them `r07_card:1`, `:2`. Everything that joins stage B's output
+    back to stage A's regions has to strip that suffix first.
+    """
+    return region_id.split(":")[0]
+
+
+def validate(  # noqa: C901
+    binding_set: dict[str, Any], design_analysis: dict[str, Any]
+) -> list[str]:
     """Cheap structural checks the orchestrator runs before trusting stage B.
 
-    Catches the failure this stage is most prone to: a region silently dropped,
-    or a binding that claims success while naming nothing.
+    Catches the failures this stage is prone to: a region silently dropped, a
+    binding that claims success while naming nothing, and a binding left with
+    no datasource at all -- which nothing downstream notices until Superset
+    refuses to create the chart, long after the run has been paid for.
     """
     problems: list[str] = []
     if binding_set.get("status") not in {"ok", "needs_input"}:
         problems.append(f"invalid status: {binding_set.get('status')!r}")
 
-    expected = {
-        region["region_id"]
+    composition = {
+        region["region_id"]: region.get("composition")
         for region in design_analysis.get("regions", [])
         if region.get("role") not in NON_DATA_ROLES
     }
-    bound = {b.get("region_id") for b in binding_set.get("bindings", [])}
-    for missing in sorted(expected - bound):
+    expected = set(composition)
+
+    bindings = binding_set.get("bindings", [])
+    per_region: dict[str, list[str]] = {}
+    for binding in bindings:
+        region_id = binding.get("region_id")
+        if isinstance(region_id, str):
+            per_region.setdefault(parent_of(region_id), []).append(region_id)
+
+    for missing in sorted(expected - set(per_region)):
         problems.append(f"region not bound: {missing}")
-    for extra in sorted(bound - expected):
+    for extra in sorted(set(per_region) - expected):
         problems.append(f"binding for unknown region: {extra}")
 
-    for binding in binding_set.get("bindings", []):
+    # A composite card becomes one chart per thing inside it. Bound as a single
+    # measure, the inner charts are built anyway and render empty.
+    for region_id, ids in sorted(per_region.items()):
+        if composition.get(region_id) == "composite" and ids == [region_id]:
+            problems.append(
+                f"{region_id} is composite but has one unsuffixed binding; "
+                "emit one binding per thing the card holds (`:1`, `:2`, ...)"
+            )
+        if composition.get(region_id) != "composite" and len(ids) > 1:
+            problems.append(
+                f"{region_id} is not composite but has {len(ids)} bindings: "
+                f"{sorted(ids)}"
+            )
+
+    covered = _covered_regions(binding_set)
+    problems += _validate_created_datasets(binding_set, bindings, expected, covered)
+
+    for binding in bindings:
         state = binding.get("state")
         region_id = binding.get("region_id")
         if state == "bound":
-            if not binding.get("dataset_id"):
+            # A `derived` dataset carries real data, so its regions stay
+            # `bound` even though the dataset does not exist yet and can have
+            # no id. Requiring one here contradicted the stage's own prompt.
+            if not binding.get("dataset_id") and region_id not in covered:
                 problems.append(f"{region_id}: state 'bound' without dataset_id")
             if not (binding.get("measures") or binding.get("dimensions")):
                 problems.append(f"{region_id}: state 'bound' names no columns")

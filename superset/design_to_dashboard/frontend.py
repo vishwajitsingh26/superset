@@ -42,6 +42,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import re
 import signal
 import subprocess  # noqa: S404 - fixed argv, no shell
 import time
@@ -68,6 +69,54 @@ def find_dev_server() -> int | None:
         return None
     pids = [line for line in completed.stdout.split() if line.isdigit()]
     return int(pids[0]) if pids else None
+
+
+# What the dev server prints when it finishes a compile. One of these appearing
+# after a restart is the only honest signal that the code built -- `/health`
+# answers 200 with type errors outstanding, so it reports that the server came
+# back, not that the plugin exists.
+_COMPILED = "compiled successfully"
+_FAILED = re.compile(r"^Found \d+ errors? in ", re.M)
+_ERROR_BLOCK = re.compile(
+    r"^ERROR in (\S+)(.*?)(?=^ERROR in |^Found \d+ error)", re.M | re.S
+)
+# A compile of the whole frontend after a restart takes tens of seconds.
+COMPILE_TIMEOUT = 300
+
+
+def compile_errors(log_text: str) -> list[dict[str, str]]:
+    """Every `ERROR in <file>` block webpack reported, as file + detail.
+
+    Parsed from the dev server's own output rather than by running `tsc`: the
+    compile has already happened, the result is already written to a log this
+    module owns, and reading it costs nothing.
+    """
+    found = []
+    for match in _ERROR_BLOCK.finditer(log_text + "\nFound 0 errors in "):
+        detail = " ".join(match.group(2).split())
+        found.append({"file": match.group(1), "detail": detail[:600]})
+    return found
+
+
+def _compile_verdict(log: pathlib.Path, offset: int, deadline: float) -> dict[str, Any]:
+    """Wait for the compile that follows a restart, and say how it went."""
+    while time.time() < deadline:
+        try:
+            with log.open("r", encoding="utf-8", errors="replace") as handle:
+                handle.seek(offset)
+                appended = handle.read()
+        except OSError:
+            appended = ""
+        if _FAILED.search(appended):
+            return {"compiled": False, "errors": compile_errors(appended)}
+        if _COMPILED in appended:
+            return {"compiled": True, "errors": []}
+        time.sleep(2)
+    return {
+        "compiled": None,
+        "errors": [],
+        "reason": "the dev server did not report a compile result in time",
+    }
 
 
 def link_plugins(repo_root: str | pathlib.Path, timeout: int = 600) -> dict[str, Any]:
@@ -132,6 +181,9 @@ def restart_dev_server(repo_root: str | pathlib.Path) -> dict[str, Any]:
 
     log = root / "design-to-dashboard" / ".devserver.log"
     log.parent.mkdir(parents=True, exist_ok=True)
+    # Only this restart's output counts: the log is appended to across runs and
+    # still holds the errors of every previous one.
+    offset = log.stat().st_size if log.exists() else 0
     with log.open("ab") as handle:
         subprocess.Popen(  # noqa: S603
             ["npm", "run", "dev-server"],  # noqa: S607
@@ -154,11 +206,20 @@ def restart_dev_server(repo_root: str | pathlib.Path) -> dict[str, Any]:
                 f"http://127.0.0.1:{DEV_SERVER_PORT}/health", timeout=3
             ) as response:
                 if response.status == 200:
-                    return {"restarted": True, "port": DEV_SERVER_PORT}
+                    # Up, but not necessarily built. Webpack answers /health
+                    # with type errors outstanding, so reporting success here
+                    # said the server restarted and was read as "the plugin is
+                    # live" -- two plugins shipped that never compiled.
+                    verdict = _compile_verdict(
+                        log, offset, time.time() + COMPILE_TIMEOUT
+                    )
+                    return {"restarted": True, "port": DEV_SERVER_PORT, **verdict}
         except (urllib.error.URLError, OSError):
             time.sleep(2)
     return {
         "restarted": True,
         "port": DEV_SERVER_PORT,
+        "compiled": None,
+        "errors": [],
         "reason": "restarted but did not answer /health in time; check the log",
     }

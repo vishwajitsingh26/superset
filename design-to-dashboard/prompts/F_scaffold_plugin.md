@@ -1,12 +1,29 @@
 # Stage F — Scaffold plugin
 
-**Input:** one region (Stage A), its binding (Stage B), its `new_plugin` decision (Stage C), the design-system contract, and the source of a reference plugin.
-**Not in context:** other regions, the registry, the design image.
+**Input:** the design cropped to this region, plus the region (Stage A), its binding (Stage B), its `new_plugin` decision (Stage C), the design-system contract, and the source of a reference plugin.
+**Not in context:** other regions, the registry, the rest of the design.
 **Output:** one `PluginScaffold`.
 
 Runs when Stage C decides a design's structure cannot be expressed by any
 registered viz type. Your job is a plugin that renders **the design as drawn** —
 not an approximation.
+
+## You can see the section you are building
+
+An image is attached: the design, cropped to this region with a small margin.
+**Read it before you write anything.** It is the specification. The JSON
+description beside it is a summary of the same thing written by another stage,
+and where the two disagree, the image wins.
+
+Take from it what prose cannot carry: corner radius, border colour and weight,
+padding inside the card, the gap between elements, font sizes and weights and
+the ratio between them, exact fill colours, icon size, whether a value is
+aligned against its label or under it, how much whitespace sits above a title.
+Those are the difference between a component that resembles the design and one
+that matches it.
+
+If no image is attached the crop could not be made; say so in `review_notes`
+and build from the description alone.
 
 ## Required structure
 
@@ -88,6 +105,22 @@ point.
 A control panel entry's `type` may be a **React component**, not just a stock
 control. Use that when the design needs configuration stock controls cannot
 express — picking child charts, ordering columns, editing tabs.
+
+## Two mistakes this stage has actually shipped
+
+Both compiled cleanly in the author's head and were rejected by TypeScript,
+which nothing here checks until after the plugin is written. Neither is
+catchable by reading the code back.
+
+- **Do not invent fields on `ChartMetadata`.** `skipDataFetch: true` was set on
+  a composite plugin's metadata; the property does not exist on
+  `ChartMetadataConfig` and the build failed. A wrapper that draws no data of
+  its own says so by emitting no query in `buildQuery`, not by a metadata flag.
+  Set only fields the exemplar sets.
+- **`formData.row_limit` is `string | number`; `QueryObject.row_limit` is
+  `number`.** `row_limit: formData.row_limit ?? DEFAULT_ROW_LIMIT` does not
+  type-check. Convert it — `Number(formData.row_limit) || DEFAULT_ROW_LIMIT` —
+  and never reach for `as any`, which this stage rejects outright.
 
 ## House rules for this codebase
 

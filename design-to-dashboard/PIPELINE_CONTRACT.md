@@ -52,8 +52,8 @@ B and C are **agentic**: they discover context through Superset 6.1's MCP tools 
 
 | Stage | Tools | Budget |
 |---|---|---|
-| B | `list_datasets`, `get_dataset_info`, `execute_sql`, `create_virtual_dataset` (gated) | ≤ 8 calls |
-| C | `list_charts`, `get_chart_info`, `get_instance_info` | ≤ 10 calls |
+| B | `list_datasets`, `get_dataset_info`, `execute_sql` | ≤ 24 calls |
+| C | `list_charts`, `get_chart_info` | ≤ 24 calls |
 
 Rules the orchestrator enforces:
 

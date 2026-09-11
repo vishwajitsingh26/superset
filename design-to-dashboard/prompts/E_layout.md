@@ -1,10 +1,23 @@
 # Stage E — Layout
 
-**Input:** Stage A `regions` (`region_id`, `bbox`, `role`, `title` only) + `global`, Stage C `decisions` (`ref`, `region_id`, `slice_name`, `decision`).
-**Not in context:** datasets, control schemas, `params`, the design image.
+**Input:** the design image, plus Stage A `regions` (`region_id`, `bbox`, `role`, `title` only) + `global`, Stage C `decisions` (`ref`, `region_id`, `slice_name`, `decision`).
+**Not in context:** datasets, control schemas, `params`.
 **Output:** `LayoutPlan` — the dashboard's `position_json`.
 
-Pure geometry. You translate pixel positions into Superset's 12-column grid. You do not touch data or chart configuration.
+Geometry, but not blind geometry. You translate the design into Superset's 12-column grid. You do not touch data or chart configuration.
+
+## You can see the design
+
+**Look at it before you place anything.** The region list gives you boxes in
+design pixels; the image gives you what those boxes look like as a page.
+
+Read off it: which sections share a row, how wide each is relative to its
+neighbours, which cards are equal height and which are deliberately not, where
+a row break falls, and how much breathing room sits between rows. A row of
+cards that looks even in the design must be even in the grid — matching boxes
+to the nearest column while the result looks ragged is the wrong trade.
+
+If no image is attached, work from the boxes alone.
 
 ## Target structure
 
@@ -30,11 +43,16 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 ## Rules
 
 - **Root chain is fixed.** `ROOT_ID → GRID_ID → rows`. When `global.tabs` is present: `ROOT_ID → TABS-<id> → TAB-<id> → ROW-...`, and each tab's rows sit under its `TAB` node.
-- **`width` is in twelfths.** Convert each region's `bbox.w` as a fraction of `global.canvas.w`, scale by 12, round to an integer ≥ 1.
+- **`width` is in twelfths of `content_box`, not of the canvas.** `content_box`
+  is supplied: the area the surviving regions actually occupy, with the app
+  shell already excluded. Convert each region's `bbox.w` as a fraction of
+  `content_box.w`, scale by 12, round to an integer ≥ 1. Measure `x` from
+  `content_box.x`, not from 0. Dividing by `global.canvas.w` counts a nav rail
+  the dashboard does not have and makes every card a column or two too narrow.
 - **Every `ROW`'s child widths must sum to ≤ 12.** After rounding, if a row overflows, shrink the widest child until it fits and record the adjustment. If it underflows by 1–2, widen the widest child to fill the row.
 - **`height` is in units of `GRID_BASE_UNIT` (8px), and is proportional.** Compute it, do not pick it from memory:
 
-  `height = round(bbox.h / canvas.h × total_units) + 5`
+  `height = round(bbox.h / content_box.h × total_units) + 5`
 
   where `total_units` is the whole design's height in grid units. The `+ 5`
   is Superset's chart header — roughly 40px of chrome the design does not
@@ -71,4 +89,11 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 }
 ```
 
-`adjustments` must list every rounding compromise — this is what a reviewer checks against the design. `unplaced` must be empty for a clean run; anything in it blocks the apply.
+`adjustments` must list every rounding compromise — this is what a reviewer
+checks against the design.
+
+`unplaced` is for a ref you could find **no** home for; anything left there
+blocks the apply. A child its parent draws is not one of those — record it in
+`unplaced` with the reason, naming the parent, and it is accepted rather than
+treated as a lost section. Never give such a child a grid node to keep the list
+empty: that draws it twice, which no check will tell you about.

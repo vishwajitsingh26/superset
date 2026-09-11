@@ -71,8 +71,9 @@ class Session:
         """Publish a question and block the worker until the user answers.
 
         ``kind`` is ``questions`` (stage B could not bind something),
-        ``clarify`` (open choices such as embedded mode) or ``plan`` (approve
-        the plan before anything is created).
+        ``clarify`` (open choices such as embedded mode), ``datasets`` (agree
+        to sample tables being written) or ``plan`` (approve the plan before
+        anything is created).
         """
         self.pending = {"kind": kind, **payload}
         self.status = "waiting"

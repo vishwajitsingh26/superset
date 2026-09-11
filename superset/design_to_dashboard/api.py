@@ -131,10 +131,15 @@ class DesignToDashboardRestApi(BaseApi):
 
         payload = request.json or {}
         kind = session.pending.get("kind")
-        # A plan must be explicitly approved; anything else is a rejection and
-        # stops the run rather than proceeding on an assumption.
-        if kind == "plan" and "approved" not in payload:
-            return self.response_400(message="plan replies need an 'approved' boolean")
+        # A plan and a set of sample tables must both be explicitly approved;
+        # anything else is a rejection and stops the run rather than proceeding
+        # on an assumption. Rejecting the reply outright, rather than reading a
+        # missing field as "no", keeps a malformed client from quietly
+        # cancelling a run the user meant to continue.
+        if kind in {"plan", "datasets"} and "approved" not in payload:
+            return self.response_400(
+                message=f"{kind} replies need an 'approved' boolean"
+            )
 
         delivered = session.answer(payload)
         if not delivered:

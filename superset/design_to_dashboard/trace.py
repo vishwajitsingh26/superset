@@ -119,12 +119,30 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
             if event.get("decisions"):
                 out.append("")
             for check in event.get("charts") or []:
-                if isinstance(check, dict) and "rows" in check:
+                if not isinstance(check, dict):
+                    continue
+                if "rows" in check:
+                    # The verify stage: a chart that exists, queried for real.
                     mark = "ok" if check.get("ok") else "**FAILED**"
                     out.append(
                         f"- {mark} `{check.get('viz_type')}` #{check.get('chart_id')}"
-                        f" rows={check.get('rows')} {check.get('error') or ''}"
+                        f" rows={check.get('rows')} "
+                        f"{check.get('error') or check.get('note') or ''}"
                     )
+                elif not check.get("ok"):
+                    # Stage D: only the charts that did not come out clean.
+                    # Recorded with what was wrong, because the summary line
+                    # ("20/23 ready") was the only trace of it and named
+                    # neither which three nor why.
+                    out.append(
+                        f"- **NOT READY** `{check.get('ref')}` "
+                        f"`{check.get('viz_type')}` "
+                        f"({check.get('region_id') or '?'})"
+                    )
+                    if check.get("error"):
+                        out.append(f"    - _error_: {check['error']}")
+                    for problem in check.get("problems") or []:
+                        out.append(f"    - _problem_: {problem}")
             out.append("")
 
         elif kind == "tool_call":
@@ -162,12 +180,69 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
         elif kind == "error":
             out += ["", "### ❌ Error", "", f"```\n{event.get('detail')}\n```", ""]
 
-    if notes := (state.get("result") or {}).get("fidelity_notes") or []:
-        out += ["## Known differences from the design", ""]
+    result = state.get("result") or {}
+
+    # What the comparison actually found, as against the plan's predictions
+    # below. This is the only assessment of the built dashboard, and it lived
+    # nowhere but an in-memory session: the trace recorded what the pipeline
+    # expected to get wrong and omitted what it did get wrong.
+    out += _visual_section(result)
+
+    if notes := result.get("fidelity_notes") or []:
+        out += [
+            "## Differences the plan predicted",
+            "",
+            "_Written before anything was built._",
+            "",
+        ]
         for note in notes:
             out.append(f"- `{note.get('region_id')}`: {note.get('difference')}")
         out.append("")
     return "\n".join(out)
+
+
+_SEVERITY_MARK = {"critical": "🔴", "medium": "🟠", "low": "🟡"}
+
+
+def _visual_section(result: dict[str, Any]) -> list[str]:  # noqa: C901
+    """How close the built dashboard came, and every way it did not."""
+    verdict = result.get("visual_verdict")
+    findings = result.get("visual_findings") or []
+    if not verdict and not findings:
+        return []
+
+    out = ["## How close it came", ""]
+    if (score := result.get("visual_score")) is not None:
+        out.append(f"**{verdict}** — {score}/60")
+    else:
+        out.append(f"**{verdict}**")
+    if scores := result.get("visual_scores") or {}:
+        out.append("")
+        out.append(
+            " · ".join(f"{name} {value}/10" for name, value in sorted(scores.items()))
+        )
+    if summary := result.get("visual_summary"):
+        out += ["", summary]
+    if problems := result.get("visual_problems") or []:
+        out += ["", "_The report broke its own contract:_ " + "; ".join(problems)]
+    out.append("")
+
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        mark = _SEVERITY_MARK.get(str(finding.get("severity")), "")
+        out.append(
+            f"- {mark} `{finding.get('region_id') or '?'}` "
+            f"({finding.get('likely_fix') or 'unknown'})"
+        )
+        if finding.get("design_shows"):
+            out.append(f"    - _design_: {finding['design_shows']}")
+        if finding.get("screenshot_shows"):
+            out.append(f"    - _built_: {finding['screenshot_shows']}")
+    if shot := result.get("screenshot_path"):
+        out += ["", f"_Screenshot:_ `{shot}`"]
+    out.append("")
+    return out
 
 
 def path_for(session_id: str, repo_root: pathlib.Path) -> pathlib.Path:

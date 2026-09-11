@@ -48,6 +48,10 @@ logger = logging.getLogger(__name__)
 # never become charts.
 CONFIGURABLE = {"configure", "wrap"}
 MAX_WORKERS = 4
+# One repair pass. The problems this stage reports are mechanical, so a second
+# attempt with them attached usually clears them; a third rarely adds anything
+# a third would not also have to guess at.
+MAX_ATTEMPTS = 2
 
 
 @dataclass
@@ -61,10 +65,24 @@ class ChartSpecResult:
     error: str | None = None
     cost_usd: float = 0.0
     problems: list[str] = field(default_factory=list)
+    # How many passes this chart took. Only set when the last one still had
+    # problems, so a reader can tell a first-time pass from an exhausted one.
+    attempts: int = 1
 
     @property
     def ok(self) -> bool:
         return self.spec is not None and not self.problems
+
+
+def _repair_note(problems: list[str]) -> str:
+    """The previous attempt's faults, to be fixed rather than re-derived."""
+    listed = "\n".join(f"- {problem}" for problem in problems)
+    return (
+        "Your previous attempt at this chart failed these checks. They are "
+        "mechanical, not matters of taste: fix each one and return the whole "
+        "ChartSpec again.\n"
+        f"{listed}"
+    )
 
 
 def load_panel(
@@ -165,6 +183,10 @@ def validate(  # noqa: C901
         problems.append("no slice_name")
     if body.get("datasource_type") != "table":
         problems.append(f"datasource_type is {body.get('datasource_type')!r}")
+    # Only checkable when the dataset already exists. A binding with no
+    # `dataset_id` is waiting on a dataset this run creates, so stage D's id is
+    # a placeholder the applier overwrites -- verified there, and in
+    # `b_bind.validate`, rather than reported as a fault of this chart.
     if binding.get("dataset_id") and body.get("datasource_id") != binding["dataset_id"]:
         problems.append(
             f"datasource_id {body.get('datasource_id')!r} does not match the "
@@ -352,8 +374,17 @@ def run_one(
     prompts_dir: pathlib.Path,
     registry_path: str,
     repo_root: str | pathlib.Path,
+    attempts: int = MAX_ATTEMPTS,
 ) -> ChartSpecResult:
-    """Configure a single chart. Never raises - failures are reported."""
+    """Configure a single chart. Never raises - failures are reported.
+
+    A chart that fails validation is asked again with what was wrong with it.
+    The problems are mechanical -- a key that is not a control, a column the
+    binding does not name, params that disagree with `params_decoded` -- so a
+    second pass with them in hand is the cheapest repair available: one chart's
+    worth of tokens, against a chart that renders wrong on the finished
+    dashboard.
+    """
     ref = decision.get("ref") or decision.get("region_id", "?")
     viz_type = decision.get("viz_type") or ""
     result = ChartSpecResult(
@@ -361,21 +392,44 @@ def run_one(
     )
     try:
         panel_path, panel = load_panel(viz_type, registry_path, repo_root)
-        system_prompt = build_system_prompt(prompts_dir, viz_type, panel_path, panel)
-        user_prompt = build_user_prompt(region, binding, decision, design_system)
-        response = provider.complete(system_prompt, user_prompt)
-        result.cost_usd = response.cost_usd or 0.0
-        spec = extract_json(response.text)
-    except (LLMError, Exception) as ex:  # noqa: BLE001 - one worker must not kill the fan-out
+    except Exception as ex:  # noqa: BLE001 - one worker must not kill the fan-out
         result.error = str(ex)
         return result
 
-    result.spec = spec
-    try:
-        result.problems = validate(spec, binding, decision, panel)
-    except Exception as ex:  # noqa: BLE001 - a validator bug is not a worker failure
-        logger.exception("validate() raised for %s", ref)
-        result.problems = [f"validator crashed: {type(ex).__name__}: {ex}"]
+    system_prompt = build_system_prompt(prompts_dir, viz_type, panel_path, panel)
+    base_prompt = build_user_prompt(region, binding, decision, design_system)
+
+    for attempt in range(1, max(1, attempts) + 1):
+        user_prompt = base_prompt
+        if result.problems:
+            user_prompt = f"{base_prompt}\n\n{_repair_note(result.problems)}"
+        try:
+            response = provider.complete(system_prompt, user_prompt)
+            result.cost_usd += response.cost_usd or 0.0
+            spec = extract_json(response.text)
+        except (LLMError, Exception) as ex:  # noqa: BLE001 - reported, not raised
+            result.error = str(ex)
+            return result
+
+        result.spec = spec
+        result.error = None
+        try:
+            result.problems = validate(spec, binding, decision, panel)
+        except Exception as ex:  # noqa: BLE001 - a validator bug is not a failure
+            logger.exception("validate() raised for %s", ref)
+            result.problems = [f"validator crashed: {type(ex).__name__}: {ex}"]
+            return result
+        if not result.problems:
+            return result
+        logger.info(
+            "%s attempt %d/%d has %d problem(s): %s",
+            ref,
+            attempt,
+            attempts,
+            len(result.problems),
+            "; ".join(result.problems)[:300],
+        )
+    result.attempts = attempts
     return result
 
 
@@ -395,6 +449,40 @@ def run_all(
     bindings = {b["region_id"]: b for b in binding_set.get("bindings", [])}
     design_system = plan.get("design_system", {})
 
+    def region_for(region_id: str) -> dict[str, Any]:
+        """The region a decision draws, including a composite's children.
+
+        Stage B splits a composite card into one binding per child and names
+        them `r07_card:1`, `:2`; stage A emitted only the card itself. Looking
+        the child up directly always missed, so every child chart was
+        configured with no bbox, no observed detail and no title -- the model
+        was asked to draw a section it had been told nothing about.
+        """
+        return regions.get(region_id) or regions.get(region_id.split(":")[0], {})
+
+    def binding_for(region_id: str) -> dict[str, Any]:
+        """The data a decision reads, matched in either direction.
+
+        Stage C emits a decision for the composite card *itself* as well as for
+        some of its children -- the card plugin draws the number and the delta,
+        a child draws the sparkline beside it. Stage B bound only the children,
+        so the card's own decision matched nothing and the most important chart
+        on it was configured with no dataset and no columns. The model then
+        invented a `datasource_id`, which is the failure this lookup removes.
+
+        A parent inherits from its first child because they are pieces of one
+        card and share its dataset by construction.
+        """
+        if exact := bindings.get(region_id):
+            return exact
+        parent = region_id.split(":")[0]
+        if inherited := bindings.get(parent):
+            return inherited
+        for key in sorted(bindings):
+            if key.split(":")[0] == parent:
+                return bindings[key]
+        return {}
+
     jobs = [
         decision
         for decision in plan.get("decisions", [])
@@ -410,8 +498,8 @@ def run_all(
             pool.submit(
                 run_one,
                 provider,
-                regions.get(decision["region_id"], {}),
-                bindings.get(decision["region_id"], {}),
+                region_for(decision["region_id"]),
+                binding_for(decision["region_id"]),
                 decision,
                 design_system,
                 prompts_dir,

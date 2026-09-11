@@ -80,6 +80,15 @@ the question so the user can judge whether it matters to them.
 
 - Anything the design or the bindings already answer. Re-asking wastes the
   user's attention and makes the real questions easier to miss.
+- **Whether to create the datasets in `created_datasets`.** That is already
+  settled — the user has agreed to every one you are shown, so asking again
+  re-opens a decision they have made. Treat them as existing, and ask instead
+  about what the sections built on them should show.
+- **Anything already in `binding_questions`.** Those go to the user in the same
+  batch as yours, so restating one asks the same thing twice in a single
+  screen. They are shown to you so you can see what is already covered — not as
+  drafts to improve. If one is genuinely under-specified, ask about a *different*
+  aspect of it; do not re-ask it.
 - **Two questions whose answers can contradict each other.** Asking "embedded
   or standalone?" and then "filter bar or in-grid filter?" invites an answer
   pair that cannot both be honoured, and nothing downstream stops to resolve

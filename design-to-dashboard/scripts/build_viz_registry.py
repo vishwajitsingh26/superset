@@ -58,6 +58,10 @@ CONSTANTS_TS = FRONTEND / "src/constants.ts"
 # A few plugins are re-exported under an alias, so the class name in
 # MainPreset never appears in a `class X extends` declaration. The parser
 # reports anything it cannot resolve, so this list stays honest.
+# Viz types whose panel the source walk cannot reach. Without an entry here a
+# viz type is registered with `control_panel: null`, stage D cannot load a
+# schema for it, and any chart of that type is dropped from the dashboard --
+# so the registry must either name the panel or not offer the viz type at all.
 CONTROL_PANEL_OVERRIDES = {
     "pivot_table_v2": (
         "superset-frontend/plugins/plugin-chart-pivot-table/src/plugin/controlPanel.tsx"
@@ -65,6 +69,22 @@ CONTROL_PANEL_OVERRIDES = {
     "echarts_timeseries": (
         "superset-frontend/plugins/plugin-chart-echarts/src/Timeseries/Regular/Line/"
         "controlPanel.tsx"
+    ),
+    # Native-filter plugins live under `src/filters`, not `plugins/`, and these
+    # three register without a discoverable source path. `filter_range` and
+    # `filter_time` resolve on their own; these do not.
+    "filter_select": "superset-frontend/src/filters/components/Select/controlPanel.ts",
+    "filter_timecolumn": (
+        "superset-frontend/src/filters/components/TimeColumn/controlPanel.ts"
+    ),
+    "filter_timegrain": (
+        "superset-frontend/src/filters/components/TimeGrain/controlPanel.ts"
+    ),
+    # Its panel sits a directory deeper than the walk looks, beside a re-export
+    # of the same name.
+    "time_table": (
+        "superset-frontend/src/visualizations/TimeTable/config/controlPanel/"
+        "controlPanel.ts"
     ),
 }
 

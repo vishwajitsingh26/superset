@@ -48,6 +48,7 @@ class ClaudeAgentSdkProvider:
         timeout: int = 600,
         max_turns: int = 6,
         display: str = "summarized",
+        effort: str = "medium",
     ) -> None:
         try:
             import claude_agent_sdk  # noqa: F401
@@ -59,6 +60,7 @@ class ClaudeAgentSdkProvider:
         self.timeout = timeout
         self.max_turns = max_turns
         self.display = display
+        self.effort = effort
 
     def complete(
         self,
@@ -94,6 +96,7 @@ class ClaudeAgentSdkProvider:
             StreamEvent,
             TextBlock,
             ThinkingBlock,
+            ThinkingConfigAdaptive,
         )
 
         prompt = self._compose(user_prompt, image_paths)
@@ -105,7 +108,13 @@ class ClaudeAgentSdkProvider:
             # so a stray tool attempt cannot consume the turn budget.
             allowed_tools=["Read"] if image_paths else [],
             permission_mode="bypassPermissions" if image_paths else "default",
-            thinking={"type": "adaptive", "display": self.display},
+            thinking=ThinkingConfigAdaptive(
+                type="adaptive",
+                display="omitted" if self.display == "omitted" else "summarized",
+            ),
+            # How hard the model thinks before answering. `adaptive` decides how
+            # much reasoning a turn needs; this caps how much it may spend.
+            effort=self.effort,
             # Without this, ThinkingBlock only arrives inside the completed
             # AssistantMessage -- i.e. at the very end of the stage, which is
             # useless for a live view. Partial messages stream the deltas.

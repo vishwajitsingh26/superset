@@ -129,5 +129,22 @@ def filter_types(entries: list[dict[str, Any]]) -> list[str]:
 
 
 def chart_types(entries: list[dict[str, Any]]) -> set[str]:
-    """Registered non-filter viz_type keys."""
-    return {e["viz_type"] for e in entries if not e.get("is_filter")}
+    """Viz types a chart can actually be configured as.
+
+    A registered viz type with no recorded control panel is not one of them:
+    stage D loads that panel to know which controls exist, so without it the
+    chart cannot be configured and is dropped from the dashboard. Offering the
+    type to stage C and discarding its chart later is the worst order to
+    discover that in -- the section is simply missing, after the run is paid
+    for. Excluding it here means C picks something it can build, and its
+    re-plan loop says why.
+
+    Filter plugins are excluded separately and keep their own list: a native
+    filter is configured by the dashboard's filter bar, not by stage D, so a
+    missing panel does not stop one being used.
+    """
+    return {
+        e["viz_type"]
+        for e in entries
+        if not e.get("is_filter") and e.get("control_panel")
+    }

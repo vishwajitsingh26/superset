@@ -139,6 +139,7 @@ const Secondary = styled.button`
     background: none;
     color: ${theme.colorText};
     cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: not-allowed; }
   `}
 `;
 
@@ -156,6 +157,43 @@ export default function AskPanel({ pending, onReply }: Props) {
     ),
   );
   const [feedback, setFeedback] = useState('');
+
+  if (pending.kind === 'datasets') {
+    const datasets = pending.datasets ?? [];
+    const [accept, decline] = pending.options ?? [];
+    return (
+      <Block data-test="d2d-dataset-approval">
+        {pending.label && <Ask>{pending.label}</Ask>}
+        <Steps>
+          {datasets.map(dataset => (
+            <li key={dataset.name}>
+              <StepWhat>{dataset.name}</StepWhat>
+              <StepLine tone="warn">
+                {t(
+                  '%s sample row(s), written as a real table',
+                  String(dataset.rows?.length ?? 0),
+                )}
+              </StepLine>
+              {dataset.reason && <StepLine>{dataset.reason}</StepLine>}
+            </li>
+          ))}
+        </Steps>
+        <Actions>
+          <Primary type="button" onClick={() => onReply({ approved: true })}>
+            {accept ?? t('Create the sample tables')}
+          </Primary>
+          <Secondary type="button" onClick={() => onReply({ approved: false })}>
+            {decline ?? t('Stop')}
+          </Secondary>
+          <StepLine>
+            {t(
+              'Every number in these tables is read off the design, not your data.',
+            )}
+          </StepLine>
+        </Actions>
+      </Block>
+    );
+  }
 
   if (pending.kind === 'plan') {
     const steps = pending.plan ?? [];
@@ -184,7 +222,11 @@ export default function AskPanel({ pending, onReply }: Props) {
         </Steps>
         <FreeText
           value={feedback}
-          placeholder={t('Optional: what should change?')}
+          placeholder={
+            pending.can_revise
+              ? t('What should change? Say so and it will plan again.')
+              : t('Optional: why you are rejecting this')
+          }
           onChange={e => setFeedback(e.target.value)}
         />
         <Actions>
@@ -194,23 +236,62 @@ export default function AskPanel({ pending, onReply }: Props) {
           >
             {t('Approve and build')}
           </Primary>
+          {pending.can_revise && (
+            <Secondary
+              type="button"
+              disabled={!feedback.trim()}
+              onClick={() => onReply({ approved: false, feedback })}
+            >
+              {t('Send back with changes')}
+            </Secondary>
+          )}
           <Secondary
             type="button"
-            onClick={() => onReply({ approved: false, feedback })}
+            onClick={() => onReply({ approved: false, feedback: '' })}
           >
-            {t('Reject')}
+            {t('Cancel the run')}
           </Secondary>
-          <StepLine>{t('Nothing is created until you approve.')}</StepLine>
+          <StepLine>
+            {pending.can_revise
+              ? t(
+                  'Nothing is created until you approve. Say what is wrong and it will re-plan.',
+                )
+              : t('Nothing is created until you approve.')}
+          </StepLine>
         </Actions>
       </Block>
     );
   }
 
+  // Blocking questions first: an unanswered one leaves a section that cannot
+  // be built, so it should not be the tenth thing read.
+  const ordered = [
+    ...questions.filter(q => q.why_blocking),
+    ...questions.filter(q => !q.why_blocking),
+  ];
+  const blockingCount = questions.filter(q => q.why_blocking).length;
+  const answered = ordered.filter(q => (answers[q.id] ?? '').trim()).length;
+  const unansweredBlocking = ordered.filter(
+    q => q.why_blocking && !(answers[q.id] ?? '').trim(),
+  ).length;
+
   return (
     <Block data-test="d2d-questions">
-      {questions.map(q => (
+      <StepLine>
+        {t('%s of %s answered', String(answered), String(ordered.length))}
+        {blockingCount > 0 &&
+          ` · ${t('%s block the build', String(blockingCount))}`}
+      </StepLine>
+      {ordered.map(q => (
         <Question key={q.id}>
+          {(q.why_blocking || q.region_id) && (
+            <StepLine tone={q.why_blocking ? 'warn' : undefined}>
+              {q.why_blocking ? `${t('Blocks the build')} · ` : ''}
+              {q.region_id ?? q.topic ?? ''}
+            </StepLine>
+          )}
           <Ask>{q.question}</Ask>
+          {q.why_blocking && <Why>{q.why_blocking}</Why>}
           {q.why_it_matters && <Why>{q.why_it_matters}</Why>}
           <Choices>
             {(q.options ?? []).map(option => (
@@ -236,11 +317,20 @@ export default function AskPanel({ pending, onReply }: Props) {
         </Question>
       ))}
       <Actions>
-        <Primary type="button" onClick={() => onReply({ answers })}>
+        <Primary
+          type="button"
+          disabled={unansweredBlocking > 0}
+          onClick={() => onReply({ answers })}
+        >
           {t('Send answers')}
         </Primary>
-        <StepLine>
-          {t('Defaults are pre-selected — send as-is to accept them.')}
+        <StepLine tone={unansweredBlocking > 0 ? 'warn' : undefined}>
+          {unansweredBlocking > 0
+            ? t(
+                '%s question(s) block the build and need an answer.',
+                String(unansweredBlocking),
+              )
+            : t('Defaults are pre-selected — send as-is to accept them.')}
         </StepLine>
       </Actions>
     </Block>

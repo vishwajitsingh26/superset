@@ -67,15 +67,30 @@ type RunState = 'idle' | 'uploading' | 'running' | 'waiting' | 'done' | 'error';
 
 /** What the run is blocked on. Only ever set while planning. */
 export type PendingAsk = {
-  kind: 'questions' | 'plan';
+  kind: 'questions' | 'plan' | 'datasets';
   label?: string;
+  /** Sample tables the run proposes to write. Approved before anything else. */
+  datasets?: {
+    name: string;
+    kind: 'derived' | 'placeholder';
+    reason?: string;
+    rows?: unknown[];
+    region_ids?: string[];
+  }[];
+  options?: string[];
   questions?: {
     id: string;
     question: string;
     why_it_matters?: string;
+    /** Set when the build cannot proceed without an answer. */
+    why_blocking?: string;
+    region_id?: string;
+    topic?: string;
     options?: string[];
     default?: string;
   }[];
+  /** False on the last round: the plan can no longer be sent back. */
+  can_revise?: boolean;
   plan?: {
     step: number;
     what: string;

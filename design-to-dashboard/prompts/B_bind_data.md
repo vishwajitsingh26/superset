@@ -54,7 +54,9 @@ For each region with `role` in `kpi | chart | table | filter`, emit one `Binding
 - `alternatives` — bindings you rejected, and why
 - `evidence` — which tool call established this binding
 
-Regions with `role` in `nav | header | text | decoration` get `state: "not_applicable"`.
+Regions with `role` in `nav | header | text | decoration` are filtered out
+before you see them — you are told only how many. Do not emit bindings for
+them.
 
 ## Rules
 
@@ -80,11 +82,12 @@ Regions with `role` in `nav | header | text | decoration` get `state: "not_appli
 ### When no dataset fits, make one
 
 A section the instance cannot serve **as-is** does not have to block the build.
-You may create virtual datasets — saved SELECTs, no DDL, nothing written to the
-warehouse — and there are two kinds. Prefer the first.
+You may specify datasets for the orchestrator to create. There are two kinds,
+and they cost the user very differently. Prefer the first.
 
-**`derived` — real data at a different shape.** A master table has the facts but
-not the grain the dashboard needs, so summarise or join it:
+**`derived` — real data at a different shape.** A virtual dataset: a saved
+SELECT, no DDL, nothing written to the warehouse. A master table has the facts
+but not the grain the dashboard needs, so summarise or join it:
 
 ```sql
 SELECT genre, SUM(global_sales) AS global_sales
@@ -105,10 +108,16 @@ table in a dedicated `d2d_generated` schema and points a normal dataset at it:
 "rows": [["Action", 1751], ["Sports", 1442], ["Shooter", 1079]]
 ```
 
-It is a physical table on purpose: filters, distinct-value lookups, column
-typing and Explore then behave exactly as they will against the real data, so
-what you see is what the finished dashboard does. The numbers are invented; the
-layout and the behaviour are not. A teammate repoints the chart later.
+This one **does write to the warehouse** — a real `CREATE TABLE` in the
+`d2d_generated` schema — and it is a physical table on purpose: filters,
+distinct-value lookups, column typing and Explore then behave exactly as they
+will against the real data, so what you see is what the finished dashboard
+does. The numbers are invented; the layout and the behaviour are not. A
+teammate repoints the chart later.
+
+Because it both fabricates numbers and writes a table, a `placeholder` is
+always put to the user before anything is created. Reach for it only when no
+table holds the section's data in any shape.
 
 Column `type` is one of `TEXT`, `BIGINT`, `INTEGER`, `DOUBLE PRECISION`,
 `NUMERIC`, `BOOLEAN`, `DATE`, `TIMESTAMP`. Names must be lowercase
@@ -119,6 +128,12 @@ Rules for both:
 - **One dataset may serve several regions.** Three KPI tiles reading one
   summary is one dataset with three `region_ids`, not three datasets. Create as
   many as the dashboard genuinely needs, and no more.
+- **`region_ids` must be the ids you used on the bindings, suffixes included.**
+  If you split a composite card into `r07_card:1` and `r07_card:2`, list *those*
+  — not `r07_card`. The orchestrator matches the two lists by exact string to
+  decide which chart gets which new dataset. A child listed only by its parent
+  is a chart pointed at a dataset that does not exist, and Superset refuses to
+  create it.
 - **Name columns and metrics as the real table would** (`genre`,
   `global_sales`), never `col_1`. Swapping the datasource is painless only when
   the names already line up.
@@ -161,7 +176,7 @@ Name regions by their visible title, not their slug. Write for a data analyst wh
     "columns": [{ "name": "genre", "type": "TEXT" }],
     "rows": [["Action", 1751]],
     "metrics": ["global_sales"],
-    "region_ids": ["r07_sales_by_genre"],
+    "region_ids": ["r07_sales_by_genre:1", "r07_sales_by_genre:2"],
     "reason": "the master table has row-level sales; the card needs them by genre"
   }],
   "tool_calls": 0

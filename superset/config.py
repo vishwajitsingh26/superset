@@ -539,14 +539,22 @@ CURRENCIES = ["USD", "EUR", "GBP", "INR", "MXN", "JPY", "CNY"]
 # ---------------------------------------------------
 # Design-to-Dashboard
 # ---------------------------------------------------
-# LLM provider used by the Design-to-Dashboard pipeline. The "claude_cli"
-# provider shells out to the Claude Code CLI and is intended for local
-# development only -- it runs as the web server's OS user and uses the host
-# developer's credentials, so it must be opted into explicitly.
+# LLM provider used by the Design-to-Dashboard pipeline. The "kiro_cli" and
+# "claude_cli" providers shell out to a coding CLI and are intended for local
+# development only -- they run as the web server's OS user and use the host
+# developer's credentials, so they must be opted into explicitly. Use
+# "anthropic_api" or "bedrock" in a deployment.
+#
+# "effort" applies to the CLI and API providers, and "max_turns" only to the
+# Claude providers; the Kiro CLI has no turn budget.
 DESIGN_TO_DASHBOARD_LLM: dict[str, Any] = {
     "provider": "claude_cli",
     "model": "claude-opus-5",
-    "timeout": 300,
+    # Per call, not per run. Stage A reads a full-page design in one turn and
+    # stage F writes an entire plugin in one; both are measured in minutes, and
+    # a timeout below the work kills the run at its most expensive moment.
+    "timeout": 900,
+    "effort": "high",
     "max_turns": 6,
     "allow_cli_provider": False,
 }

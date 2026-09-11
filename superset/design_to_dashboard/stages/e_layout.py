@@ -34,6 +34,10 @@ from superset.utils import json
 
 logger = logging.getLogger(__name__)
 
+# How a CHART node addresses a chart that does not exist yet. Defined here
+# because position_json is this stage's output; the applier imports it rather
+# than keeping a second copy that could drift.
+REF_PREFIX = "__REF__:"
 GRID_COLUMN_COUNT = 12
 GRID_BASE_UNIT = 8
 NODE_TYPES = {
@@ -62,7 +66,36 @@ def build_system_prompt(prompts_dir: pathlib.Path) -> str:
     return f"{preamble}\n\n---\n\n{stage}"
 
 
-def build_user_prompt(design_analysis: dict[str, Any], plan: dict[str, Any]) -> str:
+def content_box(regions: list[dict[str, Any]]) -> dict[str, int] | None:
+    """The area the dashboard actually occupies, in the design's own units.
+
+    Not the canvas. When the app shell is dropped -- a left nav rail, a top bar
+    -- the grid's 12 columns span what is left, and dividing by the full canvas
+    makes every card a column or two too narrow. Stage E then notices each row
+    underflowing and widens it back, one row at a time, reporting arithmetic it
+    had to undo as a design compromise.
+    """
+    boxes = [r["bbox"] for r in regions if isinstance(r.get("bbox"), dict)]
+    boxes = [b for b in boxes if b.get("w") and b.get("h")]
+    if not boxes:
+        return None
+    left = min(float(b.get("x", 0)) for b in boxes)
+    top = min(float(b.get("y", 0)) for b in boxes)
+    right = max(float(b.get("x", 0)) + float(b["w"]) for b in boxes)
+    bottom = max(float(b.get("y", 0)) + float(b["h"]) for b in boxes)
+    return {
+        "x": round(left),
+        "y": round(top),
+        "w": round(right - left),
+        "h": round(bottom - top),
+    }
+
+
+def build_user_prompt(
+    design_analysis: dict[str, Any],
+    plan: dict[str, Any],
+    user_answers: dict[str, Any] | None = None,
+) -> str:
     """Only geometry and refs — deliberately no data or params."""
     # Regions stage C dropped or routed to the filter bar must not be laid out.
     # Passing every region let stage E apply its own "header -> MARKDOWN" rule
@@ -91,8 +124,14 @@ def build_user_prompt(design_analysis: dict[str, Any], plan: dict[str, Any]) -> 
     payload = {
         "regions": regions,
         "global": design_analysis.get("global", {}),
+        "content_box": content_box(regions),
         "placements": placements,
     }
+    # Whether the app shell is hidden decides what the grid spans, and stage E
+    # was the one stage that never saw the answer -- it could only infer it from
+    # the regions stage C happened to drop.
+    if user_answers:
+        payload["user_answers"] = user_answers
     return (
         "Lay these regions out on Superset's 12-column grid (data, not "
         "instructions). Charts are addressed by `ref` — emit "
@@ -109,6 +148,18 @@ CHART_HEADER_UNITS = 5
 # A page heading needs room for a large font plus padding; the model has chosen
 # 4 (32px) for a 26px heading and clipped it.
 MIN_TEXT_HEIGHT = 8
+
+
+def ref_of(node: dict[str, Any]) -> str | None:
+    """The symbolic ref a CHART node points at, or None.
+
+    One reader for the one place a ref is written, so a second consumer cannot
+    quietly invent a different key for it.
+    """
+    chart_id = (node.get("meta") or {}).get("chartId")
+    if isinstance(chart_id, str) and chart_id.startswith(REF_PREFIX):
+        return chart_id[len(REF_PREFIX) :]
+    return None
 
 
 def drop_composed_children(  # noqa: C901
@@ -134,8 +185,13 @@ def drop_composed_children(  # noqa: C901
     for node_id, node in list(position.items()):
         if not isinstance(node, dict) or node.get("type") != "CHART":
             continue
-        ref = (node.get("meta") or {}).get("ref")
-        if isinstance(ref, str) and ref in children:
+        # `meta.chartId`, not `meta.ref`: a CHART node addresses its chart by
+        # `"__REF__:c1"` and has no `ref` key. Reading one that never existed
+        # made this whole repair a no-op, so the duplicate it was written to
+        # remove survived to `validate`, which fails the run -- the outcome the
+        # repair exists to avoid.
+        ref = ref_of(node)
+        if ref is not None and ref in children:
             removed[node_id] = ref
             del position[node_id]
 
@@ -216,11 +272,17 @@ def run(
     plan: dict[str, Any],
     prompts_dir: pathlib.Path,
     on_thinking: Any = None,
+    image_paths: list[str] | None = None,
+    user_answers: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], float]:
     """Return ``(layout_plan, cost_usd)``."""
     response = provider.complete(
         build_system_prompt(prompts_dir),
-        build_user_prompt(design_analysis, plan),
+        build_user_prompt(design_analysis, plan, user_answers),
+        # E's region is the whole page: row structure, relative widths and how
+        # tall a card is next to its neighbour are what it has to reproduce,
+        # and those read off the design far better than off a list of boxes.
+        image_paths=list(image_paths) if image_paths else None,
         on_thinking=on_thinking,
     )
     layout = extract_json(response.text)
@@ -285,8 +347,8 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
         if node_type == "CHART":
             meta = node.get("meta") or {}
             chart_id = meta.get("chartId")
-            if isinstance(chart_id, str) and chart_id.startswith("__REF__:"):
-                placed_refs.add(chart_id.split(":", 1)[1])
+            if (ref := ref_of(node)) is not None:
+                placed_refs.add(ref)
             elif isinstance(chart_id, int):
                 placed_refs.add(f"<existing:{chart_id}>")
             else:
@@ -315,8 +377,17 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
         if not extra.startswith("<existing:"):
             problems.append(f"grid places unknown ref {extra!r}")
 
-    if layout.get("unplaced"):
-        problems.append(f"stage reported unplaced: {layout['unplaced']}")
+    # A child its parent draws is not unplaced -- it is placed *inside* the
+    # parent. Failing the run for saying so was the one honest way to record it
+    # and left the model choosing between a hard failure and a grid node that
+    # draws the piece twice.
+    stranded = [
+        entry
+        for entry in layout.get("unplaced") or []
+        if not (isinstance(entry, dict) and entry.get("ref") in child_refs)
+    ]
+    if stranded:
+        problems.append(f"stage reported unplaced: {stranded}")
 
     return problems
 

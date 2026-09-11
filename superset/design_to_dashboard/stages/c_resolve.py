@@ -111,6 +111,19 @@ def build_user_prompt(
         payload["user_answers"] = answers
     if datasets := binding_set.get("created_datasets"):
         payload["created_datasets"] = datasets
+    # A second attempt: the first plan failed these checks, and they are
+    # mechanical, so fixing them is not a matter of taste.
+    if problems := binding_set.get("validation_problems"):
+        payload["fix_these_problems_from_your_last_plan"] = problems
+    # The user read the plan and sent it back. Unlike a validation problem this
+    # is a judgement, and it outranks yours: they can see the design, they know
+    # the instance, and they are the reason the dashboard is being built.
+    if feedback := binding_set.get("plan_feedback"):
+        payload["the_user_rejected_your_last_plan_saying"] = feedback
+    # Questions you asked last time, so the answers in `user_answers` can be
+    # matched to what they answer. You have them now; decide.
+    if asked := binding_set.get("answers_to_your_questions"):
+        payload["you_asked_these_and_they_are_now_answered"] = asked
     return (
         "The attached image is the PLUGIN CONTACT SHEET -- every registered "
         "plugin's thumbnail, labelled with its viz_type. It is not the user's "
@@ -148,7 +161,8 @@ def run(
         image_paths=[thumbnail_sheet] if thumbnail_sheet else None,
     )
     result.final.setdefault("tool_calls", result.tool_calls)
-    counts = result.final.get("counts", {})
+    result.final["counts"] = tally(result.final.get("decisions", []))
+    counts = result.final["counts"]
     logger.info(
         "stage C complete: status=%s decisions=%d new_plugins=%s",
         result.final.get("status"),
@@ -156,6 +170,27 @@ def run(
         counts.get("new_plugin"),
     )
     return result
+
+
+def tally(decisions: list[dict[str, Any]]) -> dict[str, int]:
+    """How many decisions of each kind. Derived, never taken on trust."""
+    counts: dict[str, int] = {}
+    for decision in decisions:
+        kind = decision.get("decision")
+        if kind:
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
+
+def _base_region(region_id: Any) -> str:
+    """The region a decision belongs to.
+
+    A composite card is bound and resolved one piece at a time, with ids
+    suffixed `:1`, `:2` (`B_bind_data.md`). Those children belong to the parent
+    region; comparing them against stage A's list, which has no suffixes, reads
+    every one as a decision for a region that does not exist.
+    """
+    return str(region_id or "").split(":", 1)[0]
 
 
 # Phrases that mean Superset's own chrome will not be rendered. When the chrome
@@ -215,9 +250,22 @@ TEXT_ROLES = {"header", "text"}
 def _text_as_plugin(
     decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
 ) -> list[str]:
-    """Text regions resolved to a plugin instead of `grid_text`."""
+    """Text regions resolved to a plugin instead of `grid_text`.
+
+    A `composite` region is exempt, and the exemption is the whole point: a
+    header row that also carries a currency toggle is a card holding several
+    things, not a line of prose, and a MARKDOWN node cannot draw a control.
+    Without this, that region is caught by this rule *and* by
+    `_split_composites` -- one demanding no plugin, the other demanding a
+    composite plugin -- and no plan can satisfy both.
+    """
     roles = {
         r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
+    }
+    composite = {
+        r.get("region_id")
+        for r in design_analysis.get("regions", [])
+        if r.get("composition") == "composite"
     }
     return [
         f"{d.get('region_id')}: role is {roles.get(d.get('region_id'))!r}, which "
@@ -228,6 +276,7 @@ def _text_as_plugin(
         for d in decisions
         if d.get("decision") == "new_plugin"
         and roles.get(d.get("region_id")) in TEXT_ROLES
+        and d.get("region_id") not in composite
     ]
 
 
@@ -247,17 +296,191 @@ def _split_composites(
         for r in design_analysis.get("regions", [])
         if r.get("composition") == "composite"
     }
-    return [
+    problems = [
         f"{d.get('region_id')}: stage A read this as a composite -- one card "
         "holding several things -- so it is one `new_plugin` with "
         '`plugin_archetype: "composite"` and its contents in `children`, '
         "not a plugin that draws only the frame."
         for d in decisions
         if d.get("decision") == "new_plugin"
-        and d.get("region_id") in composite
+        and d.get("region_id") in composite  # the parent, not a `:N` child
         and d.get("plugin_archetype") != "composite"
         and not (d.get("children") or [])
     ]
+
+    # The same card, resolved with `configure` instead. Checking only
+    # `new_plugin` let a composite parent reuse an existing plugin and name no
+    # children at all -- and `children` is the *only* thing that tells stage E a
+    # piece is drawn inside the card. Without it E gives the piece its own grid
+    # node and it appears twice: once in the card, once loose beside it. No
+    # error anywhere; the dashboard is just wrong.
+    decided = {d.get("region_id") for d in decisions}
+    for decision in decisions:
+        region_id = decision.get("region_id")
+        if decision.get("decision") != "configure" or region_id not in composite:
+            continue
+        if decision.get("children"):
+            continue
+        pieces = sorted(
+            other
+            for other in decided
+            if isinstance(other, str)
+            and other != region_id
+            and _base_region(other) == region_id
+        )
+        if pieces:
+            problems.append(
+                f"{region_id}: this card also has decisions for {pieces}, but "
+                "names no `children`. List their refs -- that is what tells "
+                "the layout they are drawn inside this card rather than "
+                "beside it."
+            )
+    return problems
+
+
+# Decisions that put a chart on the dashboard, so they need data behind them.
+DRAWS_DATA = {"configure", "wrap", "new_plugin"}
+
+
+def _binding_coverage(
+    decisions: list[dict[str, Any]],
+    design_analysis: dict[str, Any],
+    binding_set: dict[str, Any],
+) -> list[str]:
+    """Decisions and bindings must account for each other, both ways.
+
+    `_base_region` collapses `r07_card:1` onto `r07_card`, which is right for
+    checking that stage A's regions are all covered -- and wrong for checking
+    anything per piece. Under it a plan that resolves `:2` and silently forgets
+    `:1` looks complete, and the chart stage B found data for is never built.
+
+    The other direction is worse: a decision with no binding reaches stage D
+    with no dataset and no columns, and the model invents a `datasource_id`
+    that Superset rejects at the very end of the run.
+    """
+    problems: list[str] = []
+    roles = {
+        r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
+    }
+    bound = {
+        b.get("region_id")
+        for b in binding_set.get("bindings", [])
+        if isinstance(b.get("region_id"), str)
+        and b.get("state") not in {"unavailable", "not_applicable"}
+    }
+    decided = {d.get("region_id") for d in decisions if d.get("region_id")}
+    absorbed = {_base_region(region_id) for region_id in decided}
+
+    for region_id in sorted(bound):
+        # A parent's decision stands in for a piece it draws itself.
+        if region_id in decided or _base_region(region_id) in decided:
+            continue
+        problems.append(
+            f"{region_id}: stage B bound this piece and no decision draws it -- "
+            "resolve it, or name it in the parent decision's `children`"
+        )
+
+    for decision in decisions:
+        region_id = decision.get("region_id")
+        if decision.get("decision") not in DRAWS_DATA:
+            continue
+        if roles.get(_base_region(region_id)) in NON_DATA_ROLES:
+            continue
+        if region_id in bound or _base_region(region_id) in absorbed & bound:
+            continue
+        if not any(_base_region(b) == _base_region(region_id) for b in bound):
+            problems.append(
+                f"{region_id}: draws a chart but stage B bound no data for it "
+                "or any part of its card, so there is nothing to query"
+            )
+    return problems
+
+
+def _evidence_missing(decisions: list[dict[str, Any]]) -> list[str]:
+    """Verdicts recorded without the comparison that produced them.
+
+    The prompt asks for `thumbnail_evidence` on every section and nothing read
+    it, so "I compared the thumbnails" was an assertion the plan never had to
+    support. It is the one field that distinguishes a considered stock-versus-
+    custom verdict from a guess, and a guess here costs a ten-minute plugin
+    build or a chart that does not look like the design.
+    """
+    return [
+        f"{d.get('region_id')}: {d.get('decision')} without thumbnail_evidence -- "
+        "say which plugin thumbnails you compared and what you saw"
+        for d in decisions
+        if d.get("decision") in {"reuse", "configure", "new_plugin"}
+        and not str(d.get("thumbnail_evidence") or "").strip()
+    ]
+
+
+def _tabs_flattened(
+    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+) -> list[str]:
+    """A tabbed card resolved to something that cannot hold tabs.
+
+    Stage A records a tab switcher in `interactions`, and three prompts agree
+    that an unseen tab is built showing "Coming soon" rather than dropped. None
+    of that was checked, and a card quietly built as its visible tab alone
+    looks correct -- nobody notices the tabs that are not there.
+    """
+    tabbed = {
+        r.get("region_id")
+        for r in design_analysis.get("regions", [])
+        if any(
+            "tab" in str(interaction).lower()
+            for interaction in (r.get("interactions") or [])
+        )
+    }
+    return [
+        f"{d.get('region_id')}: stage A saw a tab switcher here, but this "
+        "decision hosts nothing -- a tabbed card is a composite with one child "
+        'per tab, unseen ones built as "Coming soon"'
+        for d in decisions
+        if d.get("region_id") in tabbed
+        and d.get("decision") in DRAWS_DATA
+        and not (d.get("children") or [])
+        and d.get("plugin_archetype") != "composite"
+    ]
+
+
+def _unanswered_regions(binding_set: dict[str, Any]) -> set[str]:
+    """Regions stage B could not bind and the user did not explain either.
+
+    An `unavailable` binding always raises a blocking question. Once the user
+    answers it -- naming the options a hard-coded control shows, say -- the
+    region is buildable on made-up rows, and refusing to build it would throw
+    away the answer that was asked for.
+    """
+    answers = replies_of(binding_set.get("user_answers"))
+    unanswered = set()
+    for question in binding_set.get("questions", []):
+        region_id = question.get("region_id")
+        if region_id and not str(answers.get(question.get("id"), "")).strip():
+            unanswered.add(region_id)
+    return unanswered
+
+
+def replies_of(user_answers: Any) -> dict[str, Any]:
+    """The `{question_id: answer}` map, whichever shape it arrives in.
+
+    `session.ask` returns the whole reply envelope -- `{"answers": {...}}` --
+    and the runner stores that as `user_answers`. Looking a question id up in
+    the envelope always missed, so *every* region carrying a blocking question
+    was reported unanswered no matter what the user had said, and stage C
+    refused to build sections it had been given the answer for.
+
+    Reading both shapes here rather than unwrapping at the call site: the
+    envelope is also what reaches the model in the prompt, which reads through
+    the nesting perfectly well, so the two consumers legitimately want
+    different things from the same field.
+    """
+    if not isinstance(user_answers, dict):
+        return {}
+    inner = user_answers.get("answers")
+    if isinstance(inner, dict):
+        return inner
+    return user_answers
 
 
 def validate(  # noqa: C901
@@ -277,7 +500,7 @@ def validate(  # noqa: C901
 
     decisions = plan.get("decisions", [])
     expected = {r["region_id"] for r in design_analysis.get("regions", [])}
-    covered = {d.get("region_id") for d in decisions}
+    covered = {_base_region(d.get("region_id")) for d in decisions}
     for missing in sorted(expected - covered):
         problems.append(f"region has no decision: {missing}")
     for extra in sorted(covered - expected):
@@ -286,9 +509,13 @@ def validate(  # noqa: C901
     bound_states = {
         b.get("region_id"): b.get("state") for b in binding_set.get("bindings", [])
     }
+    unanswered = _unanswered_regions(binding_set)
     problems.extend(_answer_conflicts(decisions, design_analysis, binding_set))
     problems.extend(_text_as_plugin(decisions, design_analysis))
     problems.extend(_split_composites(decisions, design_analysis))
+    problems.extend(_binding_coverage(decisions, design_analysis, binding_set))
+    problems.extend(_evidence_missing(decisions))
+    problems.extend(_tabs_flattened(decisions, design_analysis))
 
     refs = {d.get("ref") for d in decisions if d.get("ref")}
     seen_refs: set[str] = set()
@@ -364,9 +591,14 @@ def validate(  # noqa: C901
             for child in children:
                 if child not in refs:
                     problems.append(f"{region_id}: child ref {child!r} not defined")
-        if kind != "drop" and bound_states.get(region_id) == "unavailable":
+        if (
+            kind != "drop"
+            and bound_states.get(region_id) == "unavailable"
+            and region_id in unanswered
+        ):
             problems.append(
-                f"{region_id}: binding is unavailable but decision is {kind!r}"
+                f"{region_id}: binding is unavailable and the blocking question "
+                "about it went unanswered, so there is nothing to draw"
             )
 
     # A wrap parent must come after its children so the applier can build in order.
@@ -388,17 +620,6 @@ def validate(  # noqa: C901
             problems.append(
                 f"native filter {native.get('name')!r}: unknown filterType "
                 f"{filter_type!r} (known: {sorted(known_filters)})"
-            )
-
-    counts = plan.get("counts", {})
-    actual: dict[str, int] = {}
-    for decision in decisions:
-        kind = decision.get("decision")
-        actual[kind] = actual.get(kind, 0) + 1
-    for kind, number in actual.items():
-        if counts.get(kind) not in (None, number):
-            problems.append(
-                f"counts.{kind} is {counts.get(kind)} but {number} decisions say {kind}"
             )
 
     if new_plugin_types and plan.get("status") != "needs_approval":

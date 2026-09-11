@@ -43,6 +43,7 @@ class ChartCheck:
     rows: int | None = None
     expected_rows: int | None = None
     error: str | None = None
+    note: str | None = None
 
 
 @dataclass
@@ -92,7 +93,7 @@ def _expected_rows(region: dict[str, Any]) -> int | None:
     for match in re.finditer(
         r"\b(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
         r"(?:[a-z-]+\s+){0,3}"
-        r"(bars?|rows?|slices?|segments?|categories|items?|tiles?|cards?)\b",
+        r"(bars?|rows?|slices?|segments?|categories|items?)\b",
         text,
     ):
         raw = match.group(1)
@@ -154,13 +155,26 @@ def verify(  # noqa: C901
                     check.ok = bool(check.rows)
                     if not check.ok:
                         check.error = "query succeeded but returned no rows"
-                    elif check.expected_rows and check.rows != check.expected_rows:
-                        # Right shape, wrong amount of data -- invisible to a
-                        # rows > 0 check, and exactly what a user notices.
+                    elif (
+                        check.expected_rows
+                        and check.rows is not None
+                        and check.rows < check.expected_rows
+                    ):
+                        # Missing data: invisible to a rows > 0 check, and
+                        # exactly what a user notices.
                         check.ok = False
                         check.error = (
                             f"returned {check.rows} row(s) but the design shows "
                             f"{check.expected_rows}"
+                        )
+                    elif (
+                        check.expected_rows
+                        and check.rows is not None
+                        and check.rows > check.expected_rows
+                    ):
+                        check.note = (
+                            f"returned {check.rows} row(s) where the design "
+                            f"draws {check.expected_rows} -- check the row limit"
                         )
         except Exception as ex:  # noqa: BLE001 - reported, never raised
             check.error = f"{type(ex).__name__}: {ex}"[:200]

@@ -512,7 +512,7 @@
       "is_filter": true,
       "source": null,
       "thumbnail": null,
-      "control_panel": null,
+      "control_panel": "superset-frontend/src/filters/components/Select/controlPanel.ts",
       "metadata_found": false
     },
     {
@@ -547,7 +547,7 @@
       "is_filter": true,
       "source": null,
       "thumbnail": null,
-      "control_panel": null,
+      "control_panel": "superset-frontend/src/filters/components/TimeColumn/controlPanel.ts",
       "metadata_found": false
     },
     {
@@ -562,7 +562,7 @@
       "is_filter": true,
       "source": null,
       "thumbnail": null,
-      "control_panel": null,
+      "control_panel": "superset-frontend/src/filters/components/TimeGrain/controlPanel.ts",
       "metadata_found": false
     },
     {
@@ -1066,7 +1066,7 @@
       "is_filter": false,
       "source": "superset-frontend/src/visualizations/TimeTable/index.ts",
       "thumbnail": "superset-frontend/src/visualizations/TimeTable/images/thumbnail.png",
-      "control_panel": null,
+      "control_panel": "superset-frontend/src/visualizations/TimeTable/config/controlPanel/controlPanel.ts",
       "metadata_found": true
     },
     {
@@ -1204,12 +1204,7 @@
       "pivot_table_v2",
       "pop_kpi"
     ],
-    "registered_without_control_panel": [
-      "filter_select",
-      "filter_timecolumn",
-      "filter_timegrain",
-      "time_table"
-    ],
+    "registered_without_control_panel": [],
     "metadata_without_registration": [
       "ArcChartPlugin",
       "BigNumberWithTrendlineChartPlugin",

@@ -4,6 +4,13 @@
 **Not in context:** viz registry, datasets, existing charts. You cannot and must not name a `viz_type` or a column.
 **Output:** `DesignAnalysis`.
 
+## Your tools
+
+`Read`, and only for the design image paths listed in your user message. Read
+every one before answering — the images are not inlined, so this is the only
+way to see the design. Reading may resize an image and report both its original
+and displayed size; keep that factor, you need it for `bbox` and `canvas` below.
+
 ## Job
 
 Read the design and describe what is *visually there*. You are a careful observer, not a Superset engineer. Downstream stages decide how to build it; you decide what it is.
@@ -44,8 +51,24 @@ visible.
 
 Sweep the design top-left to bottom-right. For each distinct visual element emit one `Region`:
 
-- `region_id` — stable slug from the visible label, e.g. `r03_spend_by_service`. Number in reading order.
-- `bbox` — `{x, y, w, h}` in design pixels, origin top-left.
+- `region_id` — `r<NN>_<slug>`, numbered in reading order. The slug is the
+  section's **visible title, verbatim**: lowercased, spaces and punctuation to
+  underscores, nothing added and nothing dropped. `Top Regions by Database
+  Spend` is `r13_top_regions_by_database_spend` — never
+  `r13_top_regions_table`, never `r13_top_regions`. With no visible title, use
+  the role and the most distinctive visible word. The same design read twice
+  must produce the same ids: every later stage joins on them, and a renamed
+  region is a region nothing can follow.
+- `bbox` — `{x, y, w, h}` **in the coordinate space of the image file**, origin
+  top-left. The file is usually larger than the copy you were shown: reading it
+  resizes it and tells you both sizes. When that happens, scale your boxes back
+  up to the file's dimensions, and put the file's dimensions — not the size you
+  were shown — in `global.canvas`.
+  **Both must be in the same space.** Boxes scaled up beside a canvas you were
+  shown, or boxes read off the resized copy beside the file's canvas, put every
+  crop and every grid position out by the resize factor. The program checks
+  `global.canvas` against the file and rejects a reading that disagrees, so a
+  mismatch fails the run rather than silently misplacing the dashboard.
 - `role` — `kpi | chart | table | filter | nav | header | text | decoration`
 - `title` — the element's visible label, verbatim, or `null`
 - `observed` — what is literally rendered. Be specific: mark type, orientation, stacking, series count, axis labels and units, legend presence and position, gridlines, number formatting (`$1.2M`, `12.4%`, `1,234`), currency symbols, date granularity, sort direction, colour roles, tab labels, column headers, row counts, conditional formatting, empty/loading states, icons, deltas and their arrows.
@@ -58,9 +81,12 @@ Sweep the design top-left to bottom-right. For each distinct visual element emit
 - `composition` — the section's structural shape. This decides which kind of
   component can render it, so read it off the picture carefully:
   - `atomic` — one visual, one card. A bar chart, a table, a single number.
-  - `composite` — **one card holding several distinct charts**, whether side by
-    side, stacked, or behind a tab switcher. A KPI whose card also contains a
-    sparkline and a delta is composite.
+  - `composite` — **one card holding two or more things that each need their own
+    component to render**, whether side by side, stacked, or behind a tab
+    switcher. Count them: a chart, a table, a big number, a control, a search
+    box each count as one; a title, a caption or a static label counts as none.
+    Two or more means `composite`. A KPI card holding a number, a delta and a
+    sparkline is three, so it is composite.
   - `control` — a widget whose purpose is to change *other* sections: a period
     picker, a dropdown, a segmented toggle, a search box.
   - `container` — a frame that groups other sections without drawing data of
@@ -84,7 +110,9 @@ Sweep the design top-left to bottom-right. For each distinct visual element emit
 
 Then emit `global`:
 
-- `canvas` — `{w, h}` in design pixels
+- `canvas` — `{w, h}` of the image **file**, the same space your `bbox` values
+  are in. If you were told the image was resized when you read it, this is the
+  original size it reports, not the resized one.
 - `column_count` — the number of columns the *page layout* divides into, if inferable (the repeating unit the widest row is built on — not the count of cards in any one row). `null` when the layout is freeform.
 - `tabs` — top-level tab labels in order, or `null`
 - `image_set` — `{ "kind": "tabs|continuation|separate|single", "why": "...", "confidence": "high|medium|low" }`
@@ -98,6 +126,12 @@ Then emit `global`:
 ## Rules
 
 - **A group of visually identical cards is N regions, not one.** Four KPI tiles in a row are `r01`–`r04`. Downstream deduplicates.
+- **A control drawn inside another section's header is its own region.** A
+  currency toggle beside a card title, a scope dropdown above a table, a
+  segmented view switcher in a panel header: emit each as its own `filter` or
+  `control` region, not as a sentence inside the header's `observed`. Folded
+  into the header it becomes text downstream, and a text node cannot draw a
+  switch — the control disappears from the dashboard.
 - **Distinguish filter bar from filter widget.** A control in a dedicated top/left bar is `role: filter` with `global.filter_bar.present = true`. A filter drawn as a card inside the grid is `role: filter` sitting in the reading order. This distinction decides native-filter vs. chart-widget downstream — get it right.
 - **A wrapper is one region with tabs.** If a single card contains a tab switcher over several charts, emit one region, `role: chart`, `composition: composite`, and put the tab labels in `observed`. Do not split it into one region per tab. Describe each thing the card holds in `observed` — a later stage builds one child chart per item, and it can only build what you described.
 - **Composite is about one card, not one row.** Four separate KPI cards in a row are four `atomic` regions. One card containing a number *and* a sparkline *and* a delta is a single `composite` region.

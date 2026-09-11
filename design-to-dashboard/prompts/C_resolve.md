@@ -291,6 +291,17 @@ Say which case applies in `fidelity_loss` only when the result genuinely differs
 from the design. Do **not** write that a suffix is impossible without first
 establishing which case you are in — case A is always achievable.
 
+## A second attempt
+
+If the input carries `fix_these_problems_from_your_last_plan`, your previous
+plan was checked and rejected. Each entry names a region and what is wrong with
+its decision. These are mechanical checks, not opinions — the plan does not
+reach the user until they all pass.
+
+Fix exactly those decisions and emit the **whole plan again**, not a patch. Do
+not argue with a problem: if it says a heading must not be its own plugin, use
+`configure` with `custom_text` or `grid_text`.
+
 ## Output
 
 ```json
@@ -312,6 +323,7 @@ establishing which case you are in — case A is always achievable.
     "confidence": "high|medium|low"
   }],
   "native_filters": [{ "name": "...", "filterType": "...", "region_id": "...", "scope": "all|[refs]" }],
+  "needs": [{ "region_id": "...", "question": "...", "why_it_matters": "...", "options": ["..."], "default": "..." }],
   "counts": { "reuse": 0, "configure": 0, "wrap": 0, "new_plugin": 0, "native_filter": 0, "grid_text": 0, "drop": 0 },
   "plan_for_review": [
     { "step": 1,
