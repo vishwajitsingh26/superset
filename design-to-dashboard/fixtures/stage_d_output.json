@@ -1,462 +1,22 @@
 {
+  "note": "Stage D output for the two decisions whose viz types exist in the registry. The other five are `custom_*` plugins stage F generates during the run, so no control panel exists to validate a spec against and none is invented here.",
   "charts": [
     {
-      "ref": "c1",
-      "region_id": "r03_kpi_aws",
-      "viz_type": "big_number",
-      "spec": {
-        "ref": "c1",
-        "region_id": "r03_kpi_aws",
-        "request": {
-          "method": "POST",
-          "path": "/api/v1/chart/",
-          "body": {
-            "slice_name": "Cloud Cost Overview \u2014 AWS Spend",
-            "viz_type": "big_number",
-            "datasource_id": 42,
-            "datasource_type": "table",
-            "params": "{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"aggregation\":\"LAST_VALUE\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"filterOptionName\":\"filter_r03_temporal_usage_date\",\"isExtra\":false,\"isNew\":false,\"sqlExpression\":null},{\"expressionType\":\"SIMPLE\",\"subject\":\"provider_name\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"AWS\",\"clause\":\"WHERE\",\"filterOptionName\":\"filter_r03_provider_name_aws\",\"isExtra\":false,\"isNew\":false,\"sqlExpression\":null}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":false,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"header_font_size\":0.4,\"subheader_font_size\":0.15,\"subtitle\":null,\"show_metric_name\":false,\"show_x_axis\":false,\"show_x_axis_min_max_labels\":false,\"show_y_axis\":false,\"show_y_axis_min_max_labels\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\",\"force_timestamp_formatting\":false,\"rolling_type\":\"None\"}",
-            "query_context": "{\"datasource\":{\"id\":42,\"type\":\"table\"},\"force\":false,\"queries\":[{\"filters\":[{\"col\":\"usage_date\",\"op\":\"TEMPORAL_RANGE\",\"val\":\"No filter\"},{\"col\":\"provider_name\",\"op\":\"==\",\"val\":\"AWS\"}],\"extras\":{\"time_grain_sqla\":\"P1M\",\"having\":\"\",\"where\":\"\"},\"applied_time_extras\":{},\"columns\":[{\"timeGrain\":\"P1M\",\"columnType\":\"BASE_AXIS\",\"sqlExpression\":\"usage_date\",\"label\":\"usage_date\",\"expressionType\":\"SQL\"}],\"metrics\":[\"total_cost\"],\"orderby\":[],\"annotation_layers\":[],\"row_limit\":1000,\"series_limit\":0,\"order_desc\":true,\"url_params\":{},\"custom_params\":{},\"custom_form_data\":{},\"post_processing\":[{\"operation\":\"pivot\",\"options\":{\"index\":[\"usage_date\"],\"columns\":[],\"aggregates\":{\"total_cost\":{\"operator\":\"mean\"}},\"drop_missing_columns\":false}},{\"operation\":\"flatten\"}]}],\"form_data\":{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"aggregation\":\"LAST_VALUE\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"filterOptionName\":\"filter_r03_temporal_usage_date\",\"isExtra\":false,\"isNew\":false,\"sqlExpression\":null},{\"expressionType\":\"SIMPLE\",\"subject\":\"provider_name\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"AWS\",\"clause\":\"WHERE\",\"filterOptionName\":\"filter_r03_provider_name_aws\",\"isExtra\":false,\"isNew\":false,\"sqlExpression\":null}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":false,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"header_font_size\":0.4,\"subheader_font_size\":0.15,\"subtitle\":null,\"show_metric_name\":false,\"show_x_axis\":false,\"show_x_axis_min_max_labels\":false,\"show_y_axis\":false,\"show_y_axis_min_max_labels\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\",\"force_timestamp_formatting\":false,\"rolling_type\":\"None\",\"row_limit\":1000},\"result_format\":\"json\",\"result_type\":\"full\"}"
-          }
-        },
-        "params_decoded": {
-          "datasource": "42__table",
-          "viz_type": "big_number",
-          "x_axis": "usage_date",
-          "time_grain_sqla": "P1M",
-          "aggregation": "LAST_VALUE",
-          "metric": "total_cost",
-          "adhoc_filters": [
-            {
-              "expressionType": "SIMPLE",
-              "subject": "usage_date",
-              "operator": "TEMPORAL_RANGE",
-              "comparator": "No filter",
-              "clause": "WHERE",
-              "filterOptionName": "filter_r03_temporal_usage_date",
-              "isExtra": false,
-              "isNew": false,
-              "sqlExpression": null
-            },
-            {
-              "expressionType": "SIMPLE",
-              "subject": "provider_name",
-              "operator": "==",
-              "operatorId": "EQUALS",
-              "comparator": "AWS",
-              "clause": "WHERE",
-              "filterOptionName": "filter_r03_provider_name_aws",
-              "isExtra": false,
-              "isNew": false,
-              "sqlExpression": null
-            }
-          ],
-          "compare_lag": 1,
-          "compare_suffix": "vs last month",
-          "show_timestamp": false,
-          "show_trend_line": true,
-          "start_y_axis_at_zero": false,
-          "color_picker": {
-            "r": 24,
-            "g": 160,
-            "b": 196,
-            "a": 1
-          },
-          "header_font_size": 0.4,
-          "subheader_font_size": 0.15,
-          "subtitle": null,
-          "show_metric_name": false,
-          "show_x_axis": false,
-          "show_x_axis_min_max_labels": false,
-          "show_y_axis": false,
-          "show_y_axis_min_max_labels": false,
-          "y_axis_format": "SMART_NUMBER",
-          "currency_format": {
-            "symbol": "USD",
-            "symbolPosition": "prefix"
-          },
-          "time_format": "%b %Y",
-          "force_timestamp_formatting": false,
-          "rolling_type": "None"
-        },
-        "unmapped": [
-          {
-            "observed": "row_limit = 1000 from the design-system contract",
-            "reason": "the big_number (BigNumberWithTrendline) control panel defines no row_limit control, so the key would be dropped from params; the limit is set on the query_context query object instead, which is where it is honoured"
-          },
-          {
-            "observed": "green downward triangle and green '8.2% vs last month' text \u2014 decrease coloured as good (cost semantics)",
-            "reason": "no control expresses this; compare_lag/compare_suffix produce the delta row but Superset colours it by sign only (decrease renders red), and the panel has no colour-inversion control. Matches Stage C's recorded fidelity_loss"
-          },
-          {
-            "observed": "sparkline as a thin ~2px unfilled cyan stroke, no dots, no axes, no gridlines",
-            "reason": "color_picker sets the trendline colour (#18A0C4 as rgb 24,160,196) and show_x_axis/show_y_axis are off, but no control expresses stroke width or suppresses the tinted area fill under the line"
-          },
-          {
-            "observed": "row 1 muted grey 'AWS' label sitting above the big value",
-            "reason": "no control positions a label above the value \u2014 subtitle renders below it, and show_metric_name would render the metric name, not the provider. Left to the dashboard chart header (slice_name)"
-          },
-          {
-            "observed": "white card, 1px light border, small radius, ~20px padding",
-            "reason": "card chrome is dashboard-layout/theme styling, not a chart control"
-          },
-          {
-            "observed": "binding derivation: adhoc LAG() window SQL for month-over-month percent change (validated: false)",
-            "reason": "not used \u2014 the binding's own rationale prefers Superset's built-in comparison, which this viz type expresses as compare_lag=1 over time_grain_sqla P1M. The unvalidated window expression is therefore not emitted anywhere"
-          },
-          {
-            "observed": "binding filter provider_name == 'AWS'",
-            "reason": "mapped, but the exact stored casing of 'AWS' was never verified against data (binding confidence: medium); if the column stores 'aws' or 'Amazon Web Services' the card renders empty"
-          }
-        ],
-        "confidence": "medium"
-      },
-      "problems": [],
-      "error": null
-    },
-    {
-      "ref": "c2",
-      "region_id": "r04_kpi_azure",
-      "viz_type": "big_number",
-      "spec": {
-        "ref": "c2",
-        "region_id": "r04_kpi_azure",
-        "request": {
-          "method": "POST",
-          "path": "/api/v1/chart/",
-          "body": {
-            "slice_name": "Cloud Cost Overview \u2014 Azure Spend",
-            "viz_type": "big_number",
-            "datasource_id": 42,
-            "datasource_type": "table",
-            "params": "{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"operatorId\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"datasourceWarning\":false,\"filterOptionName\":\"filter_r04_azure_temporal\"},{\"expressionType\":\"SIMPLE\",\"subject\":\"provider_name\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"Azure\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"datasourceWarning\":false,\"filterOptionName\":\"filter_r04_azure_provider\"}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":false,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"show_x_axis\":false,\"show_y_axis\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\"}",
-            "query_context": "{\"datasource\":{\"id\":42,\"type\":\"table\"},\"force\":false,\"queries\":[{\"filters\":[{\"col\":\"provider_name\",\"op\":\"==\",\"val\":\"Azure\"},{\"col\":\"usage_date\",\"op\":\"TEMPORAL_RANGE\",\"val\":\"No filter\"}],\"extras\":{\"time_grain_sqla\":\"P1M\",\"having\":\"\",\"where\":\"\"},\"applied_time_extras\":{},\"columns\":[{\"timeGrain\":\"P1M\",\"columnType\":\"BASE_AXIS\",\"sqlExpression\":\"usage_date\",\"label\":\"usage_date\",\"expressionType\":\"SQL\"}],\"metrics\":[\"total_cost\"],\"orderby\":[],\"annotation_layers\":[],\"row_limit\":1000,\"series_limit\":0,\"order_desc\":true,\"url_params\":{},\"custom_params\":{},\"custom_form_data\":{},\"post_processing\":[{\"operation\":\"pivot\",\"options\":{\"index\":[\"usage_date\"],\"columns\":[],\"aggregates\":{\"total_cost\":{\"operator\":\"mean\"}},\"drop_missing_columns\":true}},{\"operation\":\"flatten\"}]}],\"form_data\":{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"operatorId\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"datasourceWarning\":false,\"filterOptionName\":\"filter_r04_azure_temporal\"},{\"expressionType\":\"SIMPLE\",\"subject\":\"provider_name\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"Azure\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"datasourceWarning\":false,\"filterOptionName\":\"filter_r04_azure_provider\"}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":false,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"show_x_axis\":false,\"show_y_axis\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\"},\"result_format\":\"json\",\"result_type\":\"full\"}"
-          }
-        },
-        "params_decoded": {
-          "datasource": "42__table",
-          "viz_type": "big_number",
-          "x_axis": "usage_date",
-          "time_grain_sqla": "P1M",
-          "metric": "total_cost",
-          "adhoc_filters": [
-            {
-              "expressionType": "SIMPLE",
-              "subject": "usage_date",
-              "operator": "TEMPORAL_RANGE",
-              "operatorId": "TEMPORAL_RANGE",
-              "comparator": "No filter",
-              "clause": "WHERE",
-              "sqlExpression": null,
-              "isExtra": false,
-              "isNew": false,
-              "datasourceWarning": false,
-              "filterOptionName": "filter_r04_azure_temporal"
-            },
-            {
-              "expressionType": "SIMPLE",
-              "subject": "provider_name",
-              "operator": "==",
-              "operatorId": "EQUALS",
-              "comparator": "Azure",
-              "clause": "WHERE",
-              "sqlExpression": null,
-              "isExtra": false,
-              "isNew": false,
-              "datasourceWarning": false,
-              "filterOptionName": "filter_r04_azure_provider"
-            }
-          ],
-          "compare_lag": 1,
-          "compare_suffix": "vs last month",
-          "show_timestamp": false,
-          "show_trend_line": true,
-          "start_y_axis_at_zero": false,
-          "color_picker": {
-            "r": 24,
-            "g": 160,
-            "b": 196,
-            "a": 1
-          },
-          "show_x_axis": false,
-          "show_y_axis": false,
-          "y_axis_format": "SMART_NUMBER",
-          "currency_format": {
-            "symbol": "USD",
-            "symbolPosition": "prefix"
-          },
-          "time_format": "%b %Y"
-        },
-        "unmapped": [
-          {
-            "observed": "design_system.row_limit = 1000",
-            "reason": "this control panel defines no row_limit control; setting the key in params would be silently dropped, so the limit is carried only on query_context.queries[0].row_limit = 1000"
-          },
-          {
-            "observed": "Headline value should be the current period total (aggregation choice)",
-            "reason": "the Query section references the imported `aggregationControl`, whose choice list is not reproduced in my context; rather than invent a literal I omitted the key so the control's built-in default applies. This is the control that decides what number the card shows \u2014 flag for validation"
-          },
-          {
-            "observed": "Value '$842K' dark navy ~32px bold; label ~14px muted grey",
-            "reason": "header_font_size / subheader_font_size / subtitle_font_size / metric_name_font_size come from the imported `../sharedControls` module, whose choice values are not reproduced in my context, so the type scale could not be set safely. Colour of the big-number text is not exposed by any control here (color_picker drives the trendline colour only)"
-          },
-          {
-            "observed": "Label 'Azure' sits above the value in muted grey",
-            "reason": "no control places a label above the big number; `subtitle` renders below it and would read as a caption. Left unset \u2014 the provider label must come from the dashboard card header (slice_name), which is Stage E's concern"
-          },
-          {
-            "observed": "RED upward-pointing solid triangle glyph preceding the delta text",
-            "reason": "no control expresses the delta glyph; big_number renders its own comparison indicator"
-          },
-          {
-            "observed": "Delta rendered in red for an upward change",
-            "reason": "no control expresses delta colouring; Superset colours the comparison by sign. As Stage C noted, this card happens to coincide with the built-in rule, but the rule is not configurable"
-          },
-          {
-            "observed": "Currency prefix '$' (design_system.currency.symbol)",
-            "reason": "currency_format takes a currency code from the instance's CURRENCIES list, which is not in my context; 'USD' is assumed as the code that renders '$'. Verify against the instance config \u2014 a bad code drops the prefix and the card reads '842k'"
-          },
-          {
-            "observed": "Card treatment: background, border radius, shadow, and the vertical label/value/delta/sparkline stack",
-            "reason": "chart-level controls express none of this; it is dashboard-layout and theme territory"
-          },
-          {
-            "observed": "binding.derivations[0]: LAG-over-window percent-change SQL over unblended_cost",
-            "reason": "not expressed as an adhoc metric. big_number computes the month-over-month delta natively via compare_lag=1 against time_grain_sqla=P1M, which is the correct control-panel expression. The derivation is also unusable as written: it is marked validated=false and references `unblended_cost`, a column absent from the binding"
-          },
-          {
-            "observed": "Filter provider_name == 'Azure'",
-            "reason": "the binding's evidence states the literal 'Azure' was never verified against stored column values. If the dataset stores e.g. 'Microsoft Azure', the card renders 'No data'. Primary driver of the medium confidence below"
-          },
-          {
-            "observed": "params keys `datasource` and `viz_type`",
-            "reason": "not controls in this panel; they are the universal form_data envelope keys Superset requires on every saved chart. Called out so schema validation does not read them as invented keys"
-          }
-        ],
-        "confidence": "medium"
-      },
-      "problems": [],
-      "error": null
-    },
-    {
-      "ref": "c3",
-      "region_id": "r05_kpi_gcp",
-      "viz_type": "big_number",
-      "spec": {
-        "ref": "c3",
-        "region_id": "r05_kpi_gcp",
-        "request": {
-          "method": "POST",
-          "path": "/api/v1/chart/",
-          "body": {
-            "slice_name": "Cloud Cost Overview \u2014 GCP Spend",
-            "viz_type": "big_number",
-            "datasource_id": 42,
-            "datasource_type": "table",
-            "params": "{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"aggregation\":\"LAST_VALUE\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"filterOptionName\":\"filter_r05_temporal_range\"},{\"expressionType\":\"SIMPLE\",\"subject\":\"provider_name\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"GCP\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"filterOptionName\":\"filter_r05_provider_gcp\"}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":true,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"header_font_size\":0.4,\"subheader_font_size\":0.15,\"show_metric_name\":false,\"show_x_axis\":false,\"show_y_axis\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\",\"force_timestamp_formatting\":false}",
-            "query_context": "{\"datasource\":{\"id\":42,\"type\":\"table\"},\"force\":false,\"queries\":[{\"filters\":[{\"col\":\"usage_date\",\"op\":\"TEMPORAL_RANGE\",\"val\":\"No filter\"},{\"col\":\"provider_name\",\"op\":\"==\",\"val\":\"GCP\"}],\"extras\":{\"having\":\"\",\"where\":\"\"},\"applied_time_extras\":{},\"columns\":[{\"timeGrain\":\"P1M\",\"columnType\":\"BASE_AXIS\",\"sqlExpression\":\"usage_date\",\"label\":\"usage_date\",\"expressionType\":\"SQL\"}],\"metrics\":[\"total_cost\"],\"orderby\":[],\"annotation_layers\":[],\"row_limit\":1000,\"series_limit\":0,\"order_desc\":true,\"url_params\":{},\"custom_params\":{},\"custom_form_data\":{}}],\"form_data\":{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"aggregation\":\"LAST_VALUE\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"filterOptionName\":\"filter_r05_temporal_range\"},{\"expressionType\":\"SIMPLE\",\"subject\":\"provider_name\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"GCP\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"filterOptionName\":\"filter_r05_provider_gcp\"}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":true,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"header_font_size\":0.4,\"subheader_font_size\":0.15,\"show_metric_name\":false,\"show_x_axis\":false,\"show_y_axis\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\",\"force_timestamp_formatting\":false,\"row_limit\":1000},\"result_format\":\"json\",\"result_type\":\"full\"}"
-          }
-        },
-        "params_decoded": {
-          "datasource": "42__table",
-          "viz_type": "big_number",
-          "x_axis": "usage_date",
-          "time_grain_sqla": "P1M",
-          "aggregation": "LAST_VALUE",
-          "metric": "total_cost",
-          "adhoc_filters": [
-            {
-              "expressionType": "SIMPLE",
-              "subject": "usage_date",
-              "operator": "TEMPORAL_RANGE",
-              "comparator": "No filter",
-              "clause": "WHERE",
-              "sqlExpression": null,
-              "isExtra": false,
-              "isNew": false,
-              "filterOptionName": "filter_r05_temporal_range"
-            },
-            {
-              "expressionType": "SIMPLE",
-              "subject": "provider_name",
-              "operator": "==",
-              "operatorId": "EQUALS",
-              "comparator": "GCP",
-              "clause": "WHERE",
-              "sqlExpression": null,
-              "isExtra": false,
-              "isNew": false,
-              "filterOptionName": "filter_r05_provider_gcp"
-            }
-          ],
-          "compare_lag": 1,
-          "compare_suffix": "vs last month",
-          "show_timestamp": false,
-          "show_trend_line": true,
-          "start_y_axis_at_zero": true,
-          "color_picker": {
-            "r": 24,
-            "g": 160,
-            "b": 196,
-            "a": 1
-          },
-          "header_font_size": 0.4,
-          "subheader_font_size": 0.15,
-          "show_metric_name": false,
-          "show_x_axis": false,
-          "show_y_axis": false,
-          "y_axis_format": "SMART_NUMBER",
-          "currency_format": {
-            "symbol": "USD",
-            "symbolPosition": "prefix"
-          },
-          "time_format": "%b %Y",
-          "force_timestamp_formatting": false
-        },
-        "unmapped": [
-          {
-            "observed": "row_limit 1000 from the design-system contract",
-            "reason": "the big_number control panel defines no row_limit control; setting it in params would be a key Superset silently drops, so it is carried only in query_context.queries[0].row_limit (and mirrored in query_context.form_data, which is not schema-validated)"
-          },
-          {
-            "observed": "Delta row rendered as a green downward triangle with green text '1.4% vs last month'",
-            "reason": "no control expresses delta colour or arrow direction; big_number derives the comparison from compare_lag=1 and colours it by its own sign convention. compare_suffix supplies the 'vs last month' text only \u2014 the percentage itself is computed by the plugin, so the sign/colour pairing shown in the design cannot be forced"
-          },
-          {
-            "observed": "Binding derivation 'percent change vs last month' as a LAG window function over SUM(unblended_cost)",
-            "reason": "expressed instead via compare_lag=1 on the P1M trendline series; the derivation SQL is unused because it references column `unblended_cost`, which is not in the binding (binding lists only metric total_cost), and it is marked validated:false"
-          },
-          {
-            "observed": "Label 'GCP' muted grey ~14px, value dark navy ~32px bold, delta text smaller",
-            "reason": "header_font_size / subheader_font_size are relative proportions (0.4 / 0.15), not pixel values, and there is no per-element colour control for the value or the label; the navy #2E3A4E value colour cannot be set independently"
-          },
-          {
-            "observed": "Cyan sparkline distinct from the dark navy value text",
-            "reason": "color_picker is a single control driving both the trend line and the number; it is set to the cyan #18A0C4 so the sparkline matches the design, which necessarily tints the big number too"
-          },
-          {
-            "observed": "aggregation = 'LAST_VALUE' (current-period value, per implied_data)",
-            "reason": "the injected schema references the shared aggregationControl without reproducing its choices list; the value relies on the documented default 'LAST_VALUE' and should be confirmed against the SelectControl choices during validation"
-          },
-          {
-            "observed": "Naming convention 'Cloud Cost Overview \u2014 <Metric> by <Dimension>'",
-            "reason": "slice_name 'Cloud Cost Overview \u2014 GCP Spend' is taken verbatim from Stage C; the region is a KPI tile with no dimension, so the 'by <Dimension>' clause has no filler"
-          },
-          {
-            "observed": "Filter provider_name == 'GCP'",
-            "reason": "binding evidence flags the literal 'GCP' as unverified against stored column values; if the dataset stores e.g. 'Google Cloud' the chart renders an empty tile with no error"
-          }
-        ],
-        "confidence": "medium"
-      },
-      "problems": [],
-      "error": null
-    },
-    {
-      "ref": "c4",
-      "region_id": "r06_kpi_total",
-      "viz_type": "big_number",
-      "spec": {
-        "ref": "c4",
-        "region_id": "r06_kpi_total",
-        "request": {
-          "method": "POST",
-          "path": "/api/v1/chart/",
-          "body": {
-            "slice_name": "Cloud Cost Overview \u2014 Total Spend",
-            "viz_type": "big_number",
-            "datasource_id": 42,
-            "datasource_type": "table",
-            "params": "{\"datasource\":\"42__table\",\"viz_type\":\"big_number\",\"x_axis\":\"usage_date\",\"time_grain_sqla\":\"P1M\",\"metric\":\"total_cost\",\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"isExtra\":false,\"filterOptionName\":\"filter_r06_kpi_total_time_range\"}],\"compare_lag\":1,\"compare_suffix\":\"vs last month\",\"show_timestamp\":false,\"show_trend_line\":true,\"start_y_axis_at_zero\":false,\"color_picker\":{\"r\":24,\"g\":160,\"b\":196,\"a\":1},\"show_metric_name\":false,\"show_x_axis\":false,\"show_y_axis\":false,\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"time_format\":\"%b %Y\",\"force_timestamp_formatting\":false}",
-            "query_context": "{\"datasource\":{\"id\":42,\"type\":\"table\"},\"force\":false,\"queries\":[{\"filters\":[{\"col\":\"usage_date\",\"op\":\"TEMPORAL_RANGE\",\"val\":\"No filter\"}],\"extras\":{\"time_grain_sqla\":\"P1M\",\"having\":\"\",\"where\":\"\"},\"applied_time_extras\":{},\"columns\":[{\"timeGrain\":\"P1M\",\"columnType\":\"BASE_AXIS\",\"sqlExpression\":\"usage_date\",\"label\":\"usage_date\",\"expressionType\":\"SQL\"}],\"metrics\":[\"total_cost\"],\"orderby\":[],\"annotation_layers\":[],\"row_limit\":1000,\"series_limit\":0,\"order_desc\":true,\"url_params\":{},\"custom_params\":{},\"custom_form_data\":{},\"post_processing\":[{\"operation\":\"pivot\",\"options\":{\"index\":[\"usage_date\"],\"columns\":[],\"aggregates\":{\"total_cost\":{\"operator\":\"mean\"}},\"drop_missing_columns\":true}},{\"operation\":\"flatten\"}]}],\"result_format\":\"json\",\"result_type\":\"full\"}"
-          }
-        },
-        "params_decoded": {
-          "datasource": "42__table",
-          "viz_type": "big_number",
-          "x_axis": "usage_date",
-          "time_grain_sqla": "P1M",
-          "metric": "total_cost",
-          "adhoc_filters": [
-            {
-              "expressionType": "SIMPLE",
-              "subject": "usage_date",
-              "operator": "TEMPORAL_RANGE",
-              "comparator": "No filter",
-              "clause": "WHERE",
-              "isExtra": false,
-              "filterOptionName": "filter_r06_kpi_total_time_range"
-            }
-          ],
-          "compare_lag": 1,
-          "compare_suffix": "vs last month",
-          "show_timestamp": false,
-          "show_trend_line": true,
-          "start_y_axis_at_zero": false,
-          "color_picker": {
-            "r": 24,
-            "g": 160,
-            "b": 196,
-            "a": 1
-          },
-          "show_metric_name": false,
-          "show_x_axis": false,
-          "show_y_axis": false,
-          "y_axis_format": "SMART_NUMBER",
-          "currency_format": {
-            "symbol": "USD",
-            "symbolPosition": "prefix"
-          },
-          "time_format": "%b %Y",
-          "force_timestamp_formatting": false
-        },
-        "unmapped": [
-          {
-            "observed": "row_limit of 1000 required by the design-system contract",
-            "reason": "this control panel defines no row_limit control; setting it in params would be silently dropped, so the limit is carried in query_context.queries[0].row_limit instead"
-          },
-          {
-            "observed": "explicit time range 'No filter'",
-            "reason": "no standalone time_range control exists in this panel; the range is expressed as a TEMPORAL_RANGE adhoc_filter on usage_date, which is the supported form. time_range_fixed is therefore omitted since its visibility predicate requires a non-'No filter' range"
-          },
-          {
-            "observed": "delta row rendered green with a downward triangle (a spend decrease is a positive outcome)",
-            "reason": "no control inverts BigNumber's comparison colour semantics; the -4.6% will render in the default decrease colour, not the design's green"
-          },
-          {
-            "observed": "binding derivation 'percent change vs last month' as a window-function SQL expression",
-            "reason": "no control accepts a derived comparison metric; the month-over-month delta is produced natively by compare_lag=1 against time_grain_sqla=P1M, so the unvalidated LAG() SQL is not used"
-          },
-          {
-            "observed": "label 'Total' muted grey ~14px, value ~32px bold dark navy",
-            "reason": "header_font_size / subheader_font_size / metric_name_font_size come from the shared-controls barrel and their declared choice lists are not in the injected schema, so no verifiable value could be set; sizes fall back to defaults. The 'Total' label itself is the dashboard chart header (slice_name), not a chart control"
-          },
-          {
-            "observed": "current-period total, i.e. the most recent month's value of the monthly series",
-            "reason": "the aggregationControl's choice list is not reproduced in the injected schema, so the key is left unset and relies on the control's default (LAST_VALUE), which matches the intent but could not be asserted explicitly"
-          }
-        ],
-        "confidence": "medium"
-      },
-      "problems": [],
-      "error": null
-    },
-    {
-      "ref": "c6",
-      "region_id": "r08_by_service",
+      "ref": "c5",
+      "region_id": "r08_by_service:1",
       "viz_type": "echarts_timeseries_bar",
       "spec": {
-        "ref": "c6",
-        "region_id": "r08_by_service",
+        "ref": "c5",
+        "region_id": "r08_by_service:1",
         "request": {
           "method": "POST",
           "path": "/api/v1/chart/",
           "body": {
-            "slice_name": "Cloud Cost Overview \u2014 Compute Spend by Service",
+            "slice_name": "Cloud Cost Overview — Spend by service (Compute)",
             "viz_type": "echarts_timeseries_bar",
             "datasource_id": 42,
             "datasource_type": "table",
-            "params": "{\"datasource\":\"42__table\",\"viz_type\":\"echarts_timeseries_bar\",\"x_axis\":\"service_name\",\"time_grain_sqla\":null,\"x_axis_sort\":\"total_cost\",\"x_axis_sort_asc\":false,\"metrics\":[\"total_cost\"],\"groupby\":[],\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"service_family\",\"operator\":\"==\",\"operatorId\":\"EQUALS\",\"comparator\":\"Compute\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"filterOptionName\":\"filter_r08_service_family_compute\"},{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"sqlExpression\":null,\"isExtra\":false,\"isNew\":false,\"filterOptionName\":\"filter_r08_usage_date_no_filter\"}],\"order_desc\":true,\"row_limit\":5,\"truncate_metric\":true,\"orientation\":\"horizontal\",\"color_scheme\":\"supersetColors\",\"show_value\":true,\"stack\":null,\"minorTicks\":false,\"zoomable\":false,\"show_legend\":false,\"x_axis_title\":\"\",\"y_axis_title\":\"\",\"y_axis_format\":\"SMART_NUMBER\",\"currency_format\":{\"symbol\":\"USD\",\"symbolPosition\":\"prefix\"},\"logAxis\":false,\"minorSplitLine\":false,\"truncateYAxis\":false,\"truncateXAxis\":true,\"rich_tooltip\":true}",
+            "params": "{\"datasource\": \"42__table\", \"viz_type\": \"echarts_timeseries_bar\", \"x_axis\": \"service_name\", \"metrics\": [\"total_cost\"], \"groupby\": [], \"adhoc_filters\": [{\"expressionType\": \"SIMPLE\", \"subject\": \"service_family\", \"operator\": \"==\", \"comparator\": \"Compute\", \"clause\": \"WHERE\"}], \"row_limit\": 5, \"y_axis_format\": \"$,.1f\", \"color_scheme\": \"supersetColors\", \"show_legend\": false, \"orientation\": \"vertical\"}",
             "query_context": null
           }
         },
@@ -464,9 +24,6 @@
           "datasource": "42__table",
           "viz_type": "echarts_timeseries_bar",
           "x_axis": "service_name",
-          "time_grain_sqla": null,
-          "x_axis_sort": "total_cost",
-          "x_axis_sort_asc": false,
           "metrics": [
             "total_cost"
           ],
@@ -476,105 +33,44 @@
               "expressionType": "SIMPLE",
               "subject": "service_family",
               "operator": "==",
-              "operatorId": "EQUALS",
               "comparator": "Compute",
-              "clause": "WHERE",
-              "sqlExpression": null,
-              "isExtra": false,
-              "isNew": false,
-              "filterOptionName": "filter_r08_service_family_compute"
-            },
-            {
-              "expressionType": "SIMPLE",
-              "subject": "usage_date",
-              "operator": "TEMPORAL_RANGE",
-              "comparator": "No filter",
-              "clause": "WHERE",
-              "sqlExpression": null,
-              "isExtra": false,
-              "isNew": false,
-              "filterOptionName": "filter_r08_usage_date_no_filter"
+              "clause": "WHERE"
             }
           ],
-          "order_desc": true,
           "row_limit": 5,
-          "truncate_metric": true,
-          "orientation": "horizontal",
+          "y_axis_format": "$,.1f",
           "color_scheme": "supersetColors",
-          "show_value": true,
-          "stack": null,
-          "minorTicks": false,
-          "zoomable": false,
           "show_legend": false,
-          "x_axis_title": "",
-          "y_axis_title": "",
-          "y_axis_format": "SMART_NUMBER",
-          "currency_format": {
-            "symbol": "USD",
-            "symbolPosition": "prefix"
-          },
-          "logAxis": false,
-          "minorSplitLine": false,
-          "truncateYAxis": false,
-          "truncateXAxis": true,
-          "rich_tooltip": true
+          "orientation": "vertical"
         },
         "unmapped": [
           {
-            "observed": "In-card tab switcher with three options (Compute / Storage / Network) that swaps the chart contents",
-            "reason": "no control expresses this; the control panel has no tab/parameter control, so the chart is pinned to service_family = 'Compute' via adhoc_filters. The other two cuts require sibling charts or a dashboard-level native filter on service_family."
-          },
-          {
-            "observed": "Bars carry NO category labels \u2014 no y-axis tick text on the left of the plot",
-            "reason": "no control expresses this; echarts_timeseries_bar has no control to hide category-axis tick labels. The chart will render service_name labels on the left (Stage C reads this as a mock omission)."
-          },
-          {
-            "observed": "No value axis rendered and no gridlines behind the bars",
-            "reason": "no control expresses this; the panel exposes only logAxis / minorSplitLine / truncateYAxis / y_axis_bounds, none of which hide the value axis line, its labels, or the major split lines."
-          },
-          {
-            "observed": "Per-bar value labels printed to the right of each bar ($680K, $512K, \u2026)",
-            "reason": "contract deviation, intentional: design_system.show_values is false but this region's observed explicitly shows value labels, so show_value is set true per the region-overrides-contract rule. Formatting is delivered by y_axis_format 'SMART_NUMBER' + currency_format USD prefix (design_system.number_formats.money_abbrev); the labels' exact right-aligned dedicated-column placement is not controllable and will render adjacent to each bar end."
-          },
-          {
-            "observed": "No legend drawn in the card",
-            "reason": "contract deviation, intentional: design_system.legend is {show: true, position: 'top'} but the region shows a single-series chart with no legend, so show_legend is false per the region-overrides-contract rule."
-          },
-          {
-            "observed": "Uniform cyan bar fill (#18A0C4), square corners",
-            "reason": "no control expresses this; bar colour comes from color_scheme 'supersetColors' (per contract) and cannot be pinned to a specific hex, and corner radius is not a control."
-          },
-          {
-            "observed": "Binding caveat carried forward: service_family values 'Compute' / 'Storage' / 'Network' were never verified against stored data",
-            "reason": "cannot be verified from injected context; if the stored literal differs (e.g. 'compute'), the adhoc filter matches nothing and the chart renders empty. Orchestrator must confirm the distinct value before creation."
-          },
-          {
-            "observed": "query_context emitted as null",
-            "reason": "deliberate: the x_axis_sort descending order depends on the plugin's own buildQuery post-processing (pivot/flatten plus the sort operation), whose exact option shape is not in my injected context. Hand-writing it risks a stored query_context that silently re-sorts the bars alphabetically; null lets Superset derive it from params."
+            "observed": "the Storage and Network tabs",
+            "reason": "the container plugin owns the tab strip; this chart is the drawn tab"
           }
         ],
-        "confidence": "medium"
+        "confidence": "high"
       },
       "problems": [],
       "error": null
     },
     {
-      "ref": "c7",
+      "ref": "c9",
       "region_id": "r09_cost_detail_table",
       "viz_type": "table",
       "spec": {
-        "ref": "c7",
+        "ref": "c9",
         "region_id": "r09_cost_detail_table",
         "request": {
           "method": "POST",
           "path": "/api/v1/chart/",
           "body": {
-            "slice_name": "Cloud Cost Overview \u2014 Cost Detail by Service, Provider and Account",
+            "slice_name": "Cloud Cost Overview — Cost detail",
             "viz_type": "table",
             "datasource_id": 42,
             "datasource_type": "table",
-            "params": "{\"datasource\":\"42__table\",\"viz_type\":\"table\",\"query_mode\":\"aggregate\",\"groupby\":[\"service_name\",\"provider_name\",\"account_name\"],\"time_grain_sqla\":null,\"metrics\":[\"total_cost\"],\"percent_metrics\":[],\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"filterOptionName\":\"filter_r09_cost_detail_temporal\"}],\"timeseries_limit_metric\":\"total_cost\",\"order_desc\":true,\"server_pagination\":false,\"row_limit\":10,\"percent_metric_calculation\":\"row_limit\",\"show_totals\":false,\"table_timestamp_format\":\"smart_date\",\"page_length\":0,\"include_search\":false,\"allow_rearrange_columns\":false,\"allow_render_html\":true,\"column_config\":{\"total_cost\":{\"d3NumberFormat\":\"$,.0f\"}},\"show_cell_bars\":false,\"align_pn\":false,\"color_pn\":false,\"conditional_formatting\":[]}",
-            "query_context": "{\"datasource\":{\"id\":42,\"type\":\"table\"},\"force\":false,\"queries\":[{\"filters\":[{\"col\":\"usage_date\",\"op\":\"TEMPORAL_RANGE\",\"val\":\"No filter\"}],\"extras\":{\"having\":\"\",\"where\":\"\"},\"applied_time_extras\":{},\"columns\":[\"service_name\",\"provider_name\",\"account_name\"],\"metrics\":[\"total_cost\"],\"orderby\":[[\"total_cost\",false]],\"annotation_layers\":[],\"row_limit\":10,\"series_limit\":0,\"order_desc\":true,\"url_params\":{},\"custom_params\":{},\"custom_form_data\":{}}],\"form_data\":{\"datasource\":\"42__table\",\"viz_type\":\"table\",\"query_mode\":\"aggregate\",\"groupby\":[\"service_name\",\"provider_name\",\"account_name\"],\"time_grain_sqla\":null,\"metrics\":[\"total_cost\"],\"percent_metrics\":[],\"adhoc_filters\":[{\"expressionType\":\"SIMPLE\",\"subject\":\"usage_date\",\"operator\":\"TEMPORAL_RANGE\",\"comparator\":\"No filter\",\"clause\":\"WHERE\",\"filterOptionName\":\"filter_r09_cost_detail_temporal\"}],\"timeseries_limit_metric\":\"total_cost\",\"order_desc\":true,\"server_pagination\":false,\"row_limit\":10,\"percent_metric_calculation\":\"row_limit\",\"show_totals\":false,\"table_timestamp_format\":\"smart_date\",\"page_length\":0,\"include_search\":false,\"allow_rearrange_columns\":false,\"allow_render_html\":true,\"column_config\":{\"total_cost\":{\"d3NumberFormat\":\"$,.0f\"}},\"show_cell_bars\":false,\"align_pn\":false,\"color_pn\":false,\"conditional_formatting\":[],\"result_format\":\"json\",\"result_type\":\"full\"},\"result_format\":\"json\",\"result_type\":\"full\"}"
+            "params": "{\"datasource\": \"42__table\", \"viz_type\": \"table\", \"query_mode\": \"aggregate\", \"groupby\": [\"service_name\", \"provider_name\", \"account_name\"], \"metrics\": [\"total_cost\"], \"adhoc_filters\": [], \"row_limit\": 4, \"order_desc\": true, \"table_timestamp_format\": \"smart_date\"}",
+            "query_context": null
           }
         },
         "params_decoded": {
@@ -586,78 +82,20 @@
             "provider_name",
             "account_name"
           ],
-          "time_grain_sqla": null,
           "metrics": [
             "total_cost"
           ],
-          "percent_metrics": [],
-          "adhoc_filters": [
-            {
-              "expressionType": "SIMPLE",
-              "subject": "usage_date",
-              "operator": "TEMPORAL_RANGE",
-              "comparator": "No filter",
-              "clause": "WHERE",
-              "filterOptionName": "filter_r09_cost_detail_temporal"
-            }
-          ],
-          "timeseries_limit_metric": "total_cost",
+          "adhoc_filters": [],
+          "row_limit": 4,
           "order_desc": true,
-          "server_pagination": false,
-          "row_limit": 10,
-          "percent_metric_calculation": "row_limit",
-          "show_totals": false,
-          "table_timestamp_format": "smart_date",
-          "page_length": 0,
-          "include_search": false,
-          "allow_rearrange_columns": false,
-          "allow_render_html": true,
-          "column_config": {
-            "total_cost": {
-              "d3NumberFormat": "$,.0f"
-            }
-          },
-          "show_cell_bars": false,
-          "align_pn": false,
-          "color_pn": false,
-          "conditional_formatting": []
+          "table_timestamp_format": "smart_date"
         },
-        "unmapped": [
-          {
-            "observed": "COST column values are left-aligned in the design, not right-aligned",
-            "reason": "no control in the injected schema expresses per-column horizontal alignment; `column_config` is present but the schema (ColumnConfigControl) does not enumerate an alignment property, so nothing may be invented for it. Superset will right-align the numeric column."
-          },
-          {
-            "observed": "header row has no sort carets / sortability is not drawn",
-            "reason": "no control expresses this; the table plugin always renders sortable headers"
-          },
-          {
-            "observed": "header row styled small uppercase muted grey with letter-spacing, and light rules under the card title and under the header row",
-            "reason": "no control expresses header typography or rule styling; these are card/theme chrome, not params"
-          },
-          {
-            "observed": "card title 'Cost detail' rendered above the table",
-            "reason": "no params control for it \u2014 the chart's slice_name is set from the naming convention and the dashboard header renders it; the short design label is not expressible in params"
-          },
-          {
-            "observed": "four rows shown with empty space beneath, no pagination or 'view all' affordance (region ambiguity: truncated top-N vs. few rows)",
-            "reason": "expressed as row_limit 10 per the binding's sanctioned top-N reading, deliberately overriding design_system.row_limit (1000) because the region's `observed`/`ambiguity` contradict a full listing; the exact N is not determinable from the design. page_length 0 disables pagination as drawn."
-          },
-          {
-            "observed": "cost formatted full-precision with thousands separator and $ prefix, contradicting the abbreviated SMART_NUMBER default",
-            "reason": "mapped, not unmapped \u2014 applied via column_config.total_cost.d3NumberFormat using design_system.number_formats.money_full ('$,.0f'), the sanctioned per-region override; recorded here because it is a deliberate deviation from the currency default"
-          }
-        ],
+        "unmapped": [],
         "confidence": "high"
       },
       "problems": [],
       "error": null
     }
   ],
-  "summary": {
-    "total": 6,
-    "ok": 6,
-    "failed": 0,
-    "cost_usd": 2.4395
-  }
+  "summary": "2/2 ready (the 5 generated-plugin charts are not fixtured)"
 }
