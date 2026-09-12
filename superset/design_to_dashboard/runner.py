@@ -343,7 +343,7 @@ REGISTRY = (
 # the account's rate limits comfortably allow.
 F_MAX_WORKERS = 4
 # How many times stage C may be asked again with its problems in hand.
-C_MAX_REPLANS = 2
+C_MAX_REPLANS = 3
 # How many times the user may send the plan back with a reason. Two rounds is
 # a conversation; more is a negotiation the user is better off having by
 # editing the dashboard afterwards.
@@ -388,7 +388,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 raise RuntimeError(f"user {session.user_id} not found")
             g.user = user
 
-            from superset.design_to_dashboard import plugin_writer
+            from superset.design_to_dashboard import plugin_writer, questions
             from superset.design_to_dashboard.applier import apply_plan, ApplyError
             from superset.design_to_dashboard.llm.factory import get_llm_provider
             from superset.design_to_dashboard.mcp.gateway import InProcessGateway
@@ -400,7 +400,6 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 a_decompose,
                 b_bind,
                 c_resolve,
-                clarify,
                 d_configure,
                 e_layout,
                 f_scaffold,
@@ -547,7 +546,6 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # what let it validate every view against a real table.
             announce_datasets(session, binding.final)
 
-            binding_questions = binding.final.get("questions", [])
             _reasoning = session.take_thinking()
             session.publish(
                 "stage_complete",
@@ -562,56 +560,14 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 cost=round(total_cost, 4),
             )
 
-            # ---- Clarify: the only place the run asks anything ----------------
-            session.publish(
-                "stage_start", stage="clarify", label="Checking for anything unclear"
-            )
-            clarification, clarify_cost = clarify.run(
-                provider_for("clarify"),
-                design_analysis,
-                binding.final,
-                PROMPTS,
-                on_thinking=_thinking_for("clarify"),
-            )
-            total_cost += clarify_cost
-            # Two producers, two schemas: stage B emits a blocking question
-            # per `unavailable` binding (`why_blocking`, no `id`), clarify emits
-            # its own (`why_it_matters`, with an `id`). Only clarify's were
-            # normalised, inside `clarify.run`, so a stage B question reached
-            # the UI with `id: None` and its answer landed under "undefined".
-            # Normalising the merged list is the only place that covers both.
-            merged = {
-                "questions": list(binding_questions)
-                + list(clarification.get("questions") or [])
-            }
-            if repairs := clarify.normalise_questions(
-                merged, clarify.question_budget(design_analysis)
-            ):
-                logger.info("clarify questions repaired: %s", "; ".join(repairs))
-            questions = merged["questions"]
-            _reasoning = session.take_thinking()
-            session.publish(
-                "stage_complete",
-                stage="clarify",
-                label="Checked for anything unclear",
-                thinking=_reasoning,
-                summary=(
-                    f"{len(questions)} question(s)" if questions else "nothing unclear"
-                ),
-                cost=round(total_cost, 4),
-            )
-
+            # Nothing is asked before stage C any more. A question is only
+            # worth the user's attention once someone knows what it changes,
+            # and until C has resolved the page nobody does -- the old stage
+            # asked "fidelity or reuse?" in the abstract, where C can ask
+            # whether this table is worth a plugin because stock ones cannot
+            # draw a bar in a cell. Stage B no longer blocks either: it builds
+            # the data rather than reporting that it cannot find any.
             answers: dict[str, Any] = {}
-            if questions:
-                # Blocks here. Everything past plan approval runs without
-                # stopping, so this is the last chance to remove a guess.
-                answers = session.ask(
-                    "questions",
-                    {
-                        "label": "A few things before I plan this",
-                        "questions": questions,
-                    },
-                )
 
             # ---- C: resolve --------------------------------------------------
             session.publish("stage_start", stage="C", label="Choosing chart types")
@@ -647,17 +603,19 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
             plan = _resolve()
 
-            # Stage C may say what it could not decide rather than guessing.
-            # One round: it is re-run with the answers and must then decide,
+            # The one place the run asks anything. Stage C has resolved the
+            # whole page by now, so it knows what is genuinely undecided and
+            # what each answer would change -- for itself and for the stages
+            # after it, which never stop.
+            #
+            # One round. It is re-run with the answers and must then decide,
             # because a stage that can keep asking will, and the user did not
             # come here to be interviewed.
             if needs := [
                 n for n in plan.final.get("needs") or [] if isinstance(n, dict)
             ]:
                 merged_needs = {"questions": needs}
-                clarify.normalise_questions(
-                    merged_needs, clarify.question_budget(design_analysis)
-                )
+                questions.normalise_questions(merged_needs)
                 session.publish(
                     "stage_start",
                     stage="C",
@@ -666,7 +624,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 need_answers = session.ask(
                     "questions",
                     {
-                        "label": "I can't decide these without you",
+                        "label": "A few things before I build this",
                         "questions": merged_needs["questions"],
                     },
                 )

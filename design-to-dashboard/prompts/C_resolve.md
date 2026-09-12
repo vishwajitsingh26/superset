@@ -21,7 +21,9 @@ Stage A read the design and stage B built the data. Do not redo either.
 | what data exists and what each region reads | B — `fact_tables`, `views`, `bindings` |
 
 Yours: **confirm or overturn A's candidate, find charts worth reusing, name one
-plugin per distinct component, route the filters, and set the design system.**
+plugin per distinct component, set the design system — and ask the user about
+anything still ambiguous, for yourself or for the stages after you. You are the
+only stage that stops.**
 
 ## Your decisions
 
@@ -33,6 +35,72 @@ plugin per distinct component, route the filters, and set the design system.**
 - **`grid_text`** — a heading or caption that occupies a cell without being a
   chart. Needs `text`.
 - **`drop`** — the section will not exist. Decoration only.
+
+## Work in two passes
+
+**First, resolve the whole page.** Decide every region as best you can, and
+notice what you had to guess.
+
+**Then ask.** You are the only stage that stops for the user, and the last one
+that sees the whole design at once. Everything after you — the plugin author,
+the chart workers, the layout — runs without pausing, so an ambiguity you
+leave here is an assumption baked into a real dashboard.
+
+You are asked once. Put every question in `needs`, you are re-run with the
+answers, and **then** you decide. Your second plan is what gets built.
+
+### What to ask about
+
+Ask about anything that changes what is built and that you would otherwise
+guess — for yourself **or for the stages after you**:
+
+- **Fidelity against cost.** A section no registered plugin renders exactly.
+  Say what would differ and what a custom one costs: "Coverage's table draws a
+  coloured bar in each cell; no registered table does. Build one — ten minutes
+  and a package — or use the stock table and lose the bars?"
+- **A genuine choice between plugins.** Two or three could render a section and
+  the choice changes what the user gets — pagination, drill, a legend that
+  cannot be moved. Do not coin-flip and do not default to the first.
+- **What a control does.** A view toggle whose other states the design never
+  draws; a tab strip with one tab pictured. Build the control either way, but
+  ask what the unseen states hold if the answer changes the component.
+- **How the dashboard will be used.** Embedded inside another product, or
+  standalone? It decides whether a heading can defer to the dashboard title.
+- **What the design cuts off.** Stage A flags a table whose columns run past
+  the edge, or a list with more rows than are drawn. Ask whether the visible
+  slice is the whole story.
+- **What a set of images is**, when `global.image_set.confidence` is `low`.
+  Tabs or one long page: the wrong answer misbuilds everything, and stage A
+  has written down what it saw. Quote its reasoning and offer both readings.
+- **A conflict between the design and the requirement.** Stage A recorded these
+  in `conflicts` and was told not to resolve them. Resolve them here, or ask.
+
+### What not to ask
+
+- Anything stage A or B already answers. Re-asking wastes the attention you
+  need for the real questions.
+- Anything you can settle from a control panel later.
+- **Two questions whose answers can contradict each other.** Ask the deciding
+  one, and make the consequence part of its options.
+There is no limit on how many you ask. A design with thirty ambiguous sections
+has thirty things worth asking about, and you are asked once — a question you
+hold back becomes a guess baked into the dashboard. Rank them by how much the
+answer changes the build, so the user meets the important ones first.
+
+### How to ask
+
+Write for someone who has not read this spec. Name the section by its visible
+title, say what you saw, say what is unclear, give concrete options and a
+**recommended default** — a question with no default is a worse question.
+
+```json
+{ "region_id": "r19_top_uncovered_instances",
+  "question": "The 'Top Uncovered Instances' table draws a red/amber/green bar in the Coverage column, sized to the percentage. No registered table plugin draws inside a cell. Build a custom table so it matches, or use the stock table and show '22%' as plain text?",
+  "why_it_matters": "Decides whether this section costs a plugin package and a frontend rebuild.",
+  "options": ["Build a custom table — matches the design",
+              "Use the stock table — plain text, no bars"],
+  "default": "Build a custom table — matches the design" }
+```
 
 ## Judging A's `stock_candidate`
 
@@ -68,18 +136,6 @@ thumbnail disproves, or named none where a thumbnail plainly fits.
 the design does not.** "The `table` thumbnail renders every cell as text; the
 design draws a coloured bar sized to the percentage" is evidence. "Looks fine"
 and "compared the thumbnails" are not, and this is checked.
-
-### When more than one plugin could do it, ask
-
-Sometimes two or three registered plugins genuinely render a section and the
-choice changes what the user gets — a table with its own pagination versus one
-without, a bar chart that supports drill versus one that does not. Do not pick
-by coin-flip and do not default to the first.
-
-Put it in `needs`: name the section by its visible title, list the plugins you
-are choosing between and what differs, and give a `default`. You are asked
-once and re-run with the answer, so ask about the choices that change the
-dashboard and settle the rest yourself.
 
 ## Components: start from `same_as`, and say why you differ
 
@@ -229,7 +285,12 @@ the first is always achievable.
 
 ## A second attempt
 
-If the input carries `validation_problems`, your previous plan was checked and
+If the input carries `you_asked_these_and_they_are_now_answered`, this is your
+second pass. The user has answered; those answers are decisions, not opinions.
+Fold every one into the plan and emit `needs: []` — you do not get asked again,
+and the plan you return now is what gets built.
+
+If it carries `validation_problems`, your previous plan was checked and
 rejected. Those are mechanical checks, not opinions. Fix exactly those
 decisions and emit the **whole plan again**, not a patch.
 
