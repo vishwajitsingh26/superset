@@ -545,16 +545,22 @@ CURRENCIES = ["USD", "EUR", "GBP", "INR", "MXN", "JPY", "CNY"]
 # developer's credentials, so they must be opted into explicitly. Use
 # "anthropic_api" or "bedrock" in a deployment.
 #
-# "effort" applies to the CLI and API providers, and "max_turns" only to the
-# Claude providers; the Kiro CLI has no turn budget.
+# "effort" is honoured by "claude_agent_sdk", "anthropic_api", "bedrock" and
+# "kiro_cli" -- but NOT by "claude_cli", which has no such flag and is passed
+# none, so an effort set against it reads as configured and does nothing.
+# "max_turns" applies only to the Claude providers; the Kiro CLI has no turn
+# budget.
 DESIGN_TO_DASHBOARD_LLM: dict[str, Any] = {
-    "provider": "claude_cli",
-    "model": "claude-opus-5",
+    # `claude_agent_sdk` rather than `claude_cli`: the CLI provider takes no
+    # effort setting -- it is not in its argv and the factory does not pass it
+    # -- so configuring one there is silently ignored.
+    "provider": "claude_agent_sdk",
+    "model": "claude-sonnet-5",
     # Per call, not per run. Stage A reads a full-page design in one turn and
     # stage F writes an entire plugin in one; both are measured in minutes, and
     # a timeout below the work kills the run at its most expensive moment.
     "timeout": 900,
-    "effort": "high",
+    "effort": "medium",
     "max_turns": 6,
     "allow_cli_provider": False,
 }
