@@ -58,12 +58,14 @@ class DatasetFilter(ColumnOperator):
     col: Literal[
         "table_name",
         "schema",
+        "database_id",
         "database_name",
         "owner",
     ] = Field(
         ...,
         description="Column to filter on. Use get_schema(model_type='dataset') for "
-        "available filter columns.",
+        "available filter columns. Use database_id to list the datasets in a "
+        "database, which is the id list_databases returns.",
     )
     opr: ColumnOperatorEnum = Field(
         ...,
