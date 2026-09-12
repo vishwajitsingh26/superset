@@ -474,7 +474,12 @@ def _assert_datasets_exist(specs: list[dict[str, Any]]) -> None:
         return
     found = {
         row[0]
-        for row in db.session.query(SqlaTable.id).filter(SqlaTable.id.in_(wanted)).all()
+        # `SqlaTable` inherits `id: int` from superset_core's `Dataset`, so mypy
+        # resolves the attribute to its Python type and loses the column's
+        # `in_`. The query is correct; only the annotation disagrees.
+        for row in db.session.query(SqlaTable.id)
+        .filter(SqlaTable.id.in_(wanted))  # type: ignore[attr-defined]
+        .all()
     }
     if missing := sorted(wanted - found):
         raise ApplyError(
