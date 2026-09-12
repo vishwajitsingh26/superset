@@ -66,14 +66,19 @@ def build_system_prompt(prompts_dir: pathlib.Path) -> str:
     return f"{preamble}\n\n---\n\n{stage}"
 
 
-def content_box(regions: list[dict[str, Any]]) -> dict[str, int] | None:
-    """The area the dashboard actually occupies, in the design's own units.
+def content_box(regions: list[dict[str, Any]]) -> dict[str, float] | None:
+    """The area the dashboard occupies, as fractions of the image.
 
-    Not the canvas. When the app shell is dropped -- a left nav rail, a top bar
-    -- the grid's 12 columns span what is left, and dividing by the full canvas
-    makes every card a column or two too narrow. Stage E then notices each row
-    underflowing and widens it back, one row at a time, reporting arithmetic it
-    had to undo as a design compromise.
+    Not the whole image. When the app shell is dropped -- a left nav rail, a
+    top bar -- the grid's 12 columns span what is left, and dividing by the
+    full width makes every card a column or two too narrow. Stage E then
+    notices each row underflowing and widens it back, one row at a time,
+    reporting arithmetic it had to undo as a design compromise.
+
+    Fractions, not pixels, and deliberately not rounded to whole numbers: a
+    box that spans half the page is `0.5`, and rounding that to an integer is
+    `0`. Every use of it downstream is a ratio against another fraction, so
+    the units cancel.
     """
     boxes = [r["bbox"] for r in regions if isinstance(r.get("bbox"), dict)]
     boxes = [b for b in boxes if b.get("w") and b.get("h")]
@@ -84,17 +89,31 @@ def content_box(regions: list[dict[str, Any]]) -> dict[str, int] | None:
     right = max(float(b.get("x", 0)) + float(b["w"]) for b in boxes)
     bottom = max(float(b.get("y", 0)) + float(b["h"]) for b in boxes)
     return {
-        "x": round(left),
-        "y": round(top),
-        "w": round(right - left),
-        "h": round(bottom - top),
+        "x": round(left, 4),
+        "y": round(top, 4),
+        "w": round(right - left, 4),
+        "h": round(bottom - top, 4),
     }
+
+
+def total_units(box: dict[str, float] | None, image_height: int | None) -> int | None:
+    """How many 8px grid rows the content stands, if the image size is known.
+
+    The one number stage E cannot derive from fractions: a height in grid
+    units needs a real pixel height somewhere. Measured here rather than asked
+    for, because the model can only guess at it and every card's height is a
+    ratio against it.
+    """
+    if not box or not image_height or not box.get("h"):
+        return None
+    return max(1, round(float(box["h"]) * image_height / GRID_BASE_UNIT))
 
 
 def build_user_prompt(
     design_analysis: dict[str, Any],
     plan: dict[str, Any],
     user_answers: dict[str, Any] | None = None,
+    image_height: int | None = None,
 ) -> str:
     """Only geometry and refs — deliberately no data or params."""
     # Regions stage C dropped or routed to the filter bar must not be laid out.
@@ -107,7 +126,7 @@ def build_user_prompt(
         if decision.get("decision") in NON_GRID_DECISIONS
     }
     regions = [
-        {key: region.get(key) for key in ("region_id", "bbox", "role", "title")}
+        {key: region.get(key) for key in ("region_id", "bbox", "role", "title", "tab")}
         for region in design_analysis.get("regions", [])
         if region.get("region_id") not in excluded
     ]
@@ -121,10 +140,12 @@ def build_user_prompt(
         for decision in plan.get("decisions", [])
         if decision.get("decision") not in NON_GRID_DECISIONS
     ]
+    box = content_box(regions)
     payload = {
         "regions": regions,
         "global": design_analysis.get("global", {}),
-        "content_box": content_box(regions),
+        "content_box": box,
+        "total_units": total_units(box, image_height),
         "placements": placements,
     }
     # Whether the app shell is hidden decides what the grid spans, and stage E
@@ -266,6 +287,24 @@ def normalise(position: dict[str, Any]) -> list[str]:
     return notes
 
 
+def _image_height(image_paths: list[str] | None) -> int | None:
+    """The design's pixel height, or None when it cannot be read.
+
+    Only one number in the layout needs real pixels -- how many 8px grid rows
+    the page stands. Everything else is a ratio between fractions.
+    """
+    if not image_paths:
+        return None
+    try:
+        from PIL import Image
+
+        with Image.open(image_paths[0]) as image:
+            return int(image.size[1])
+    except Exception:  # noqa: BLE001 - a layout without it still works
+        logger.info("could not read the height of %s", image_paths[0])
+        return None
+
+
 def run(
     provider: LLMProvider,
     design_analysis: dict[str, Any],
@@ -278,7 +317,9 @@ def run(
     """Return ``(layout_plan, cost_usd)``."""
     response = provider.complete(
         build_system_prompt(prompts_dir),
-        build_user_prompt(design_analysis, plan, user_answers),
+        build_user_prompt(
+            design_analysis, plan, user_answers, _image_height(image_paths)
+        ),
         # E's region is the whole page: row structure, relative widths and how
         # tall a card is next to its neighbour are what it has to reproduce,
         # and those read off the design far better than off a list of boxes.

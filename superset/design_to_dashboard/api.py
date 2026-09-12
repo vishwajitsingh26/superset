@@ -22,13 +22,14 @@ import logging
 import os
 import pathlib
 import queue
+import re
 import tempfile
 from collections.abc import Iterator
 
 from flask import current_app, g, request, Response
 from flask_appbuilder.api import BaseApi, expose, protect, safe
 
-from superset.design_to_dashboard import runner, session_store
+from superset.design_to_dashboard import crop, runner, session_store
 from superset.extensions import event_logger
 from superset.superset_typing import FlaskResponse
 from superset.utils import json
@@ -36,6 +37,10 @@ from superset.utils import json
 logger = logging.getLogger(__name__)
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "application/pdf"}
+# A crop is named after its region, which is minted from a number and a slug.
+# Matched rather than trusted: the name arrives in a URL, and a path is the
+# one thing it must not be able to become.
+CROP_NAME = re.compile(r"[A-Za-z0-9_-]{1,120}\.png")
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024
 SSE_KEEPALIVE_SECONDS = 15
 
@@ -186,6 +191,28 @@ class DesignToDashboardRestApi(BaseApi):
                 "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
             },
+        )
+
+    @expose("/session/<session_id>/crop/<name>/", methods=("GET",))
+    @protect()
+    @safe
+    def crop_image(self, session_id: str, name: str) -> FlaskResponse:
+        """One region's crop, for the review shown before plugins are built.
+
+        Served rather than embedded: the event log is replayed in full to
+        every reconnecting client, so a dozen base64 images in it would cross
+        the wire again on each refresh.
+        """
+        session = session_store.get(session_id, user_id=g.user.id)
+        if session is None or not CROP_NAME.fullmatch(name):
+            return self.response_404()
+        path = crop.session_crops_dir(session_id) / name
+        if not path.is_file():
+            return self.response_404()
+        return Response(
+            path.read_bytes(),
+            mimetype="image/png",
+            headers={"Cache-Control": "private, max-age=3600"},
         )
 
     @expose("/session/<session_id>/", methods=("GET",))

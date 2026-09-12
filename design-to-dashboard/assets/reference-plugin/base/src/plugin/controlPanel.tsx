@@ -21,24 +21,24 @@ import {
   sharedControls,
   t,
   validateNonEmpty,
-} from '../adapters/supersetAdapter';
-import { CK_LENS_PALETTE } from '../constants';
+} from "../adapters/supersetAdapter";
+import { CK_LENS_PALETTE } from "../constants";
 
 const config: ControlPanelConfig = {
   controlPanelSections: [
     {
-      label: t('Query'),
+      label: t("Query"),
       expanded: true,
       controlSetRows: [
         [
           {
-            name: 'groupby',
+            name: "groupby",
             config: {
               ...sharedControls.groupby,
-              label: t('Dimensions'),
+              label: t("Dimensions"),
               description: t(
-                'Columns to group by. First column = pie slices. ' +
-                'Second column (if any) = breakdown inside tooltip.',
+                "Columns to group by. First column = pie slices. " +
+                  "Second column (if any) = breakdown inside tooltip.",
               ),
               validators: [validateNonEmpty],
             },
@@ -46,23 +46,23 @@ const config: ControlPanelConfig = {
         ],
         [
           {
-            name: 'metric',
+            name: "metric",
             config: {
               ...sharedControls.metric,
-              label: t('Metric'),
-              description: t('Metric to display in the pie chart'),
+              label: t("Metric"),
+              description: t("Metric to display in the pie chart"),
               validators: [validateNonEmpty],
             },
           },
         ],
-        ['adhoc_filters'],
+        ["adhoc_filters"],
         [
           {
-            name: 'row_limit',
+            name: "row_limit",
             config: {
               ...sharedControls.row_limit,
-              label: t('Row limit'),
-              description: t('Limits the number of rows that get retrieved.'),
+              label: t("Row limit"),
+              description: t("Limits the number of rows that get retrieved."),
               default: 1000,
             },
           },
@@ -70,20 +70,20 @@ const config: ControlPanelConfig = {
       ],
     },
     {
-      label: t('Display Options'),
+      label: t("Display Options"),
       expanded: true,
       controlSetRows: [
         [
           {
-            name: 'topN',
+            name: "topN",
             config: {
-              type: 'TextControl',
+              type: "TextControl",
               isInt: true,
-              label: t('Number of Slices'),
+              label: t("Number of Slices"),
               default: 5,
               description: t(
-                'Total number of slices to display. If data has more items, ' +
-                'remaining are grouped as "Others". E.g. 5 = top 4 + Others.',
+                "Total number of slices to display. If data has more items, " +
+                  'remaining are grouped as "Others". E.g. 5 = top 4 + Others.',
               ),
               renderTrigger: true,
             },
@@ -91,36 +91,36 @@ const config: ControlPanelConfig = {
         ],
         [
           {
-            name: 'showDecimals',
+            name: "showDecimals",
             config: {
-              type: 'CheckboxControl',
-              label: t('Show decimal values'),
+              type: "CheckboxControl",
+              label: t("Show decimal values"),
               default: false,
               description: t(
-                'When enabled, spend values are shown with 2 decimal places.',
+                "When enabled, spend values are shown with 2 decimal places.",
               ),
               renderTrigger: true,
             },
           },
         ],
-        ['currency_format'],
+        ["currency_format"],
       ],
     },
     {
-      label: t('Colors'),
+      label: t("Colors"),
       expanded: true,
       controlSetRows: [
         [
           {
-            name: 'customColors',
+            name: "customColors",
             config: {
-              type: 'TextControl',
-              label: t('Slice Colors'),
-              default: CK_LENS_PALETTE.join(', '),
+              type: "TextControl",
+              label: t("Slice Colors"),
+              default: CK_LENS_PALETTE.join(", "),
               description: t(
-                'Comma-separated hex color values for pie slices (in order). ' +
-                'E.g. "#8ECFFF, #EA6AA7, #FBD064, #F6B273, #60C0A6". ' +
-                'If fewer colors than slices, colors will cycle.',
+                "Comma-separated hex color values for pie slices (in order). " +
+                  "A comma-separated list of hex colours, one per slice. " +
+                  "If fewer colors than slices, colors will cycle.",
               ),
               renderTrigger: true,
             },
@@ -129,44 +129,43 @@ const config: ControlPanelConfig = {
       ],
     },
     {
-      label: t('Tooltip'),
+      label: t("Tooltip"),
       expanded: true,
       controlSetRows: [
         [
           {
-            name: 'tooltipEnabled',
+            name: "tooltipEnabled",
             config: {
-              type: 'CheckboxControl',
-              label: t('Enable Tooltip'),
+              type: "CheckboxControl",
+              label: t("Enable Tooltip"),
               default: true,
-              description: t(
-                'Show tooltip on hover with slice details.',
-              ),
+              description: t("Show tooltip on hover with slice details."),
               renderTrigger: true,
             },
           },
         ],
         [
           {
-            name: 'tooltipBreakdownCol',
+            name: "tooltipBreakdownCol",
             config: {
-              type: 'SelectControl',
-              label: t('Tooltip Breakdown Column'),
+              type: "SelectControl",
+              label: t("Tooltip Breakdown Column"),
               default: null,
               description: t(
-                'Optional: Select a column to show as breakdown rows inside the tooltip. ' +
-                'If not set, the second dimension from "Dimensions" is used. ' +
-                'If neither is set, tooltip shows only the total value per slice.',
+                "Optional: Select a column to show as breakdown rows inside the tooltip. " +
+                  'If not set, the second dimension from "Dimensions" is used. ' +
+                  "If neither is set, tooltip shows only the total value per slice.",
               ),
               // `ControlPanelState` is the callback's real first parameter; a
               // narrower hand-rolled type is rejected, and `any` is rejected by
               // the generator's own validator.
               mapStateToProps: (state: ControlPanelState) => ({
-                choices: (state.datasource?.columns ?? []).map(col => [
+                choices: (state.datasource?.columns ?? []).map((col) => [
                   col.column_name,
                   // `datasource.columns` is `ColumnMeta | QueryColumn` and only
                   // one of them carries a verbose name.
-                  ('verbose_name' in col && col.verbose_name) || col.column_name,
+                  ("verbose_name" in col && col.verbose_name) ||
+                    col.column_name,
                 ]),
               }),
               renderTrigger: false,
@@ -177,10 +176,10 @@ const config: ControlPanelConfig = {
         ],
         [
           {
-            name: 'showTotalInTooltip',
+            name: "showTotalInTooltip",
             config: {
-              type: 'CheckboxControl',
-              label: t('Show Total in Tooltip'),
+              type: "CheckboxControl",
+              label: t("Show Total in Tooltip"),
               default: true,
               description: t(
                 'Display a "Total Spend" summary row at the bottom of tooltip.',

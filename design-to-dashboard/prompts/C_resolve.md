@@ -264,9 +264,23 @@ Emit one; every stage D worker obeys it.
   "row_limit": 1000,
   "legend": { "show": true, "position": "top" },
   "naming_convention": "<Dashboard> — <Metric> by <Dimension>",
-  "show_values": false
+  "show_values": false,
+  "card_chrome": { "border": "1px solid #E5E7EB", "radius": "8px",
+                   "shadow": "none", "padding": "16px",
+                   "header": "13px/500, #6B7280, 8px below" },
+  "typography": { "value": "24px/700", "label": "13px/500",
+                  "caption": "11px/400" },
+  "theme": "light"
 }
 ```
+
+`card_chrome` and `typography` come straight from stage A's `global`:
+reconcile them into one repeated treatment rather than inventing your own.
+They matter more than they look. Plugin authors run in parallel, each seeing
+only its own card, and nothing makes six of them pick the same corner radius
+except this. The card treatment is the most repeated thing on the page, so a
+contract that omits it produces a dashboard inconsistent in exactly the way a
+reader notices first.
 
 ### Magnitude suffixes and unit labels are two different problems
 

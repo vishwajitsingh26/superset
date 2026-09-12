@@ -1,6 +1,6 @@
 # Stage F — Scaffold plugin
 
-**Input:** the design cropped to this region, plus the region (Stage A), its binding (Stage B), its `new_plugin` decision (Stage C), the design-system contract, and the source of a reference plugin.
+**Input:** the design cropped to this region, plus the region (Stage A) — whose `observed`, `unusual_treatment`, `controls` and `frame` are the specification — its binding (Stage B), its `new_plugin` decision (Stage C), the design-system contract, and the source of a reference plugin.
 **Not in context:** other regions, the registry, the rest of the design.
 **Output:** one `PluginScaffold`.
 
@@ -25,21 +25,51 @@ that matches it.
 If no image is attached the crop could not be made; say so in `review_notes`
 and build from the description alone.
 
-## Required structure
+## Three fields in the region carry the brief
+
+The region JSON is long. These three are the ones that decide whether this
+plugin is right, so read them before the rest:
+
+- **`unusual_treatment`** — what the observer saw that a charting library
+  does not normally do: labels above bars instead of in the axis gutter, a
+  sparkline drawn inside a table cell, actual and forecast as the same series
+  twice. This is **why you are being asked to write a plugin at all** rather
+  than configure a registered one. Every entry is a thing to get exactly
+  right, not to approximate; approximating all of them produces the generic
+  chart the design was rejected for.
+- **`controls`** — the buttons, toggles and inputs on this section's own
+  chrome, each with `kind`, `options`, `active`, `position` and **`icon`**.
+  The `icon` string is a written description of the glyph — "three stacked
+  lines; three vertical bars; a 3x3 grid of squares" — and it is the **only**
+  specification of that icon in the whole pipeline. Draw what it describes.
+  Do not substitute a stock icon because it is closer to hand.
+- **`frame`** — for a section that holds others, what its own chrome does to
+  them: `tabs` switches between them, `toggle` redraws the same area a
+  different way, `none` shows them together.
+
+## The package already exists
+
+You are not scaffolding a package. The directory, `package.json`, `src/index.ts`
+and `src/plugin/index.ts` are written for you, and the user message shows them.
+They fix the names everything else must match: the package name, the viz type,
+the plugin class, the component's path and the form-data type.
+
+**Do not emit any of those files.** Anything you return at one of their paths is
+discarded, so a `package.json` of your own is silently ignored rather than
+applied — and if it were applied it would rename the package out from under the
+directory it is resolved against.
+
+Write these, under the plugin directory the user message names, every path
+given in full:
 
 ```
-superset-frontend/plugins/plugin-chart-<name>/
-├── package.json          # "@superset-ui/plugin-chart-<name>", peerDependencies only
-└── src/
-    ├── index.ts          # export { default as <Class> } from './plugin'
-    ├── types.ts          # FormData + StylesProps + component props
-    ├── <Component>.tsx   # the React component
-    ├── images/thumbnail.png
-    └── plugin/
-        ├── index.ts          # ChartPlugin subclass + ChartMetadata
-        ├── buildQuery.ts     # buildQueryContext(formData)
-        ├── controlPanel.ts   # ControlPanelConfig
-        └── transformProps.ts # ChartProps -> component props
+src/<Component>.tsx        the component — at exactly the name you were given,
+                           because src/plugin/index.ts already imports it there
+src/types.ts               the form-data type you were given, plus props
+src/plugin/transformProps.ts
+src/plugin/controlPanel.ts   (.tsx where a control's type is a React component)
+src/plugin/buildQuery.ts
+src/utils/…, src/components/…   helpers, as the 150-line limit requires
 ```
 
 ## Imports — getting these wrong is the most common failure
@@ -56,27 +86,6 @@ Three symbols moved out of `@superset-ui/core` in Superset 6.1:
 Importing `styled` from the wrong module makes it `any`, which produces
 implicit-any errors on every `{ theme }` / `{ height }` binding rather than a
 clear import error. Use the reference plugin's imports verbatim.
-
-## Naming is load-bearing
-
-The package **must** be named `@superset-ui/plugin-chart-<name>` and live in
-`plugins/plugin-chart-<name>`. Webpack only aliases a `file:` dependency to its
-`src/` when the package name starts with `@superset-ui` or `@apache-superset`;
-an unscoped name compiles under TypeScript but fails webpack with
-`Module not found`, because it resolves `main: lib/index.js`, which dev never
-builds.
-
-## Three registration artifacts — all required
-
-1. **`package.json` dependency** in `superset-frontend/package.json`:
-   `"@superset-ui/plugin-chart-<name>": "file:./plugins/plugin-chart-<name>"`.
-   Without it webpack will not alias the package and the import fails.
-2. **Registration** appended inside `setupPluginsExtra()` in
-   `superset-frontend/src/setup/setupPluginsExtra.ts` — the deployment's
-   override hook, already called by `setupPlugins.ts`. **Do not edit
-   `MainPreset.ts`**: it is upstream code and edits create merge conflicts on
-   every Superset upgrade.
-3. **A `viz_type` key** in `snake_case`, unique against the registry.
 
 ## Build the archetype you were given
 
@@ -144,10 +153,10 @@ These are not style preferences; a plugin that breaks them fails review.
   below.
 - **Handle all three states**: loading, empty and error. Do not poll — the
   dashboard's own refresh drives updates.
-- **A control whose result the design never shows is still built.** Render the
-  toggle, the tab strip, the expand button. The state the design draws gets the
-  real implementation; the others render an empty state or "Coming soon". Never
-  invent what an unpictured view contains.
+- **A control whose result the design never shows is still built.** Render
+  every entry in `controls`, plus the strip `frame` implies. The state the
+  design draws gets the real implementation; the others render an empty state
+  or "Coming soon". Never invent what an unpictured view contains.
 - **Assume the datasource will change.** A chart may be built on a dataset this
   run created and repointed at the real one later by a teammate in Explore.
   Take every column and metric through standard controls (`groupby`, `metric`,
@@ -164,8 +173,13 @@ it exactly:
 - Reproduce the observed layout — where labels sit relative to values, what is
   above versus beside what.
 - Reproduce the observed number formatting, including magnitude suffixes.
-- Reproduce the card chrome from the design-system contract: radius, border,
-  padding, typography scale.
+- Reproduce the card chrome from the design-system contract's `card_chrome`
+  and `typography`: radius, border, shadow, padding, header style, and the
+  size/weight scale. **Take these from the contract, not from your crop**,
+  even where your crop looks slightly different. Every plugin in this run is
+  written in parallel by a worker that sees only its own card; the contract
+  is the one thing that makes six of them agree, and the card treatment is
+  the most repeated element on the page.
 - Use theme tokens (`theme.colorText`, `theme.sizeUnit`, `theme.fontSizeXL`)
   rather than hardcoded colours, so the chart follows light and dark themes.
 - **Never write a literal colour into the plugin source** -- not in
@@ -221,19 +235,7 @@ like it.
 ```json
 {
   "status": "ok",
-  "viz_type": "custom_<name>",
-  "plugin_name": "Custom <Name>",
-  "package_name": "@superset-ui/plugin-chart-<name>",
-  "directory": "superset-frontend/plugins/plugin-chart-<name>",
   "files": [{ "path": "superset-frontend/plugins/...", "contents": "..." }],
-  "package_json_dependency": {
-    "name": "@superset-ui/plugin-chart-<name>",
-    "spec": "file:./plugins/plugin-chart-<name>"
-  },
-  "registration": {
-    "import_line": "import { <Class> } from '@superset-ui/plugin-chart-<name>';",
-    "register_line": "  new <Class>().configure({ key: '<viz_type>' }).register();"
-  },
   "params_hint": { },
   "review_notes": "what a reviewer should check first"
 }

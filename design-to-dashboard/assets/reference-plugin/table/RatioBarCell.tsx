@@ -17,21 +17,22 @@
  * under the License.
  */
 
-import React from 'react';
-import type { RatioBarColorRule } from '../../types';
+import React from "react";
+import { useTheme } from "../../adapters/supersetAdapter";
+import type { RatioBarColorRule } from "../../types";
 
 /** Generate a light tint of the bar color for the track background. */
-function ratioBarTrackTint(hex: string): string {
-  const h = hex.replace(/^#/, '');
+function ratioBarTrackTint(hex: string, fallback: string): string {
+  const h = hex.replace(/^#/, "");
   const full =
     h.length === 3
       ? h
-          .split('')
-          .map(c => c + c)
-          .join('')
+          .split("")
+          .map((c) => c + c)
+          .join("")
       : h;
   if (full.length !== 6 || /[^0-9a-fA-F]/.test(full)) {
-    return '#EEEEEE';
+    return fallback;
   }
   const r = parseInt(full.slice(0, 2), 16);
   const g = parseInt(full.slice(2, 4), 16);
@@ -54,8 +55,9 @@ const RatioBarCell: React.FC<RatioBarCellProps> = ({
   ratioDenominator,
   colorRules,
 }) => {
+  const theme = useTheme();
   if (ratioBarPct === undefined || ratioBarPct === null) {
-    return <span style={{ color: '#bfbfbf' }}>—</span>;
+    return <span style={{ color: theme.colorTextTertiary }}>—</span>;
   }
 
   // Label depends on mode:
@@ -68,19 +70,21 @@ const RatioBarCell: React.FC<RatioBarCellProps> = ({
     : `${Math.round(ratioBarPct)}%`;
 
   const matchedRule = colorRules.find(
-    rule => ratioBarPct >= rule.min && ratioBarPct <= rule.max,
+    (rule) => ratioBarPct >= rule.min && ratioBarPct <= rule.max,
   );
-  const barColor = matchedRule?.color ?? '#249C45';
-  const trackColor = ratioBarTrackTint(barColor);
+  // The design's own hexes arrive as `colorRules`, written by stage D.
+  // Unset, fall back to a theme token rather than to a colour in source.
+  const barColor = matchedRule?.color ?? theme.colorSuccess;
+  const trackColor = ratioBarTrackTint(barColor, theme.colorBorderSecondary);
 
   return (
     <span
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         gap: 8,
-        width: '100%',
+        width: "100%",
       }}
     >
       <span
@@ -89,14 +93,14 @@ const RatioBarCell: React.FC<RatioBarCellProps> = ({
           height: 5,
           borderRadius: 3,
           background: trackColor,
-          overflow: 'hidden',
+          overflow: "hidden",
           flexShrink: 0,
         }}
       >
         <span
           style={{
-            display: 'block',
-            height: '100%',
+            display: "block",
+            height: "100%",
             width: `${Math.min(100, Math.max(0, ratioBarPct))}%`,
             borderRadius: 3,
             background: barColor,
@@ -105,13 +109,13 @@ const RatioBarCell: React.FC<RatioBarCellProps> = ({
       </span>
       <span
         style={{
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: "Inter, sans-serif",
           fontWeight: 400,
           fontSize: 11,
-          lineHeight: '14px',
+          lineHeight: "14px",
           letterSpacing: 0,
-          color: '#2B2B2B',
-          whiteSpace: 'nowrap',
+          color: theme.colorText,
+          whiteSpace: "nowrap",
         }}
       >
         {barLabel}

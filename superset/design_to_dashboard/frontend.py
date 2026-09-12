@@ -119,6 +119,77 @@ def _compile_verdict(log: pathlib.Path, offset: int, deadline: float) -> dict[st
     }
 
 
+# `<path>(line,col): error TSxxxx: <message>` -- one line per fault, unlike
+# webpack's multi-line `ERROR in` blocks.
+_TSC_ERROR = re.compile(r"^(\S+?)\((\d+),\d+\): error (TS\d+: .*)$", re.M)
+# A cold type-check of the whole frontend. Slower than reading a log, and the
+# only check that runs whether or not anyone is willing to restart a dev
+# server.
+TYPECHECK_TIMEOUT = 900
+
+
+def typecheck_errors(output: str) -> list[dict[str, str]]:
+    """Parse `tsc --noEmit` output into the shape the repair path expects.
+
+    Same `{file, detail}` as `compile_errors`, so one repair path serves both
+    and a caller never has to know which checker produced a fault.
+    """
+    return [
+        {
+            "file": match.group(1),
+            "detail": f"line {match.group(2)}: {match.group(3)}"[:600],
+        }
+        for match in _TSC_ERROR.finditer(output)
+    ]
+
+
+def typecheck(repo_root: str | pathlib.Path) -> dict[str, Any]:
+    """Type-check the frontend, and say which files are wrong.
+
+    Stage F's own checks are regex over generated text: they catch a wrong
+    import path and cannot catch a property invented on a type. Only a
+    compiler sees those, and the compiler used to be the dev server -- which
+    is opt-in, because restarting someone's dev server uninvited is rude.
+    So on the common path nothing type-checked a generated plugin at all, and
+    the run continued through chart configuration, layout and apply before
+    anyone discovered the frontend would not build.
+
+    Running `tsc` separates the two: checking is always safe and now always
+    happens, while restarting stays a choice. Requires `npm install` to have
+    linked the new plugins first, or every import of one is unresolvable.
+    """
+    frontend = pathlib.Path(repo_root) / "superset-frontend"
+    env = dict(os.environ)
+    if NODE_BIN.is_dir():
+        env["PATH"] = f"{NODE_BIN}:{env.get('PATH', '')}"
+    try:
+        completed = subprocess.run(  # noqa: S603
+            ["npx", "tsc", "--noEmit", "-p", "tsconfig.json"],  # noqa: S607
+            cwd=str(frontend),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=TYPECHECK_TIMEOUT,
+            check=False,
+            shell=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as ex:
+        # Unknown, not clean. A checker that could not run must never read as
+        # a pass -- that is the failure this whole function exists to remove.
+        return {"compiled": None, "errors": [], "reason": f"tsc did not run: {ex}"}
+    output = f"{completed.stdout}\n{completed.stderr}"
+    errors = typecheck_errors(output)
+    if completed.returncode == 0:
+        return {"compiled": True, "errors": []}
+    if not errors:
+        return {
+            "compiled": None,
+            "errors": [],
+            "reason": f"tsc exited {completed.returncode} with no parseable errors",
+        }
+    return {"compiled": False, "errors": errors}
+
+
 def link_plugins(repo_root: str | pathlib.Path, timeout: int = 600) -> dict[str, Any]:
     """Run `npm install` so new `file:` dependencies are linked into node_modules."""
     frontend = pathlib.Path(repo_root) / "superset-frontend"

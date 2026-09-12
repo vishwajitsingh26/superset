@@ -20,31 +20,38 @@ import {
   buildQueryContext,
   ensureIsArray,
   QueryFormColumn,
-} from '../adapters/supersetAdapter';
-import { PieChartQueryFormData } from '../types';
+} from "../adapters/supersetAdapter";
+import { PieChartQueryFormData } from "../types";
 
 export default function buildQuery(formData: PieChartQueryFormData) {
-  const { groupby, metric, rowLimit, row_limit, tooltipBreakdownCol } = formData;
+  const { groupby, metric, rowLimit, row_limit, tooltipBreakdownCol } =
+    formData;
 
   const allGroupby = ensureIsArray<QueryFormColumn>(groupby);
 
   // Pie slices are always driven by the first dimension
   const sliceCol = allGroupby[0];
   if (!sliceCol) {
-    return buildQueryContext(formData, baseQueryObject => [
-      { ...baseQueryObject, groupby: [], metrics: metric ? [metric] : [], row_limit: rowLimit || row_limit || 1000 },
+    return buildQueryContext(formData, (baseQueryObject) => [
+      {
+        ...baseQueryObject,
+        groupby: [],
+        metrics: metric ? [metric] : [],
+        row_limit: rowLimit || row_limit || 1000,
+      },
     ]);
   }
 
   // Determine breakdown column for tooltip: 1.
-  const breakdownCol: QueryFormColumn | undefined = tooltipBreakdownCol || allGroupby[1] || undefined;
+  const breakdownCol: QueryFormColumn | undefined =
+    tooltipBreakdownCol || allGroupby[1] || undefined;
 
   // Query only uses slice column + breakdown column (if any)
   const queryGroupby: QueryFormColumn[] = breakdownCol
     ? [sliceCol, breakdownCol]
     : [sliceCol];
 
-  return buildQueryContext(formData, baseQueryObject => [
+  return buildQueryContext(formData, (baseQueryObject) => [
     {
       ...baseQueryObject,
       groupby: queryGroupby,

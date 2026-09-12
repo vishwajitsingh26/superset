@@ -17,28 +17,29 @@
  * under the License.
  */
 /* eslint-disable no-restricted-syntax */
-/* eslint-disable theme-colors/no-literal-colors */
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import * as echarts from 'echarts/core';
-import { PieChart as PieChartType } from 'echarts/charts';
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import * as echarts from "echarts/core";
+import { PieChart as PieChartType } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
   GraphicComponent,
-} from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
-import { getCurrencySymbol } from '@superset-ui/core';
-import { StableChartInput } from './adapters/supersetAdapter';
+} from "echarts/components";
+import type { GraphicComponentOption } from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+import { getCurrencySymbol } from "@superset-ui/core";
+import { StableChartInput, useTheme } from "./adapters/supersetAdapter";
+import { PieChartQueryFormData } from "./types";
 import {
   buildProviderMap,
   getTopNSlices,
   parseColors,
   formatNumber,
   FormData,
-} from './utils/pieChartUtils';
-import { DEFAULT_TOP_N, CHART_COLORS, FONT } from './constants';
-import { NoDataScreen } from 'src/components/NoDataScreen';
+} from "./utils/pieChartUtils";
+import { DEFAULT_TOP_N, FONT } from "./constants";
+import { NoDataScreen } from "src/components/NoDataScreen";
 
 // ECharts types its label callback payload loosely; these are the fields
 // this chart actually reads.
@@ -64,24 +65,42 @@ export default function PieChart({
   groupby,
   metric,
   formData,
-}: StableChartInput) {
+}: StableChartInput<PieChartQueryFormData>) {
+  const theme = useTheme();
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // Extract configuration from formData
-  const showDecimals: boolean = (formData as any)?.showDecimals ?? false;
-  const currencySymbol: string = (formData as any)?.currencyFormat
-    ? getCurrencySymbol((formData as any).currencyFormat) || ''
-    : '';
-  const topN: number = (formData as any)?.topN ?? DEFAULT_TOP_N;
-  const tooltipEnabled: boolean = (formData as any)?.tooltipEnabled ?? true;
-  const showTotalInTooltip: boolean =
-    (formData as any)?.showTotalInTooltip ?? true;
-  const customColors: string = (formData as any)?.customColors ?? '';
-  const tooltipBreakdownCol: string =
-    (formData as any)?.tooltipBreakdownCol ?? '';
+  // Extract configuration from formData. Typed, because the form data type
+  // names every control the panel declares.
+  const showDecimals: boolean = formData?.showDecimals ?? false;
+  const currencySymbol: string = formData?.currencyFormat
+    ? getCurrencySymbol(formData.currencyFormat) || ""
+    : "";
+  const topN: number = formData?.topN ?? DEFAULT_TOP_N;
+  const tooltipEnabled: boolean = formData?.tooltipEnabled ?? true;
+  const showTotalInTooltip: boolean = formData?.showTotalInTooltip ?? true;
+  const customColors: string = formData?.customColors ?? "";
+  const tooltipBreakdownCol: string = String(
+    formData?.tooltipBreakdownCol ?? "",
+  );
 
-  const palette = useMemo(() => parseColors(customColors), [customColors]);
+  // The design's own hexes arrive through the `customColors` control, which
+  // stage D fills from the design system. Unset, the chart falls back to
+  // theme tokens rather than to colours written into this file.
+  const defaultPalette = useMemo(
+    () => [
+      theme.colorPrimary,
+      theme.colorSuccess,
+      theme.colorWarning,
+      theme.colorError,
+      theme.colorInfo,
+    ],
+    [theme],
+  );
+  const palette = useMemo(
+    () => parseColors(customColors, defaultPalette),
+    [customColors, defaultPalette],
+  );
 
   const pieFormData: FormData = useMemo(
     () => ({
@@ -108,64 +127,63 @@ export default function PieChart({
     (): echarts.EChartsCoreOption => ({
       tooltip: {
         show: tooltipEnabled,
-        trigger: 'item',
+        trigger: "item",
         confine: true,
-        backgroundColor: '#FFFFFF',
-        borderColor: '#F4F4F4',
+        backgroundColor: theme.colorBgContainer,
+        borderColor: theme.colorBorderSecondary,
         borderWidth: 1,
         borderRadius: 8,
         padding: [10, 12, 10, 12],
-        extraCssText:
-          'box-shadow: -4px 10.65px 21.3px -10.65px rgba(22,39,66,0.15); max-width: 220px;',
+        extraCssText: `box-shadow: ${theme.boxShadow}; max-width: 220px;`,
         textStyle: {
           fontFamily: FONT.INTER,
-          color: '#202828',
+          color: theme.colorText,
           fontSize: 10,
           fontWeight: 500,
         },
         formatter: (params: EChartsLabelParams) => {
-          const provider = params.name ?? '';
+          const provider = params.name ?? "";
           const providerData = providerMap[provider];
-          if (!providerData) return '';
-          const colorIndex = pieData.findIndex(d => d.name === provider);
+          if (!providerData) return "";
+          const colorIndex = pieData.findIndex((d) => d.name === provider);
           const color =
             colorIndex >= 0
               ? pieData[colorIndex].itemStyle.color
-              : CHART_COLORS.FALLBACK_DOT;
+              : theme.colorBorder;
 
           const hasBreakdown =
             Object.keys(providerData.breakdown).length > 1 ||
             (Object.keys(providerData.breakdown).length === 1 &&
               !providerData.breakdown[provider]);
 
-          let bodyHtml = '';
+          let bodyHtml = "";
 
           if (hasBreakdown) {
             bodyHtml = Object.entries(providerData.breakdown)
               .sort(([, a], [, b]) => b - a)
               .map(
                 ([cat, val]) =>
-                  `<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:500;line-height:16px;gap:24px;margin-top:12px"><span style="display:flex;align-items:center;gap:6px;overflow:hidden"><span style="width:8px;height:8px;border-radius:1px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:#737373;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;display:inline-block;vertical-align:middle">${cat}</span></span><span style="color:#050505;font-weight:500;white-space:nowrap;flex-shrink:0">${currencySymbol}${formatNumber(val, showDecimals)}</span></div>`,
+                  `<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:500;line-height:16px;gap:24px;margin-top:12px"><span style="display:flex;align-items:center;gap:6px;overflow:hidden"><span style="width:8px;height:8px;border-radius:1px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:${theme.colorTextSecondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;display:inline-block;vertical-align:middle">${cat}</span></span><span style="color:${theme.colorText};font-weight:500;white-space:nowrap;flex-shrink:0">${currencySymbol}${formatNumber(val, showDecimals)}</span></div>`,
               )
-              .join('');
+              .join("");
           } else {
-            bodyHtml = `<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:500;line-height:16px;gap:24px;margin-top:12px"><span style="display:flex;align-items:center;gap:6px;overflow:hidden"><span style="width:8px;height:8px;border-radius:1px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:#737373;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;display:inline-block;vertical-align:middle">${provider}</span></span><span style="color:#050505;font-weight:500;white-space:nowrap;flex-shrink:0">${currencySymbol}${formatNumber(providerData.total, showDecimals)}</span></div>`;
+            bodyHtml = `<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:500;line-height:16px;gap:24px;margin-top:12px"><span style="display:flex;align-items:center;gap:6px;overflow:hidden"><span style="width:8px;height:8px;border-radius:1px;background:${color};display:inline-block;flex-shrink:0"></span><span style="color:${theme.colorTextSecondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;display:inline-block;vertical-align:middle">${provider}</span></span><span style="color:${theme.colorText};font-weight:500;white-space:nowrap;flex-shrink:0">${currencySymbol}${formatNumber(providerData.total, showDecimals)}</span></div>`;
           }
 
           const totalRow =
             showTotalInTooltip && hasBreakdown
-              ? `<div style="border-top:1px solid #F4F4F4;margin-top:12px;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:500;line-height:16px;gap:24px"><span style="color:#050505;font-weight:600">Total Spend</span><span style="color:#050505;font-weight:600;white-space:nowrap">${currencySymbol}${formatNumber(providerData.total, showDecimals)}</span></div>`
-              : '';
+              ? `<div style="border-top:1px solid ${theme.colorBorderSecondary};margin-top:12px;padding-top:8px;display:flex;justify-content:space-between;align-items:center;font-size:10px;font-weight:500;line-height:16px;gap:24px"><span style="color:${theme.colorText};font-weight:600">Total Spend</span><span style="color:${theme.colorText};font-weight:600;white-space:nowrap">${currencySymbol}${formatNumber(providerData.total, showDecimals)}</span></div>`
+              : "";
 
-          return `<div style="font-family:${FONT.INTER};font-size:11px;font-weight:600;color:#202828;line-height:20px;padding-bottom:8px;margin-bottom:0;border-bottom:1px solid #F4F4F4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${provider}</div>${bodyHtml}${totalRow}`;
+          return `<div style="font-family:${FONT.INTER};font-size:11px;font-weight:600;color:${theme.colorText};line-height:20px;padding-bottom:8px;margin-bottom:0;border-bottom:1px solid ${theme.colorBorderSecondary};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${provider}</div>${bodyHtml}${totalRow}`;
         },
       },
       legend: {
         show: true,
-        type: 'scroll',
+        type: "scroll",
         bottom: 0,
-        left: 'center',
-        icon: 'roundRect',
+        left: "center",
+        icon: "roundRect",
         itemWidth: 9,
         itemHeight: 9,
         itemGap: 12,
@@ -175,61 +193,61 @@ export default function PieChart({
           fontSize: 10,
           fontWeight: 500,
           lineHeight: 16,
-          color: '#2B2B2B',
+          color: theme.colorText,
           padding: [0, 0, 0, 4],
         },
       },
       graphic: [
         {
-          type: 'text',
-          left: 'center',
-          top: '42%',
+          type: "text",
+          left: "center",
+          top: "42%",
           style: {
             text: `{label|Total Spend}\n{value|${currencySymbol}${formatNumber(grandTotal, showDecimals)}}`,
-            textAlign: 'center',
+            textAlign: "center",
             rich: {
               label: {
                 fontFamily: FONT.INTER,
                 fontSize: 10,
                 fontWeight: 400,
                 lineHeight: 16,
-                fill: CHART_COLORS.TOTAL_LABEL,
-                align: 'center',
+                fill: theme.colorTextSecondary,
+                align: "center",
               },
               value: {
                 fontFamily: FONT.INTER,
                 fontSize: 11,
                 fontWeight: 600,
                 lineHeight: 18,
-                fill: CHART_COLORS.TOTAL_VALUE,
-                align: 'center',
+                fill: theme.colorText,
+                align: "center",
               },
             },
           },
           z: 10,
         },
-      ] as any,
+      ] satisfies GraphicComponentOption[],
       series: [
         {
-          type: 'pie',
-          radius: ['35%', '60%'],
-          center: ['50%', '45%'],
+          type: "pie",
+          radius: ["35%", "60%"],
+          center: ["50%", "45%"],
           avoidLabelOverlap: true,
           data: pieData,
           itemStyle: {
-            borderColor: '#FFFFFF',
+            borderColor: theme.colorBgContainer,
             borderWidth: 2,
             borderRadius: 2,
           },
           label: {
             show: true,
-            position: 'outer',
-            alignTo: 'none',
+            position: "outer",
+            alignTo: "none",
             bleedMargin: 5,
             opacity: 1,
             fontFamily: FONT.INTER,
             fontSize: 10,
-            color: CHART_COLORS.LABEL_PRIMARY,
+            color: theme.colorText,
             formatter: (params: EChartsLabelParams) =>
               `{value|${currencySymbol}${formatNumber(params.value, showDecimals)}} {percent|(${params.percent}%)}\n{name|${params.name}}`,
             rich: {
@@ -238,14 +256,14 @@ export default function PieChart({
                 fontWeight: 600,
                 fontSize: 10,
                 lineHeight: 16,
-                color: '#050505',
+                color: theme.colorText,
               },
               percent: {
                 fontFamily: FONT.INTER,
                 fontWeight: 400,
                 fontSize: 10,
                 lineHeight: 16,
-                color: '#050505',
+                color: theme.colorText,
               },
               name: {
                 fontFamily: FONT.INTER,
@@ -253,7 +271,7 @@ export default function PieChart({
                 fontSize: 10,
                 lineHeight: 20,
                 padding: [4, 0, 0, 0],
-                color: '#737373',
+                color: theme.colorTextSecondary,
               },
             },
           },
@@ -261,7 +279,7 @@ export default function PieChart({
             show: true,
             smooth: false,
             lineStyle: {
-              color: CHART_COLORS.LABEL_PRIMARY,
+              color: theme.colorText,
               width: 1,
             },
           },
@@ -272,11 +290,11 @@ export default function PieChart({
             disabled: !tooltipEnabled,
             label: {
               show: true,
-              fontWeight: 'bold',
+              fontWeight: "bold",
             },
             itemStyle: {
               shadowBlur: 10,
-              shadowColor: 'rgba(0, 0, 0, 0.1)',
+              shadowColor: theme.colorBorder,
             },
           },
         },
@@ -328,12 +346,12 @@ export default function PieChart({
     return (
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '100%',
-          height: '100%',
-          color: '#999',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: "100%",
+          height: "100%",
+          color: theme.colorTextTertiary,
         }}
         data-testid="custom-pie-chart"
       >
@@ -349,14 +367,14 @@ export default function PieChart({
   return (
     <div
       style={{
-        width: '100%',
-        height: '100%',
-        padding: '16px 12px',
-        boxSizing: 'border-box',
+        width: "100%",
+        height: "100%",
+        padding: "16px 12px",
+        boxSizing: "border-box",
       }}
       data-testid="custom-pie-chart"
     >
-      <div ref={chartRef} style={{ width: '100%', height: '100%' }} />
+      <div ref={chartRef} style={{ width: "100%", height: "100%" }} />
     </div>
   );
 }

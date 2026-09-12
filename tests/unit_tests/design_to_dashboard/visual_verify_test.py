@@ -23,13 +23,15 @@ that said "Dashboard created".
 
 from __future__ import annotations
 
+import pathlib
 from typing import Any
 
 import pytest
 
-from superset.design_to_dashboard import trace
+from superset.design_to_dashboard import trace, visual_verify
 from superset.design_to_dashboard.runner import _done_label
 from superset.design_to_dashboard.visual_verify import band_for, validate
+from superset.utils import json
 
 # Sums to 43 -- the score the one completed run actually earned.
 SCORES = {
@@ -221,3 +223,134 @@ def test_a_contract_breach_is_recorded_next_to_the_score(
 
 def test_a_run_with_no_comparison_gets_no_section() -> None:
     assert "How close it came" not in _rendered({})
+
+
+# --- what the comparison is given -------------------------------------------
+
+
+def _design() -> dict[str, Any]:
+    return {
+        "regions": [
+            {
+                "n": 1,
+                "region_id": "r01_coverage",
+                "title": "Coverage",
+                "role": "wrapper",
+                "bbox": {"x": 0.0, "y": 0.4, "w": 0.48, "h": 0.08},
+                "children": [2, 3],
+                "unusual_treatment": ["the Coverage column draws a ratio bar"],
+            },
+            {
+                "n": 2,
+                "region_id": "r02_aws",
+                "title": "AWS",
+                "role": "kpi",
+                "bbox": {"x": 0.01, "y": 0.42, "w": 0.2, "h": 0.03},
+                "children": [],
+            },
+            {
+                "n": 3,
+                "region_id": "r03_gcp",
+                "title": "GCP",
+                "role": "kpi",
+                "bbox": {"x": 0.24, "y": 0.42, "w": 0.2, "h": 0.03},
+                "children": [],
+            },
+        ],
+        "global": {"reading_order": [1, 2, 3], "tabs": None},
+    }
+
+
+def _plan() -> dict[str, Any]:
+    return {
+        "decisions": [
+            {"region_id": "r01_coverage", "ref": "c1", "decision": "configure"},
+            {
+                "region_id": "r02_aws",
+                "ref": "c2",
+                "decision": "drop",
+                "fidelity_loss": "the plugin did not compile",
+            },
+        ]
+    }
+
+
+def _payload(prompt: str) -> dict[str, Any]:
+    """The JSON block the comparison is handed."""
+    return json.loads(prompt.split("```json")[1].split("```")[0])
+
+
+def test_the_report_can_tell_a_panel_from_the_cards_inside_it() -> None:
+    """A wrapper and its children used to arrive as peers, so "the panel is
+    missing" could not be told from "the cards inside it are missing" --
+    different findings, pointing at different stages."""
+    regions = _payload(visual_verify.build_user_prompt(_design(), _plan()))["regions"]
+    by_id = {r["region_id"]: r for r in regions}
+    assert by_id["r01_coverage"]["contains"] == ["r02_aws", "r03_gcp"]
+    assert by_id["r02_aws"]["contains"] == []
+
+
+def test_position_is_scored_against_real_coordinates() -> None:
+    """`position` is one of the six dimensions and the bboxes were dropped,
+    so it could only ever be judged by eye."""
+    regions = _payload(visual_verify.build_user_prompt(_design(), _plan()))["regions"]
+    assert regions[0]["bbox"] == {"x": 0.0, "y": 0.4, "w": 0.48, "h": 0.08}
+
+
+def test_the_hard_parts_are_named() -> None:
+    payload = visual_verify.build_user_prompt(_design(), _plan())
+    assert "the Coverage column draws a ratio bar" in payload
+
+
+def test_a_deliberate_drop_is_not_reported_as_missing() -> None:
+    payload = visual_verify.build_user_prompt(_design(), _plan())
+    assert "the plugin did not compile" in payload
+
+
+def test_one_screenshot_needs_no_legend_beyond_first_and_second() -> None:
+    assert "FIRST image" in visual_verify.build_user_prompt(_design(), _plan())
+
+
+def test_several_screenshots_are_labelled(tmp_path: pathlib.Path) -> None:
+    """A tabbed dashboard is several screenshots and a close look is several
+    more; an unlabelled pile of images is worse than none."""
+    shot = visual_verify.Capture(
+        pages=[str(tmp_path / "a.png"), str(tmp_path / "b.png")],
+        tabs=["Overview", "Detail"],
+    )
+    payload = visual_verify.build_user_prompt(
+        _design(),
+        _plan(),
+        shot,
+        ["the design", "built — tab 'Overview'", "built — tab 'Detail'"],
+    )
+    assert "1. the design" in payload
+    assert "3. built — tab 'Detail'" in payload
+    assert "one screenshot per tab" in payload
+
+
+def test_the_viewport_is_the_design_s_own_width(tmp_path: pathlib.Path) -> None:
+    """The 12-column grid reflows with the width, so rendering a 1139px design
+    at 1600px compares two different layouts."""
+    from PIL import Image
+
+    design = tmp_path / "d.png"
+    Image.new("RGB", (1139, 2592)).save(design)
+    assert visual_verify.viewport_for([str(design)])["width"] == 1139
+
+
+def test_an_extreme_design_width_is_clamped(tmp_path: pathlib.Path) -> None:
+    """Superset's grid stops behaving below a laptop width."""
+    from PIL import Image
+
+    for width, expected in (
+        (320, visual_verify.MIN_WIDTH),
+        (5000, visual_verify.MAX_WIDTH),
+    ):
+        design = tmp_path / f"{width}.png"
+        Image.new("RGB", (width, 800)).save(design)
+        assert visual_verify.viewport_for([str(design)])["width"] == expected
+
+
+def test_an_unreadable_design_still_captures() -> None:
+    assert visual_verify.viewport_for(["/nope.png"]) == visual_verify.VIEWPORT

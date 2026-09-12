@@ -1,7 +1,10 @@
 # Visual verify — compare what was built against the design
 
-**Input:** two images — the original design, and a screenshot of the dashboard
-that was just created — plus the region list and what each became.
+**Input:** the design, a screenshot of the dashboard that was just created —
+one per tab where the dashboard has tabs — and close-up pairs of the sections
+where a number has to be read. Plus the region list: each region's `bbox`, what
+it `contains`, its `unusual_treatment`, and what it `built_as`. The images are
+labelled in order at the top of your user message.
 **Output:** `VisualReport`.
 **No tools.**
 
@@ -22,9 +25,19 @@ images side by side in your mind and check, in this order:
 
 1. **Presence** — is the section there at all? A missing section is the most
    serious finding there is, and the easiest to overlook when the rest looks
-   good.
+   good. Two things are **not** missing sections, and calling them one buries
+   the real ones:
+   - a section whose `built_as` carries a `known_difference`, or whose
+     `decision` is `drop`. That was decided before the build and is already
+     recorded; note it in `summary` if it matters, not as a finding.
+   - a section on a tab you are not looking at. Match the region's `tab`
+     against the screenshot's.
 2. **Position and size** — same place in the grid, same relative width, same
-   row?
+   row? Each region's `bbox` is `{x, y, w, h}` as fractions of the design, so
+   this is measurable rather than a matter of impression: a card at `w: 0.32`
+   is a third of the page wide, and two cards with the same `y` share a row.
+   The screenshot is rendered at the design's own width, so the two are
+   directly comparable.
 3. **Chart type and orientation** — bars where bars were drawn, horizontal
    where horizontal, the same number of series.
 4. **Labels and text** — headings, axis labels, legend, column headers. Read
@@ -34,6 +47,37 @@ images side by side in your mind and check, in this order:
    symbols, thousands separators.
 6. **Colour, weight and chrome** — fill colours, card borders, radius, padding,
    font weight.
+
+## Nesting, and where a fault belongs
+
+A region's `contains` lists the regions drawn inside it. A wrapper and its
+children are one panel, not five peers, and the difference decides which stage
+has to change:
+
+- **The panel is gone and its children with it** — one finding against the
+  wrapper. The plugin or the layout dropped the whole section.
+- **The panel is there and one child is wrong** — one finding against that
+  child. The panel is fine.
+
+Report the outermost thing that is wrong, once. A wrapper missing with four
+children inside it is one critical finding, not five.
+
+## What was supposed to be hard
+
+Each region carries `unusual_treatment`: what the design does that a charting
+library does not normally do — labels above the bars rather than in the axis
+gutter, a sparkline inside a table cell, a forecast drawn as the same series
+dotted. A custom plugin was written **because of** these, so they are the
+specific things to check rather than the general impression. Where one was not
+reproduced, say which, and `likely_fix` is almost always `plugin`.
+
+## The close-up pairs
+
+After the full images you may be given pairs: a section as designed, then the
+same section as built. They are there because number formatting and cell
+rendering cannot be read at page width, and `numbers` is one of the six scores.
+Use them for those two dimensions. Judge presence, position and size from the
+full images — a close-up says nothing about where a card sits.
 
 ## Scoring
 

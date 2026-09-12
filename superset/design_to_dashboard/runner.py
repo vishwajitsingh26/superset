@@ -27,11 +27,15 @@ import concurrent.futures
 import logging
 import pathlib
 import sys
-import tempfile
 import threading
 from typing import Any, Callable
 
-from superset.design_to_dashboard import crop, trace, visual_verify
+from superset.design_to_dashboard import (
+    crop,
+    plugin_review,
+    trace,
+    visual_verify,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +147,7 @@ def _repair_broken_plugins(  # noqa: C901
     an author that cannot use that will not do better with a third telling.
     """
     from superset.design_to_dashboard import frontend, plugin_writer
-    from superset.design_to_dashboard.stages import f_scaffold
+    from superset.design_to_dashboard.stages import c_resolve, f_scaffold
 
     directories = {
         viz_type: (scaffold.scaffold or {}).get("directory") or ""
@@ -173,7 +177,7 @@ def _repair_broken_plugins(  # noqa: C901
                 region_for(region_id),
                 binding_for(region_id),
                 decision,
-                plan.get("design_system", {}),
+                c_resolve.design_system(plan, design_analysis),
                 PROMPTS,
                 REPO_ROOT,
                 set(),
@@ -194,17 +198,180 @@ def _repair_broken_plugins(  # noqa: C901
         if not retry.ok or retry.scaffold is None:
             logger.info("repair of %s still invalid: %s", viz_type, retry.problems)
             continue
-        plugin_writer.write(retry.scaffold, REPO_ROOT)
+        try:
+            plugin_writer.write(retry.scaffold, REPO_ROOT, retry.plugin, decision)
+        except Exception:  # noqa: BLE001 - the first attempt stays on disk
+            logger.exception("could not write the repair of %s", viz_type)
+            continue
+        # The repair supersedes the attempt that did not compile. Only its
+        # files used to be kept, so a later removal addressed the superseded
+        # attempt, the repair's own generation never reached the run's cost,
+        # and stage D was handed the first attempt's `params_hint` and told
+        # it was authoritative -- for controls the repair may have renamed.
+        scaffolds[viz_type].scaffold = retry.scaffold
+        scaffolds[viz_type].plugin = retry.plugin
+        scaffolds[viz_type].cost_usd += retry.cost_usd
+        if hint := retry.scaffold.get("params_hint"):
+            for sibling in by_type[viz_type]:
+                sibling["params_hint"] = hint
         repaired.append(viz_type)
 
     if not repaired:
         return outcome
     session.publish(
         "plugin_repaired",
-        label=f"Rewrote {len(repaired)} plugin(s) — rebuilding",
+        label=f"Rewrote {len(repaired)} plugin(s) — rechecking",
         detail=", ".join(repaired),
     )
-    return frontend.restart_dev_server(REPO_ROOT)
+    # Re-link first: a repair can rename the package, and an unlinked package
+    # fails to resolve in a way that reads as the author's fault rather than
+    # as a missing symlink.
+    frontend.link_plugins(REPO_ROOT)
+    return frontend.typecheck(REPO_ROOT)
+
+
+# How many times a plugin that did not compile is handed its own errors and
+# asked again. A compiler error names the file, the line and the rule, so the
+# first pass clears most of them; a second catches the case where fixing one
+# fault exposed another. Beyond that the author is guessing, and the plugin is
+# removed instead.
+REPAIR_ROUNDS = 2
+
+
+def _typecheck_and_quarantine(  # noqa: C901
+    session: Any,
+    scaffolds: dict[str, Any],
+    by_type: dict[str, list[dict[str, Any]]],
+    region_for: Callable[[str], dict[str, Any]],
+    binding_for: Callable[[str], dict[str, Any]],
+    plan: dict[str, Any],
+    provider: Any,
+    tag: str,
+    crops_dir: Any,
+    design_analysis: dict[str, Any],
+    built: list[str],
+) -> float:
+    """Returns what the repair generations cost, for the run's total."""
+    """Compile what was written, repair what failed, remove what cannot be.
+
+    The guarantee this exists to make is that nobody opens the dashboard to a
+    frontend that does not build. A generated plugin is registered globally,
+    so one that does not compile takes down every chart on the page and not
+    just its own section -- the run would otherwise report success while the
+    dev server served a compile error.
+
+    So a plugin gets ``REPAIR_ROUNDS`` attempts with the compiler's own output
+    in hand, and if it still fails it is deleted, unregistered, and its
+    sections are dropped the way stage C drops a section it cannot build. An
+    incomplete dashboard is a worse outcome than a complete one and a far
+    better outcome than a broken one.
+    """
+    from superset.design_to_dashboard import frontend, plugin_writer
+
+    before = sum(s.cost_usd for s in scaffolds.values())
+    verdict = frontend.typecheck(REPO_ROOT)
+    for _round in range(REPAIR_ROUNDS):
+        if verdict.get("compiled") is not False:
+            break
+        session.publish(
+            "typecheck_failed",
+            label=f"{len(verdict.get('errors') or [])} type error(s) — fixing",
+            detail="; ".join(
+                f"{e['file']}: {e['detail'][:120]}"
+                for e in (verdict.get("errors") or [])[:6]
+            ),
+        )
+        repaired = _repair_broken_plugins(
+            session,
+            verdict,
+            scaffolds,
+            by_type,
+            region_for,
+            binding_for,
+            plan,
+            provider,
+            tag,
+            crops_dir,
+            design_analysis,
+        )
+        # `_repair_broken_plugins` re-checks only when it rewrote something.
+        # When it returns the verdict it was given, nothing changed and
+        # another round would ask the same question of the same files.
+        if repaired is verdict:
+            break
+        verdict = repaired
+
+    if verdict.get("compiled") is not False:
+        session.publish(
+            "typecheck_passed",
+            label="The generated plugins compile",
+            compiled=verdict.get("compiled"),
+            detail=verdict.get("reason"),
+        )
+        return sum(s.cost_usd for s in scaffolds.values()) - before
+
+    # Out of repair attempts. Everything still named in an error goes.
+    directories = {
+        viz_type: (scaffold.scaffold or {}).get("directory") or ""
+        for viz_type, scaffold in scaffolds.items()
+        if scaffold.ok
+    }
+    doomed = _plugins_in_errors(verdict.get("errors") or [], directories)
+    if not doomed:
+        # The build is broken by something this run did not write. Removing a
+        # working plugin would not fix it and would lose a section for no
+        # reason, so the fault is reported and left where it is.
+        session.publish(
+            "typecheck_failed",
+            label="The frontend does not compile, but no generated plugin is at fault",
+            detail="; ".join(
+                f"{e['file']}: {e['detail'][:120]}"
+                for e in (verdict.get("errors") or [])[:6]
+            ),
+        )
+        return sum(s.cost_usd for s in scaffolds.values()) - before
+
+    for viz_type in sorted(doomed):
+        scaffold = scaffolds[viz_type]
+        group = by_type.get(viz_type) or []
+        affected = ", ".join(str(d.get("region_id")) for d in group)
+        plugin_writer.remove(scaffold.scaffold or {}, REPO_ROOT)
+        if viz_type in built:
+            built.remove(viz_type)
+        for decision in group:
+            decision["decision"] = "drop"
+            decision["fidelity_loss"] = (
+                f"the {viz_type} plugin did not compile after "
+                f"{REPAIR_ROUNDS} repair attempt(s), so this section is missing"
+            )
+        session.publish(
+            "plugin_failed",
+            label=f"{viz_type} would not compile — removed, dropping {affected}",
+            viz_type=viz_type,
+            detail="; ".join(
+                e["detail"][:120]
+                for e in (verdict.get("errors") or [])
+                if directories.get(viz_type, "").rsplit("/", 1)[-1]
+                in (e.get("file") or "")
+            )[:400],
+        )
+
+    # The removals changed package.json, so the links have to follow before
+    # anything else reads node_modules.
+    frontend.link_plugins(REPO_ROOT)
+    final = frontend.typecheck(REPO_ROOT)
+    session.publish(
+        "typecheck_passed"
+        if final.get("compiled") is not False
+        else "typecheck_failed",
+        label=(
+            "The frontend compiles with the failed plugin(s) removed"
+            if final.get("compiled") is not False
+            else "The frontend still does not compile after removing the plugin(s)"
+        ),
+        compiled=final.get("compiled"),
+    )
+    return sum(s.cost_usd for s in scaffolds.values()) - before
 
 
 def _photograph_new_plugins(session: Any, plan: dict[str, Any]) -> None:
@@ -228,7 +395,11 @@ def _photograph_new_plugins(session: Any, plan: dict[str, Any]) -> None:
     viz_types = {
         d.get("viz_type")
         for d in plan.get("decisions", [])
-        if d.get("decision") == "new_plugin" and d.get("viz_type")
+        # `built_by_stage_f`, not `decision == "new_plugin"`: the F block
+        # rewrites a built plugin's decision to "configure" before this runs,
+        # so the old filter matched nothing and every generated plugin kept
+        # the placeholder thumbnail this function exists to replace.
+        if d.get("built_by_stage_f") and d.get("viz_type")
     }
     if not viz_types:
         return
@@ -551,9 +722,14 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "stage_complete",
                 stage="B",
                 thinking=_reasoning,
-                label="Matched your data",
+                label="Built your data",
+                # The old contract's `datasets_used` is gone; the new one
+                # reports what was created. Reading the removed key left this
+                # summary silently empty on every run.
                 summary=", ".join(
-                    d.get("name", "?") for d in binding.final.get("datasets_used", [])
+                    str(dataset.get("name") or "?")
+                    for group in ("fact_tables", "views")
+                    for dataset in binding.final.get(group) or []
                 )
                 or "bound",
                 bindings=binding.final.get("bindings", []),
@@ -762,10 +938,69 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 regions = {
                     r["region_id"]: r for r in design_analysis.get("regions", [])
                 }
+                # `.get`, not `[...]`: stage B's validator reports a binding
+                # with no region_id as a problem and the runner treats every
+                # stage B problem as a warning, so the condition B tolerates
+                # reached here as an unhandled KeyError -- after B had written
+                # tables and the user had approved the plan.
                 bindings = {
-                    b["region_id"]: b for b in binding.final.get("bindings", [])
+                    b["region_id"]: b
+                    for b in binding.final.get("bindings", [])
+                    if b.get("region_id")
                 }
                 known = chart_types(load_registry(str(REGISTRY)))
+                built: list[str] = []
+                tag = f_scaffold.run_tag(session.id)
+                crops_dir = crop.session_crops_dir(session.id)
+
+                # Stage C's gate approves the dashboard, in prose. This one
+                # approves the build, by eye: whether three cards really are
+                # one component is a judgement no sentence can carry, and it
+                # decides how many plugins get written. Assembled from work
+                # already done -- no model runs to produce it.
+                review = plugin_review.build(
+                    design_analysis,
+                    binding.final,
+                    plan.final,
+                    session.image_paths,
+                    crops_dir,
+                )
+                session.publish(
+                    "stage_start",
+                    stage="F",
+                    label=(
+                        f"{review['counts']['plugins']} plugin(s) to build — "
+                        "review before I start"
+                    ),
+                )
+                review_answer = session.ask(
+                    "plugins",
+                    {
+                        "label": "Here is what I will build",
+                        "entries": review["entries"],
+                        "dropped": review["dropped"],
+                        "counts": review["counts"],
+                        "crop_url": (
+                            f"/api/v1/design_to_dashboard/session/{session.id}/crop/"
+                        ),
+                    },
+                )
+                if not review_answer.get("approved", True):
+                    session.status = "cancelled"
+                    session.publish(
+                        "cancelled",
+                        label="Plugin build rejected — nothing was created",
+                        detail=str(review_answer.get("feedback") or "")[:600],
+                    )
+                    return
+                if noted := plugin_review.apply_feedback(
+                    plan.final, review_answer, review
+                ):
+                    session.publish(
+                        "plugin_notes",
+                        label=f"Noted your changes to {len(noted)} plugin(s)",
+                        detail=", ".join(noted),
+                    )
                 session.publish(
                     "stage_start",
                     stage="F",
@@ -773,10 +1008,6 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         f"Building {len(new_plugin_decisions)} custom chart plugin(s)"
                     ),
                 )
-                built: list[str] = []
-                tag = f_scaffold.run_tag(session.id)
-                crops_dir = pathlib.Path(tempfile.gettempdir()) / "d2d" / session.id
-                crops_dir = crops_dir / "crops"
 
                 # Several regions can need the same plugin -- three identical
                 # provider cards are three decisions and one plugin. Stage C
@@ -842,7 +1073,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                             _region_for(region_id),
                             _binding_for(region_id),
                             decision,
-                            plan.final.get("design_system", {}),
+                            c_resolve.design_system(plan.final, design_analysis),
                             PROMPTS,
                             REPO_ROOT,
                             known,
@@ -871,12 +1102,30 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 with concurrent.futures.ThreadPoolExecutor(
                     max_workers=min(len(by_type), F_MAX_WORKERS)
                 ) as pool:
-                    futures = [
-                        pool.submit(_build, viz_type, group[0])
+                    futures = {
+                        pool.submit(_build, viz_type, group[0]): viz_type
                         for viz_type, group in by_type.items()
-                    ]
+                    }
                     for future in concurrent.futures.as_completed(futures):
-                        viz_type, scaffold = future.result()
+                        # `run_one` reports most failures as a result, but
+                        # re-raises a timeout so the retry can see it, and
+                        # `_retry` re-raises after its attempts. Unguarded,
+                        # that escaped the executor block and ended the run --
+                        # discarding stages A, B, C, the plan approval, the
+                        # plugin review and every plugin that had generated
+                        # cleanly, because one of them ran long twice. A
+                        # generation that fails is the same outcome as a
+                        # scaffold that fails, so it is recorded as one.
+                        viz_type = futures[future]
+                        try:
+                            viz_type, scaffold = future.result()
+                        except Exception as ex:  # noqa: BLE001 - drop one, keep the run
+                            logger.exception("generating %s failed", viz_type)
+                            scaffold = f_scaffold.ScaffoldResult(
+                                region_id=by_type[viz_type][0].get("region_id", "?"),
+                                viz_type=viz_type,
+                                error=f"{type(ex).__name__}: {ex}",
+                            )
                         scaffolds[viz_type] = scaffold
                         total_cost += scaffold.cost_usd
 
@@ -906,7 +1155,39 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                             detail=detail[:400],
                         )
                         continue
-                    written = plugin_writer.write(scaffold.scaffold, REPO_ROOT)
+                    # Writing patches two shared files, so it can fail on its
+                    # own -- an unbalanced setupPluginsExtra(), a path that
+                    # escapes the plugin directory. Unguarded, that exception
+                    # left every plugin after it unwritten and its regions
+                    # still marked `new_plugin`, which stage D skips: the run
+                    # died holding a half-registered frontend. A write that
+                    # fails is the same outcome as a scaffold that fails, so
+                    # it gets the same treatment.
+                    try:
+                        written = plugin_writer.write(
+                            scaffold.scaffold,
+                            REPO_ROOT,
+                            scaffold.plugin,
+                            group[0],
+                        )
+                    except Exception as ex:  # noqa: BLE001 - drop one, keep the run
+                        logger.exception("could not write %s", viz_type)
+                        affected = ", ".join(str(d.get("region_id")) for d in group)
+                        failed_plugins.append(f"{viz_type} ({affected}): {ex}")
+                        plugin_writer.remove(scaffold.scaffold, REPO_ROOT)
+                        for decision in group:
+                            decision["decision"] = "drop"
+                            decision["fidelity_loss"] = (
+                                f"the {viz_type} plugin could not be written to "
+                                "disk, so this section is missing"
+                            )
+                        session.publish(
+                            "plugin_failed",
+                            label=f"Could not write {viz_type} — dropping {affected}",
+                            viz_type=viz_type,
+                            detail=str(ex)[:400],
+                        )
+                        continue
                     built.append(scaffold.viz_type or "?")
                     for decision in group:
                         decision["viz_type"] = scaffold.viz_type
@@ -940,34 +1221,49 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 # the stage.
                 from superset.design_to_dashboard import frontend
 
-                frontend.link_plugins(REPO_ROOT)
+                # webpack resolves a generated plugin through the node_modules
+                # symlink only this call creates, so a failure here makes every
+                # one of them unresolvable. The return value was discarded, and
+                # the run reported the plugins as built.
+                linked = frontend.link_plugins(REPO_ROOT)
+                if not linked.get("linked"):
+                    session.publish(
+                        "plugin_link_failed",
+                        label="npm install failed — the new plugins will not resolve",
+                        detail=str(linked.get("reason") or "")[:400],
+                    )
 
                 # Regenerate the manifest so the new viz types are known to
                 # stage D's validation and to the layout stage.
                 _regenerate_registry(session)
 
-                # webpack builds its alias map from package.json when the config
-                # is evaluated, so a dependency added mid-session is invisible
-                # until the dev server restarts. Opt-in: restarting someone's
-                # dev server is not something to do unasked.
+                # Type-checking is not optional. Stage F's own checks are
+                # regex over generated text and cannot see an invented field
+                # on a type; the compiler can, and used to be reached only
+                # through a dev-server restart nobody had opted into. So on
+                # the common path a generated plugin was never compiled at
+                # all, and the run spent chart configuration, layout and
+                # apply before anyone found the frontend would not build.
+                total_cost += _typecheck_and_quarantine(
+                    session,
+                    scaffolds,
+                    by_type,
+                    _region_for,
+                    _binding_for,
+                    plan.final,
+                    f_provider,
+                    tag,
+                    crops_dir,
+                    design_analysis,
+                    built,
+                )
+
+                # Restarting is still a choice -- it is someone's dev server --
+                # but by here the code on disk is known to compile.
                 if _config().get("auto_restart_frontend"):
                     from superset.design_to_dashboard import frontend
 
                     outcome = frontend.restart_dev_server(REPO_ROOT)
-                    if outcome.get("compiled") is False:
-                        outcome = _repair_broken_plugins(
-                            session,
-                            outcome,
-                            scaffolds,
-                            by_type,
-                            _region_for,
-                            _binding_for,
-                            plan.final,
-                            f_provider,
-                            tag,
-                            crops_dir,
-                            design_analysis,
-                        )
                     session.publish(
                         "frontend_restarted",
                         label=_restart_label(outcome),
@@ -1178,6 +1474,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 REPO_ROOT,
                 session.id,
                 on_thinking=_thinking_for("visual"),
+                # Which chart is which region, so each card can be compared
+                # against the design's own crop of the section it came from.
+                ref_to_id=applied.ref_to_id,
             )
             total_cost += visual.cost_usd
             session.publish(

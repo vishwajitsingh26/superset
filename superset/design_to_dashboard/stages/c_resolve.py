@@ -551,6 +551,36 @@ def _switcher_lost(
     ]
 
 
+# What stage A observed that the contract needs but cannot improve on. C is
+# asked for these so every parallel worker obeys one value; when it omits
+# them, A's observation is better than nothing at all.
+OBSERVED_CONTRACT_KEYS = ("card_chrome", "typography", "palette", "theme")
+
+
+def design_system(
+    plan: dict[str, Any], design_analysis: dict[str, Any]
+) -> dict[str, Any]:
+    """Stage C's contract, backfilled from what stage A saw.
+
+    The contract exists so that workers running in parallel agree: six plugin
+    authors each see one card and nothing makes them pick the same corner
+    radius unless a shared value tells them to. The card treatment is the most
+    repeated thing on a page, so a contract missing it is a dashboard that is
+    subtly inconsistent in the way most visible to a reader.
+
+    Stage F's prompt has always told it to take chrome and typography from the
+    contract; stage C was never asked to put them there. Asking is the fix --
+    this is the guard that keeps a silent omission from costing the run, since
+    nothing downstream can tell an absent radius from a deliberate one.
+    """
+    contract = dict(plan.get("design_system") or {})
+    observed = design_analysis.get("global") or {}
+    for key in OBSERVED_CONTRACT_KEYS:
+        if not contract.get(key) and observed.get(key):
+            contract[key] = observed[key]
+    return contract
+
+
 def replies_of(user_answers: Any) -> dict[str, Any]:
     """The `{question_id: answer}` map, whichever shape it arrives in.
 

@@ -67,7 +67,7 @@ type RunState = 'idle' | 'uploading' | 'running' | 'waiting' | 'done' | 'error';
 
 /** What the run is blocked on. Only ever set while planning. */
 export type PendingAsk = {
-  kind: 'questions' | 'plan' | 'datasets';
+  kind: 'questions' | 'plan' | 'datasets' | 'plugins';
   label?: string;
   /** Sample tables the run proposes to write. Approved before anything else. */
   datasets?: {
@@ -89,6 +89,25 @@ export type PendingAsk = {
     options?: string[];
     default?: string;
   }[];
+  /** What stage F will build, one entry per distinct component. */
+  entries?: {
+    key: string;
+    kind: string;
+    title: string;
+    viz_type?: string | null;
+    what: string;
+    rationale?: string;
+    fidelity_loss?: string;
+    used_by: { region_id: string; title: string }[];
+    queries: number;
+    query_note?: string;
+    dataset?: string;
+    draws_data?: boolean;
+    crop?: string | null;
+  }[];
+  dropped?: { region_id: string; title: string; why?: string }[];
+  /** Prefix a crop filename is appended to; the run's own session path. */
+  crop_url?: string;
   /** False on the last round: the plan can no longer be sent back. */
   can_revise?: boolean;
   plan?: {

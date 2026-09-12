@@ -51,16 +51,16 @@ import {
   TimeGranularity,
   ContextMenuFilters,
   Currency,
-} from '@superset-ui/core';
+} from "@superset-ui/core";
 
 // Superset 6.1 moved these out of @superset-ui/core. This barrel is exactly
 // why: call sites never change, only this file does.
-import { GenericDataType } from '@apache-superset/core/common';
+import { GenericDataType } from "@apache-superset/core/common";
 import {
   styled as styledComponent,
   useTheme as useThemeHook,
-} from '@apache-superset/core/theme';
-import { t as translate } from '@apache-superset/core/translation';
+} from "@apache-superset/core/theme";
+import { t as translate } from "@apache-superset/core/translation";
 import {
   ControlPanelConfig,
   ControlPanelState,
@@ -70,7 +70,7 @@ import {
   sharedControls,
   getColorFormatters,
   ColorFormatters,
-} from '@superset-ui/chart-controls';
+} from "@superset-ui/chart-controls";
 
 export const styled = styledComponent;
 export const useTheme = useThemeHook;
@@ -118,12 +118,7 @@ export {
   GenericDataType,
 };
 
-export type {
-  ControlPanelConfig,
-  ControlPanelState,
-  Dataset,
-  ColorFormatters,
-};
+export type { ControlPanelConfig, ControlPanelState, Dataset, ColorFormatters };
 export {
   D3_TIME_FORMAT_OPTIONS,
   getStandardizedControls,
@@ -131,29 +126,34 @@ export {
   getColorFormatters,
 };
 
-export interface StableChartInput {
+// Generic over the plugin's own form data, so a component reads its custom
+// controls by name and typed. Fixed at `QueryFormData` it could not: every
+// control a plugin declares is absent from that type, and the only way to
+// reach one was `(formData as any).myControl` -- which this codebase rejects
+// and which silently survives renaming the control.
+export interface StableChartInput<F extends QueryFormData = QueryFormData> {
   data: DataRecord[];
   width: number;
   height: number;
   groupby: string[];
   metric: string;
-  formData: QueryFormData;
+  formData: F;
 }
 
 export interface StableFormatter {
   (value: number | string | null): string;
 }
 
-export function adaptChartProps(
-  props: ChartProps<QueryFormData>,
-): StableChartInput {
+export function adaptChartProps<F extends QueryFormData = QueryFormData>(
+  props: ChartProps<F>,
+): StableChartInput<F> {
   const { queriesData, formData, width, height } = props;
 
-  const groupby = ensureIsArray<QueryFormColumn>(formData?.groupby).map(item =>
-    getColumnLabel(item),
+  const groupby = ensureIsArray<QueryFormColumn>(formData?.groupby).map(
+    (item) => getColumnLabel(item),
   );
   const metricLabel =
-    typeof formData?.metric === 'object'
+    typeof formData?.metric === "object"
       ? formData?.metric?.label
       : formData?.metric;
 
@@ -162,7 +162,7 @@ export function adaptChartProps(
     width: width ?? 800,
     height: height ?? 600,
     groupby,
-    metric: metricLabel ?? '',
+    metric: metricLabel ?? "",
     formData,
   };
 }
@@ -184,6 +184,6 @@ export function extractMetricNames(
   metrics: (string | AdhocMetric)[],
 ): string[] {
   return metrics.map((metric: string | AdhocMetric) =>
-    typeof metric === 'string' ? metric : (metric.label as string),
+    typeof metric === "string" ? metric : (metric.label as string),
   );
 }

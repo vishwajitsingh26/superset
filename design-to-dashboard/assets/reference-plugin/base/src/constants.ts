@@ -16,38 +16,20 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-/* eslint-disable theme-colors/no-literal-colors */
 
-// CK Lens 5-color palette for donut chart. Order: light-blue, pink, yellow, orange, green
-export const CK_LENS_PALETTE = [
-  '#8ECFFF',
-  '#EA6AA7',
-  '#FBD064',
-  '#F6B273',
-  '#60C0A6',
-] as const;
-
-export const COLORS = {
-  'AWS Spend': '#8ECFFF',
-  'Azure Spend': '#F6B273',
-  'GCP Spend': '#60C0A6',
-  FALLBACK_1: '#EA6AA7',
-  FALLBACK_2: '#FBD064',
-} as const;
-
-export const CHART_COLORS = {
-  LABEL_PRIMARY: '#050505',
-  LABEL_SECONDARY: '#737373',
-  BORDER: '#D9D9D9',
-  DIVIDER: '#F0F0F0',
-  TOTAL_LABEL: '#737373',
-  TOTAL_VALUE: '#050505',
-  FALLBACK_DOT: '#ccc',
-} as const;
+// No colours live here. `check-custom-rules.js` rejects a `#rrggbb` anywhere
+// in plugin source, and disabling that rule -- which this file used to do --
+// teaches the wrong lesson twice over: the literal survives, and the way
+// around the check looks sanctioned.
+//
+// A chart's colours arrive two ways instead. The design's exact brand hexes
+// come in as *data*, through a colour control that stage D writes the design
+// system's palette into. Everything else -- label, border, divider -- is a
+// theme token read from `useTheme()`, so the chart follows light and dark.
 
 export const FONT = {
-  INTER: 'Inter, sans-serif',
-  ROBOTO: 'Roboto, sans-serif',
+  INTER: "Inter, sans-serif",
+  ROBOTO: "Roboto, sans-serif",
   CAPTION_SEMI_BOLD: 600,
   CAPTION_REGULAR: 400,
   BODY_SEMI_BOLD: 600,

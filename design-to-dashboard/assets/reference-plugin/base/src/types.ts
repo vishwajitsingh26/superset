@@ -22,13 +22,16 @@ import {
   QueryFormMetric,
   QueryFormColumn,
   Currency,
-} from './adapters/supersetAdapter';
+} from "./adapters/supersetAdapter";
 
 export interface PieChartStylesProps {
   height: number;
   width: number | string;
 }
 
+// Every control `controlPanel.ts` declares belongs here. A control the form
+// data type does not name can only be read through a cast, and then renaming
+// the control breaks the chart with no type error.
 export interface PieChartCustomizeProps {
   groupby: QueryFormColumn[];
   metric: QueryFormMetric;
@@ -37,6 +40,11 @@ export interface PieChartCustomizeProps {
   valueFormat?: string;
   currencyFormat?: Currency;
   tooltipBreakdownCol?: QueryFormColumn;
+  showDecimals?: boolean;
+  topN?: number;
+  tooltipEnabled?: boolean;
+  showTotalInTooltip?: boolean;
+  customColors?: string;
 }
 
 export type PieChartQueryFormData = QueryFormData &

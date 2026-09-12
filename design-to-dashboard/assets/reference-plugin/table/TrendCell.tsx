@@ -17,31 +17,33 @@
  * under the License.
  */
 
-import React from 'react';
-import Sparkline from '../Sparkline';
-import TrendUpSvg from '../../assets/TrendUp.svg';
-import TrendDownSvg from '../../assets/TrendDown.svg';
-import TrendSteadySvg from '../../assets/TrendSteady.svg';
-import { classifyTrend, TREND_LABELS } from '../../utils/trend';
+import React from "react";
+import { useTheme } from "../../adapters/supersetAdapter";
+import Sparkline from "../Sparkline";
+import TrendUpSvg from "../../assets/TrendUp.svg";
+import TrendDownSvg from "../../assets/TrendDown.svg";
+import TrendSteadySvg from "../../assets/TrendSteady.svg";
+import { classifyTrend, TREND_LABELS } from "../../utils/trend";
 
 // Sparkline with trend icon and label.
 const TrendCell: React.FC<{
   series: [number, number][];
   pct: number | null;
 }> = ({ series, pct }) => {
+  const theme = useTheme();
   const trend = classifyTrend(series);
   const TrendIcon =
-    trend === 'accelerating'
+    trend === "accelerating"
       ? TrendUpSvg
-      : trend === 'slight_dip'
+      : trend === "slight_dip"
         ? TrendDownSvg
         : TrendSteadySvg;
   return (
     <span
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        width: '100%',
+        display: "flex",
+        alignItems: "center",
+        width: "100%",
         gap: 4,
       }}
     >
@@ -50,21 +52,21 @@ const TrendCell: React.FC<{
       </span>
       <span
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
+          display: "inline-flex",
+          alignItems: "center",
           gap: 4,
-          whiteSpace: 'nowrap',
+          whiteSpace: "nowrap",
         }}
       >
         <TrendIcon width={12} height={12} style={{ flexShrink: 0 }} />
         <span
           style={{
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: "Inter, sans-serif",
             fontSize: 10,
             fontWeight: 400,
-            lineHeight: '16px',
-            letterSpacing: '0%',
-            color: '#2B2B2B',
+            lineHeight: "16px",
+            letterSpacing: "0%",
+            color: theme.colorText,
           }}
         >
           {TREND_LABELS[trend]}

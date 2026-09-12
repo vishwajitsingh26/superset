@@ -23,23 +23,23 @@ import {
   ChartProps,
   QueryFormData,
   t,
-} from '../adapters/supersetAdapter';
-import buildQuery from './buildQuery';
-import controlPanel from './controlPanel';
-import transformProps from './transformProps';
-import { PeriodFilterFormData } from '../types';
-import thumbnail from '../images/thumbnail.png';
+} from "../adapters/supersetAdapter";
+import buildQuery from "./buildQuery";
+import controlPanel from "./controlPanel";
+import transformProps from "./transformProps";
+import { PeriodFilterFormData } from "../types";
+import thumbnail from "../images/thumbnail.png";
 
 const metadata = new ChartMetadata({
-  name: t('Custom Period Filter'),
-  category: t('Custom Charts'),
+  name: t("Custom Period Filter"),
+  category: t("Custom Charts"),
   description: t(
-    'Two dropdowns in one widget: an anchor month and a time grain. Emits the ' +
+    "Two dropdowns in one widget: an anchor month and a time grain. Emits the " +
       'grain and a matching "last N periods" range together, so charts re-bucket ' +
-      'and re-window from a single consistent selection.',
+      "and re-window from a single consistent selection.",
   ),
   behaviors: [Behavior.InteractiveChart, Behavior.NativeFilter],
-  tags: [t('Custom Charts'), t('Filter'), t('Dropdown'), t('Time Grain')],
+  tags: [t("Custom Charts"), t("Filter"), t("Dropdown"), t("Time Grain")],
   thumbnail,
 });
 
@@ -52,7 +52,7 @@ export default class CustomPeriodFilterPlugin extends ChartPlugin<
       buildQuery,
       controlPanel,
       loadChart: () =>
-        import('../components/PeriodFilter').then(module => module.default),
+        import("../components/PeriodFilter").then((module) => module.default),
       metadata,
       transformProps,
     });

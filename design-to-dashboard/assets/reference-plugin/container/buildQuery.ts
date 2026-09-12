@@ -16,22 +16,19 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import {
-  buildQueryContext,
-  QueryFormData,
-} from '../adapters/supersetAdapter';
+import { buildQueryContext, QueryFormData } from "../adapters/supersetAdapter";
 
 // The wrapper has no real query of its own.
 export default function buildQuery(formData: QueryFormData) {
-  return buildQueryContext(formData, baseQueryObject => [
+  return buildQueryContext(formData, (baseQueryObject) => [
     {
       ...baseQueryObject,
       // Trivial expression with no aggregation. Picks at most 1 row.
       metrics: [
         {
-          expressionType: 'SQL',
-          sqlExpression: '1',
-          label: '_wrapper_noop',
+          expressionType: "SQL",
+          sqlExpression: "1",
+          label: "_wrapper_noop",
           hasCustomLabel: true,
         },
       ],

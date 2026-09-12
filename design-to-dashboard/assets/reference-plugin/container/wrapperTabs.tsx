@@ -16,18 +16,18 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { ControlSetItem } from '@superset-ui/chart-controls';
-import { t } from '../../adapters/supersetAdapter';
-import TabsEditor from '../../components/editor/TabsEditor';
-import { validateWrapperTabs } from '../../utils/validation';
+import { ControlSetItem } from "@superset-ui/chart-controls";
+import { t } from "../../adapters/supersetAdapter";
+import TabsEditor from "../../components/editor/TabsEditor";
+import { validateWrapperTabs } from "../../utils/validation";
 
 export const wrapperTabsControlSetItem: ControlSetItem = {
-  name: 'wrapper_tabs',
+  name: "wrapper_tabs",
   config: {
     type: TabsEditor,
-    label: t('Tabs'),
+    label: t("Tabs"),
     description: t(
-      'Manage the tabs in this wrapper. Each tab references an existing saved chart.',
+      "Manage the tabs in this wrapper. Each tab references an existing saved chart.",
     ),
     default: [],
     renderTrigger: true,
@@ -37,7 +37,7 @@ export const wrapperTabsControlSetItem: ControlSetItem = {
         return result === true ? false : result;
       },
     ],
-    mapStateToProps: state => ({
+    mapStateToProps: (state) => ({
       // Pass the wrapper's own slice id so the picker can exclude self.
       wrapperSliceId: state?.form_data?.slice_id,
     }),

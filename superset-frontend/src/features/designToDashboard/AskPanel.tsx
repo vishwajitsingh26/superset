@@ -143,6 +143,37 @@ const Secondary = styled.button`
   `}
 `;
 
+const Card = styled.li`
+  ${({ theme }) => `
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.sizeUnit}px;
+  `}
+`;
+
+const Shot = styled.img`
+  ${({ theme }) => `
+    max-width: 100%;
+    border: 1px solid ${theme.colorBorderSecondary};
+    border-radius: ${theme.borderRadius}px;
+    margin: ${theme.sizeUnit}px 0;
+  `}
+`;
+
+const Tag = styled.span<{ tone?: 'new' | 'muted' }>`
+  ${({ theme, tone }) => `
+    display: inline-block;
+    padding: 0 ${theme.sizeUnit}px;
+    margin-right: ${theme.sizeUnit}px;
+    border-radius: ${theme.borderRadius}px;
+    font-size: ${theme.fontSizeSM}px;
+    background-color: ${
+      tone === 'new' ? theme.colorPrimaryBg : theme.colorBgTextHover
+    };
+    color: ${tone === 'new' ? theme.colorPrimaryText : theme.colorTextSecondary};
+  `}
+`;
+
 type Props = {
   pending: PendingAsk;
   onReply: (answer: Record<string, unknown>) => void;
@@ -157,6 +188,8 @@ export default function AskPanel({ pending, onReply }: Props) {
     ),
   );
   const [feedback, setFeedback] = useState('');
+  // Per-plugin notes for the stage F review, keyed by entry.
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   if (pending.kind === 'datasets') {
     const datasets = pending.datasets ?? [];
@@ -188,6 +221,102 @@ export default function AskPanel({ pending, onReply }: Props) {
           <StepLine>
             {t(
               'Every number in these tables is read off the design, not your data.',
+            )}
+          </StepLine>
+        </Actions>
+      </Block>
+    );
+  }
+
+  if (pending.kind === 'plugins') {
+    const entries = pending.entries ?? [];
+    const dropped = pending.dropped ?? [];
+    const counts = pending.counts ?? {};
+    return (
+      <Block data-test="d2d-plugin-review">
+        {pending.label && <Ask>{pending.label}</Ask>}
+        <Why>
+          {t(
+            '%s plugin(s) for %s section(s), %s quer(ies) each time the dashboard loads.',
+            String(counts.plugins ?? 0),
+            String(counts.regions_covered ?? 0),
+            String(counts.queries_per_load ?? 0),
+          )}
+        </Why>
+        <Steps>
+          {entries.map(entry => (
+            <Card key={entry.key}>
+              <StepWhat>
+                <Tag tone={entry.kind === 'new_plugin' ? 'new' : 'muted'}>
+                  {entry.kind === 'new_plugin' ? t('NEW') : entry.kind}
+                </Tag>
+                {entry.title}
+              </StepWhat>
+              {entry.crop && pending.crop_url && (
+                <Shot
+                  src={`${pending.crop_url}${entry.crop}`}
+                  alt={entry.title}
+                  loading="lazy"
+                />
+              )}
+              <StepLine>
+                {entry.what}
+                {entry.viz_type ? ` — ${entry.viz_type}` : ''}
+              </StepLine>
+              <StepLine>
+                {entry.used_by.length > 1
+                  ? t(
+                      'Built once, used by %s sections: %s',
+                      String(entry.used_by.length),
+                      entry.used_by.map(u => u.title).join(', '),
+                    )
+                  : t('Used by %s', entry.used_by[0]?.title ?? '')}
+              </StepLine>
+              <StepLine>
+                {t('%s quer(ies) per load', String(entry.queries))}
+                {entry.query_note ? ` — ${entry.query_note}` : ''}
+              </StepLine>
+              <StepLine tone={entry.draws_data ? undefined : 'warn'}>
+                {t('Data')}: {entry.dataset}
+              </StepLine>
+              {entry.fidelity_loss && (
+                <StepLine tone="warn">
+                  {t('Will differ')}: {entry.fidelity_loss}
+                </StepLine>
+              )}
+              {entry.kind === 'new_plugin' && (
+                <FreeText
+                  value={notes[entry.key] ?? ''}
+                  placeholder={t('Anything to change about this one?')}
+                  onChange={e =>
+                    setNotes(prev => ({ ...prev, [entry.key]: e.target.value }))
+                  }
+                />
+              )}
+            </Card>
+          ))}
+        </Steps>
+        {dropped.length > 0 && (
+          <StepLine tone="warn">
+            {t('Not being built: %s', dropped.map(d => d.title).join(', '))}
+          </StepLine>
+        )}
+        <Actions>
+          <Primary
+            type="button"
+            onClick={() => onReply({ approved: true, notes })}
+          >
+            {t('Build these')}
+          </Primary>
+          <Secondary
+            type="button"
+            onClick={() => onReply({ approved: false, feedback })}
+          >
+            {t('Cancel the run')}
+          </Secondary>
+          <StepLine>
+            {t(
+              'Notes go to the plugin they sit under. To change what gets built, send the plan back a step.',
             )}
           </StepLine>
         </Actions>

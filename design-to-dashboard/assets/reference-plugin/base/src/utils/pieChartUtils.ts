@@ -17,10 +17,7 @@
  * under the License.
  */
 /* eslint-disable no-restricted-syntax */
-import {
-  CK_LENS_PALETTE,
-  DEFAULT_TOP_N,
-} from '../constants';
+import { DEFAULT_TOP_N } from "../constants";
 
 export interface FormData {
   groupby?: string[];
@@ -39,13 +36,19 @@ export interface BreakdownMap {
 }
 
 // Parse user-provided color string (comma-separated hex) into an array.
-export function parseColors(input?: string): string[] {
-  if (!input || !input.trim()) return [...CK_LENS_PALETTE];
+// The fallback is passed in, not held here: a default palette written into
+// a util is a literal colour in plugin source. The caller builds it from
+// theme tokens, so an unconfigured chart still follows light and dark.
+export function parseColors(
+  input: string | undefined,
+  fallback: string[],
+): string[] {
+  if (!input || !input.trim()) return [...fallback];
   const parsed = input
-    .split(',')
-    .map(c => c.trim())
-    .filter(c => /^#[0-9A-Fa-f]{3,8}$/.test(c));
-  return parsed.length > 0 ? parsed : [...CK_LENS_PALETTE];
+    .split(",")
+    .map((c) => c.trim())
+    .filter((c) => /^#[0-9A-Fa-f]{3,8}$/.test(c));
+  return parsed.length > 0 ? parsed : [...fallback];
 }
 
 // Get color from the provided palette by index (cycles).
@@ -59,12 +62,12 @@ export function formatNumber(
 ): string {
   const num = Number(val || 0);
   if (showDecimals) {
-    return num.toLocaleString('en-IN', {
+    return num.toLocaleString("en-IN", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
   }
-  return num.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  return num.toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
 
 // Aggregates data rows by the first groupby column (pie slices).
@@ -74,17 +77,17 @@ export function buildProviderMap(
 ): Record<string, BreakdownMap> {
   const groupbyCols = formData.groupby || [];
   const metricLabel =
-    typeof formData.metric === 'object'
+    typeof formData.metric === "object"
       ? formData.metric?.label
       : formData.metric;
 
-  const breakdownCol = formData.tooltipBreakdownCol || groupbyCols[1] || '';
+  const breakdownCol = formData.tooltipBreakdownCol || groupbyCols[1] || "";
 
   const providerMap: Record<string, BreakdownMap> = {};
 
-  data.forEach(row => {
+  data.forEach((row) => {
     const provider = String(row[groupbyCols[0]]);
-    const value = Number(row[metricLabel ?? ''] || 0);
+    const value = Number(row[metricLabel ?? ""] || 0);
 
     if (!providerMap[provider]) {
       providerMap[provider] = { total: 0, breakdown: {} };
@@ -92,7 +95,7 @@ export function buildProviderMap(
     providerMap[provider].total += value;
 
     if (breakdownCol) {
-      const category = String(row[breakdownCol] ?? '');
+      const category = String(row[breakdownCol] ?? "");
       if (!providerMap[provider].breakdown[category]) {
         providerMap[provider].breakdown[category] = 0;
       }
@@ -133,10 +136,10 @@ export function getTopNSlices(
 
   const othersTotal = othersSlices.reduce((sum, s) => sum + s.value, 0);
 
-  providerMap['Others'] = { total: othersTotal, breakdown: {} };
+  providerMap["Others"] = { total: othersTotal, breakdown: {} };
 
   pieDataResult.push({
-    name: 'Others',
+    name: "Others",
     value: othersTotal,
     itemStyle: { color: GetColor(palette, visibleCount) },
   });

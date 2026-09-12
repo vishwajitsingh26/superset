@@ -21,19 +21,19 @@ import {
   ChartMetadata,
   ChartPlugin,
   t,
-} from '../adapters/supersetAdapter';
-import buildQuery from './buildQuery';
-import controlPanel from './controlPanel';
-import transformProps from './transformProps';
-import { CustomWrapperChartFormData } from '../types';
-import thumbnail from '../images/thumbnail.png';
+} from "../adapters/supersetAdapter";
+import buildQuery from "./buildQuery";
+import controlPanel from "./controlPanel";
+import transformProps from "./transformProps";
+import { CustomWrapperChartFormData } from "../types";
+import thumbnail from "../images/thumbnail.png";
 
 const metadata = new ChartMetadata({
-  name: t('Tabbed Widget'),
-  category: t('Custom Charts'),
+  name: t("Tabbed Widget"),
+  category: t("Custom Charts"),
   description: t(
-    'A widget that hosts multiple existing charts as tabs, with shared filters, expand, and download. ' +
-      'Each tab references an existing saved chart by id.',
+    "A widget that hosts multiple existing charts as tabs, with shared filters, expand, and download. " +
+      "Each tab references an existing saved chart by id.",
   ),
   behaviors: [
     Behavior.InteractiveChart,
@@ -41,10 +41,13 @@ const metadata = new ChartMetadata({
     Behavior.DrillToDetail,
     Behavior.DrillBy,
   ],
-  tags: [t('Custom Charts'), t('Composite'), t('Tabs')],
+  tags: [t("Custom Charts"), t("Composite"), t("Tabs")],
   thumbnail,
-  skipDataFetch: true,
 });
+
+// A wrapper draws no data of its own. It says so by returning no query object
+// from `buildQuery`, not by a flag on the metadata: `skipDataFetch` is not a
+// field of `ChartMetadataConfig` and setting it fails the build.
 
 export default class CustomWrapperChartPlugin extends ChartPlugin<CustomWrapperChartFormData> {
   constructor() {
@@ -52,11 +55,11 @@ export default class CustomWrapperChartPlugin extends ChartPlugin<CustomWrapperC
       buildQuery,
       controlPanel,
       loadChart: () =>
-        import('../components/WrapperChart/WrapperChart').then(
-          module => module.default,
+        import("../components/WrapperChart/WrapperChart").then(
+          (module) => module.default,
         ),
       metadata,
-      transformProps: transformProps as any,
+      transformProps,
     });
   }
 }

@@ -20,7 +20,7 @@ import {
   ChartProps,
   QueryFormData,
   adaptChartProps,
-} from '../adapters/supersetAdapter';
+} from "../adapters/supersetAdapter";
 
 export default function transformProps(chartProps: ChartProps<QueryFormData>) {
   return adaptChartProps(chartProps);

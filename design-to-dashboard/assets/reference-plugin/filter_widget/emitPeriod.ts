@@ -16,12 +16,12 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { ExtraFormData } from '../adapters/supersetAdapter';
-import { GRAIN_SQLA } from '../constants';
-import { GrainKey } from '../types';
+import { ExtraFormData } from "../adapters/supersetAdapter";
+import { GRAIN_SQLA } from "../constants";
+import { GrainKey } from "../types";
 
 function pad(n: number): string {
-  return String(n).padStart(2, '0');
+  return String(n).padStart(2, "0");
 }
 
 // First instant after the selected anchor month (exclusive upper bound).
@@ -37,18 +37,18 @@ function alignEnd(end: Date, grain: GrainKey): Date {
   const y = end.getUTCFullYear();
   const m = end.getUTCMonth();
   switch (grain) {
-    case 'weekly': {
+    case "weekly": {
       const d = new Date(end.getTime());
       const dow = d.getUTCDay();
       d.setUTCDate(d.getUTCDate() + ((8 - (dow === 0 ? 7 : dow)) % 7));
       return d;
     }
-    case 'quarterly': {
+    case "quarterly": {
       const q = Math.floor(m / 3) * 3;
       if (m === q && end.getUTCDate() === 1) return end;
       return new Date(Date.UTC(y, q + 3, 1));
     }
-    case 'yearly': {
+    case "yearly": {
       if (m === 0 && end.getUTCDate() === 1) return end;
       return new Date(Date.UTC(y + 1, 0, 1));
     }
@@ -62,16 +62,16 @@ function windowStart(end: Date, grain: GrainKey, count: number): Date {
   const d = new Date(end.getTime());
   const n = Math.max(1, Math.floor(count || 1));
   switch (grain) {
-    case 'daily':
+    case "daily":
       d.setUTCDate(d.getUTCDate() - n);
       break;
-    case 'weekly':
+    case "weekly":
       d.setUTCDate(d.getUTCDate() - n * 7);
       break;
-    case 'quarterly':
+    case "quarterly":
       d.setUTCMonth(d.getUTCMonth() - n * 3);
       break;
-    case 'yearly':
+    case "yearly":
       d.setUTCFullYear(d.getUTCFullYear() - n);
       break;
     default:
@@ -123,8 +123,8 @@ export function buildPeriodExtraFormData(
   // bound to their temporal column.
   if (dateColumn) {
     extra.filters = [
-      { col: dateColumn, op: '>=', val: start },
-      { col: dateColumn, op: '<', val: endExclusive },
+      { col: dateColumn, op: ">=", val: start },
+      { col: dateColumn, op: "<", val: endExclusive },
     ];
   }
 

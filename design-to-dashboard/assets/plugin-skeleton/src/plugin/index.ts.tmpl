@@ -28,33 +28,27 @@ import buildQuery from './buildQuery';
 import controlPanel from './controlPanel';
 import transformProps from './transformProps';
 import thumbnail from '../images/thumbnail.png';
-import { PieChartQueryFormData } from '../types';
+import { {{form_data_type}} } from '../types';
 
-export default class CustomPieChartPlugin extends ChartPlugin<
-  PieChartQueryFormData,
+export default class {{class_name}} extends ChartPlugin<
+  {{form_data_type}},
   ChartProps<QueryFormData>
 > {
   constructor() {
     const metadata = new ChartMetadata({
-      behaviors: [
-        Behavior.InteractiveChart,
-        Behavior.DrillToDetail,
-        Behavior.DrillBy,
-      ],
-      category: t('Part of a Whole'),
-      description: t(
-        'A CK Lens cost pie chart that displays cloud spend distribution across cloud providers with interactive drill-down.',
-      ),
-      name: t('CK Lens Pie Chart'),
-      tags: [t('Categorical'), t('Comparison'), t('CK Lens'), t('Popular')],
+      behaviors: [{{behaviors}}],
+      category: t('{{category}}'),
+      description: t('{{description}}'),
+      name: t('{{display_name}}'),
+      tags: [{{tags}}],
       thumbnail,
-      enableNoResults: false,
+      useLegacyApi: false,
     });
 
     super({
       buildQuery,
       controlPanel,
-      loadChart: () => import('../PieChart'),
+      loadChart: () => import('../{{component}}'),
       metadata,
       transformProps,
     });

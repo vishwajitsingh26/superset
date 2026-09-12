@@ -16,27 +16,27 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { ChartProps, SetDataMaskHook } from '../adapters/supersetAdapter';
+import { ChartProps, SetDataMaskHook } from "../adapters/supersetAdapter";
 import {
   DEFAULT_GRAIN,
   DEFAULT_GRAIN_COUNTS,
   GRAIN_LABELS,
   GRAIN_ORDER,
-} from '../constants';
+} from "../constants";
 import {
   GrainKey,
   GrainOption,
   PeriodFilterFormData,
   PeriodFilterProps,
   PeriodFilterValue,
-} from '../types';
-import { MAX_PERIOD_LABEL, MIN_PERIOD_LABEL } from './buildQuery';
-import { buildMonthOptions, parsePeriod } from '../utils/parseBounds';
+} from "../types";
+import { MAX_PERIOD_LABEL, MIN_PERIOD_LABEL } from "./buildQuery";
+import { buildMonthOptions, parsePeriod } from "../utils/parseBounds";
 
 function getRowValue(row: Record<string, unknown>, key: string): unknown {
   if (key in row) return row[key];
   const lower = key.toLowerCase();
-  const match = Object.keys(row).find(k => k.toLowerCase() === lower);
+  const match = Object.keys(row).find((k) => k.toLowerCase() === lower);
   return match ? row[match] : undefined;
 }
 
@@ -61,7 +61,7 @@ function buildGrainOptions(
   counts: Record<GrainKey, number>,
 ): GrainOption[] {
   const enabledSet = new Set(enabled);
-  return GRAIN_ORDER.filter(g => enabledSet.has(g)).map(key => ({
+  return GRAIN_ORDER.filter((g) => enabledSet.has(g)).map((key) => ({
     key,
     label: GRAIN_LABELS[key],
     count: counts[key],
@@ -77,45 +77,49 @@ export default function transformProps(
       filterState?: { value?: PeriodFilterValue | null };
     };
 
-  const raw = (chartProps as unknown as Record<string, unknown>)
-    .rawFormData as Record<string, unknown> | undefined;
+  const raw = (chartProps as unknown as Record<string, unknown>).rawFormData as
+    | Record<string, unknown>
+    | undefined;
   const formData = chartProps.formData as unknown as Record<string, unknown>;
 
   const dateColumn =
-    (readField(raw, formData, 'date_column', 'dateColumn') as string) ?? '';
+    (readField(raw, formData, "date_column", "dateColumn") as string) ?? "";
 
   const enabledRaw = (readField(
     raw,
     formData,
-    'enabled_grains',
-    'enabledGrains',
+    "enabled_grains",
+    "enabledGrains",
   ) ?? GRAIN_ORDER) as GrainKey[];
   const enabled = Array.isArray(enabledRaw) ? enabledRaw : GRAIN_ORDER;
 
   const counts: Record<GrainKey, number> = {
-    daily: toCount(readField(raw, formData, 'daily_count', 'dailyCount'), 'daily'),
+    daily: toCount(
+      readField(raw, formData, "daily_count", "dailyCount"),
+      "daily",
+    ),
     weekly: toCount(
-      readField(raw, formData, 'weekly_count', 'weeklyCount'),
-      'weekly',
+      readField(raw, formData, "weekly_count", "weeklyCount"),
+      "weekly",
     ),
     monthly: toCount(
-      readField(raw, formData, 'monthly_count', 'monthlyCount'),
-      'monthly',
+      readField(raw, formData, "monthly_count", "monthlyCount"),
+      "monthly",
     ),
     quarterly: toCount(
-      readField(raw, formData, 'quarterly_count', 'quarterlyCount'),
-      'quarterly',
+      readField(raw, formData, "quarterly_count", "quarterlyCount"),
+      "quarterly",
     ),
     yearly: toCount(
-      readField(raw, formData, 'yearly_count', 'yearlyCount'),
-      'yearly',
+      readField(raw, formData, "yearly_count", "yearlyCount"),
+      "yearly",
     ),
   };
 
   const grainOptions = buildGrainOptions(enabled, counts);
 
   const defaultGrain =
-    (readField(raw, formData, 'default_grain', 'defaultGrain') as GrainKey) ??
+    (readField(raw, formData, "default_grain", "defaultGrain") as GrainKey) ??
     DEFAULT_GRAIN;
 
   const data = (queriesData?.[0]?.data ?? []) as Record<string, unknown>[];

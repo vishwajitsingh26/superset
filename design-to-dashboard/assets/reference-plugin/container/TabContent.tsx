@@ -17,23 +17,28 @@
  * under the License.
  */
 // @ts-ignore – React is needed at runtime for JSX
-import React, { FC, useEffect, useMemo, useRef } from 'react';
-import { useDispatch, useSelector, useStore } from 'react-redux';
-import ChartContainer from 'src/components/Chart/ChartContainer';
-import { addChart, triggerQuery } from 'src/components/Chart/chartAction';
-import { chart as initChart } from 'src/components/Chart/chartReducer';
-import { PLACEHOLDER_DATASOURCE } from 'src/dashboard/constants';
-import { fetchDatasourceMetadata } from 'src/dashboard/actions/datasources';
-import { Empty } from '@superset-ui/core/components';
-import { SupersetClient } from '@superset-ui/core';
-import { styled, t, ExtraFormData } from '../../adapters/supersetAdapter';
-import { WrapperFilter, WrapperFilterValues } from '../../types';
+import React, { FC, useEffect, useMemo, useRef } from "react";
+import { useDispatch, useSelector, useStore } from "react-redux";
+import ChartContainer from "src/components/Chart/ChartContainer";
+import { addChart, triggerQuery } from "src/components/Chart/chartAction";
+import { chart as initChart } from "src/components/Chart/chartReducer";
+import { PLACEHOLDER_DATASOURCE } from "src/dashboard/constants";
+// ChartContainer's props are properly typed upstream. Naming those types here
+// is what removes the casts: a local state shape that says `unknown` has to be
+// forced into them, and `as any` is how that was done.
+import type { ChartState, ChartStatus, Datasource } from "src/explore/types";
+import { fetchDatasourceMetadata } from "src/dashboard/actions/datasources";
+import { Empty } from "@superset-ui/core/components";
+import { SupersetClient } from "@superset-ui/core";
+import type { JsonObject, QueryFormData } from "@superset-ui/core";
+import { styled, t, ExtraFormData } from "../../adapters/supersetAdapter";
+import { WrapperFilter, WrapperFilterValues } from "../../types";
 import {
   mergeExtraFormData,
   wrapperFilterValuesAsExtraFormData,
-} from '../../utils/extraFormData';
+} from "../../utils/extraFormData";
 
-const NATIVE_FILTER_PREFIX = 'NATIVE_FILTER-';
+const NATIVE_FILTER_PREFIX = "NATIVE_FILTER-";
 
 interface TabContentProps {
   chartId: number;
@@ -51,16 +56,16 @@ interface RootState {
     number,
     {
       id: number;
-      chartStatus?: string;
+      chartStatus?: ChartStatus;
       chartUpdateStartTime?: number;
       chartUpdateEndTime?: number;
       chartAlert?: string | null;
       chartStackTrace?: string | null;
-      queriesResponse?: unknown;
+      queriesResponse?: ChartState["queriesResponse"];
       triggerQuery?: boolean;
-      annotationData?: unknown;
-      form_data?: Record<string, unknown>;
-      latestQueryFormData?: Record<string, unknown>;
+      annotationData?: JsonObject;
+      latestQueryFormData?: QueryFormData;
+
       queryController?: AbortController | null;
     }
   >;
@@ -70,12 +75,12 @@ interface RootState {
       { slice_id: number; slice_name: string; viz_type: string }
     >;
   };
-  datasources?: Record<string, unknown>;
+  datasources?: Record<string, Datasource>;
   dataMask?: Record<
     string,
     | {
         id?: string;
-        ownState?: unknown;
+        ownState?: JsonObject;
         filterState?: unknown;
         extraFormData?: ExtraFormData;
       }
@@ -85,17 +90,16 @@ interface RootState {
     common?: { conf?: { SUPERSET_WEBSERVER_TIMEOUT?: number } };
     crossFiltersEnabled?: boolean;
   };
-  dashboardState?: { datasetsStatus?: 'loading' | 'error' | 'complete' };
+  dashboardState?: { datasetsStatus?: "loading" | "error" | "complete" };
 }
 
 const Root = styled.div<{ $minHeight?: number; $autoHeight?: boolean }>`
   position: relative;
   width: 100%;
   min-height: ${({ $autoHeight, $minHeight }) =>
-    $autoHeight ? '0' : $minHeight ? `${$minHeight}px` : '0'};
-  height: ${({ $autoHeight }) => ($autoHeight ? 'auto' : 'fit-content')};
-  max-height: ${({ $minHeight }) =>
-    $minHeight ? `${$minHeight}px` : 'none'};
+    $autoHeight ? "0" : $minHeight ? `${$minHeight}px` : "0"};
+  height: ${({ $autoHeight }) => ($autoHeight ? "auto" : "fit-content")};
+  max-height: ${({ $minHeight }) => ($minHeight ? `${$minHeight}px` : "none")};
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -108,9 +112,9 @@ const Root = styled.div<{ $minHeight?: number; $autoHeight?: boolean }>`
         ? `
       min-height: 0 !important;
       height: auto !important;
-      max-height: ${$minHeight ? `${$minHeight}px` : 'none'} !important;
+      max-height: ${$minHeight ? `${$minHeight}px` : "none"} !important;
     `
-        : ''}
+        : ""}
   }
 
   .slice_container {
@@ -119,9 +123,9 @@ const Root = styled.div<{ $minHeight?: number; $autoHeight?: boolean }>`
         ? `
       justify-content: flex-start !important;
       height: auto !important;
-      max-height: ${$minHeight ? `${$minHeight}px` : 'none'} !important;
+      max-height: ${$minHeight ? `${$minHeight}px` : "none"} !important;
     `
-        : ''}
+        : ""}
   }
 
   > * {
@@ -172,7 +176,7 @@ function useBootstrapEmbeddedChart(
         if (!chartData) return;
 
         const params =
-          typeof chartData.params === 'string'
+          typeof chartData.params === "string"
             ? JSON.parse(chartData.params)
             : chartData.params || {};
         const datasourceId = chartData.datasource_id as number;
@@ -202,20 +206,20 @@ function useBootstrapEmbeddedChart(
 
         if (!hasSlice) {
           dispatch({
-            type: 'ADD_SLICES',
+            type: "ADD_SLICES",
             payload: {
               slices: {
                 [chartId]: {
                   slice_id: chartId,
-                  slice_name: (chartData.slice_name as string) || '',
-                  slice_url: (chartData.url as string) || '',
+                  slice_name: (chartData.slice_name as string) || "",
+                  slice_url: (chartData.url as string) || "",
                   form_data: formData,
                   viz_type:
-                    (chartData.viz_type as string) || params.viz_type || '',
+                    (chartData.viz_type as string) || params.viz_type || "",
                   datasource: datasourceKey,
-                  description: (chartData.description as string) || '',
+                  description: (chartData.description as string) || "",
                   description_markeddown:
-                    (chartData.description_markeddown as string) || '',
+                    (chartData.description_markeddown as string) || "",
                 },
               },
             },
@@ -226,7 +230,7 @@ function useBootstrapEmbeddedChart(
           dispatch(fetchDatasourceMetadata(datasourceKey) as unknown as never);
         }
       } catch (error: unknown) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
         bootstrappedRef.current.delete(chartId);
@@ -278,19 +282,19 @@ const TabContent: FC<TabContentProps> = ({
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    if (slice?.viz_type !== 'custom_hierarchy_table') return;
-    const chartContainer = root.querySelector<HTMLElement>('.chart-container');
+    if (slice?.viz_type !== "custom_hierarchy_table") return;
+    const chartContainer = root.querySelector<HTMLElement>(".chart-container");
     if (!chartContainer) return;
     const rendered =
-      chart?.chartStatus === 'rendered' || chart?.chartStatus === 'success';
-    chartContainer.style.minHeight = rendered ? 'auto' : `${height}px`;
+      chart?.chartStatus === "rendered" || chart?.chartStatus === "success";
+    chartContainer.style.minHeight = rendered ? "auto" : `${height}px`;
   });
 
   const datasource = useSelector((s: RootState) => {
-    const formData = chart?.form_data;
+    const formData = chart?.latestQueryFormData;
     const datasourceKey = formData?.datasource;
     if (
-      typeof datasourceKey === 'string' &&
+      typeof datasourceKey === "string" &&
       s.datasources &&
       s.datasources[datasourceKey]
     ) {
@@ -303,7 +307,7 @@ const TabContent: FC<TabContentProps> = ({
 
   const nativeFiltersJson = useSelector((s: RootState) => {
     const dm = s.dataMask;
-    if (!dm) return '';
+    if (!dm) return "";
     let merged: ExtraFormData = {};
     Object.entries(dm).forEach(([key, entry]) => {
       if (key === String(chartId)) return;
@@ -316,7 +320,7 @@ const TabContent: FC<TabContentProps> = ({
         merged = mergeExtraFormData(merged, entry!.extraFormData!);
       }
     });
-    return Object.keys(merged).length > 0 ? JSON.stringify(merged) : '';
+    return Object.keys(merged).length > 0 ? JSON.stringify(merged) : "";
   });
 
   const nativeFiltersExtraFormData: ExtraFormData | undefined = useMemo(
@@ -347,7 +351,7 @@ const TabContent: FC<TabContentProps> = ({
       if (chart.triggerQuery) return;
 
       const hasLiveRequest =
-        chart.chartStatus === 'loading' &&
+        chart.chartStatus === "loading" &&
         chart.queryController &&
         !chart.queryController.signal.aborted;
       if (hasLiveRequest) return;
@@ -393,7 +397,7 @@ const TabContent: FC<TabContentProps> = ({
     wrapperFilterMountedRef.current = true;
   }, [wrapperFilterSignature, ready, chartId, dispatch]);
 
-  const formData = useMemo(() => {
+  const formData = useMemo<QueryFormData | null>(() => {
     if (!chart || !slice) return null;
 
     const wrapperExtra: ExtraFormData =
@@ -401,7 +405,8 @@ const TabContent: FC<TabContentProps> = ({
         ? wrapperFilterValuesAsExtraFormData(wrapperFilters, filterValues)
         : {};
 
-    const baseExtra = (chart.form_data?.extra_form_data ?? {}) as ExtraFormData;
+    const baseExtra = (chart.latestQueryFormData?.extra_form_data ??
+      {}) as ExtraFormData;
 
     let mergedExtra = baseExtra;
     if (nativeFiltersExtraFormData) {
@@ -410,7 +415,7 @@ const TabContent: FC<TabContentProps> = ({
     mergedExtra = mergeExtraFormData(mergedExtra, wrapperExtra);
 
     return {
-      ...(chart.form_data ?? {}),
+      ...(chart.latestQueryFormData ?? {}),
       slice_id: slice.slice_id,
       viz_type: slice.viz_type,
       dashboardId,
@@ -428,19 +433,31 @@ const TabContent: FC<TabContentProps> = ({
   if (!ready || !formData) {
     if (hideLoading) {
       return (
-        <Root $minHeight={height} ref={rootRef} data-test={`wrapper-tab-${chartId}`} />
+        <Root
+          $minHeight={height}
+          ref={rootRef}
+          data-test={`wrapper-tab-${chartId}`}
+        />
       );
     }
     return (
-      <Root $minHeight={height} ref={rootRef} data-test={`wrapper-tab-${chartId}`} />
+      <Root
+        $minHeight={height}
+        ref={rootRef}
+        data-test={`wrapper-tab-${chartId}`}
+      />
     );
   }
 
   if (!chart.id) {
     return (
-      <Root $minHeight={height} ref={rootRef} data-test={`wrapper-tab-${chartId}`}>
+      <Root
+        $minHeight={height}
+        ref={rootRef}
+        data-test={`wrapper-tab-${chartId}`}
+      >
         <Centered>
-          <Empty description={t('Chart not available')} />
+          <Empty description={t("Chart not available")} />
         </Centered>
       </Root>
     );
@@ -450,8 +467,8 @@ const TabContent: FC<TabContentProps> = ({
     <Root
       $minHeight={height}
       $autoHeight={
-        slice.viz_type === 'custom_hierarchy_table' &&
-        (chart.chartStatus === 'rendered' || chart.chartStatus === 'success')
+        slice.viz_type === "custom_hierarchy_table" &&
+        (chart.chartStatus === "rendered" || chart.chartStatus === "success")
       }
       ref={rootRef}
       data-test={`wrapper-tab-${chartId}`}
@@ -464,16 +481,16 @@ const TabContent: FC<TabContentProps> = ({
         addFilter={noop}
         onFilterMenuOpen={noop}
         onFilterMenuClose={noop}
-        annotationData={chart.annotationData as any}
+        annotationData={chart.annotationData}
         chartAlert={chart.chartAlert ?? undefined}
         chartId={chartId}
-        chartStatus={chart.chartStatus as any}
-        datasource={datasource as any}
+        chartStatus={chart.chartStatus}
+        datasource={datasource}
         dashboardId={dashboardId}
         initialValues={{}}
-        formData={formData as any}
-        ownState={dataMaskEntry?.ownState as any}
-        queriesResponse={chart.queriesResponse as any}
+        formData={formData}
+        ownState={dataMaskEntry?.ownState}
+        queriesResponse={chart.queriesResponse}
         timeout={timeout}
         triggerQuery={chart.triggerQuery}
         vizType={slice.viz_type}

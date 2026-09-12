@@ -1,6 +1,6 @@
 # Stage E — Layout
 
-**Input:** the design image, plus Stage A `regions` (`region_id`, `bbox`, `role`, `title` only) + `global`, Stage C `decisions` (`ref`, `region_id`, `slice_name`, `decision`).
+**Input:** the design image, plus Stage A `regions` (`region_id`, `bbox`, `role`, `title`, `tab`) + `global`, Stage C `decisions` (`ref`, `region_id`, `slice_name`, `decision`), the measured `content_box` and `total_units`, and any `user_answers` Stage C collected.
 **Not in context:** datasets, control schemas, `params`.
 **Output:** `LayoutPlan` — the dashboard's `position_json`.
 
@@ -8,8 +8,10 @@ Geometry, but not blind geometry. You translate the design into Superset's 12-co
 
 ## You can see the design
 
-**Look at it before you place anything.** The region list gives you boxes in
-design pixels; the image gives you what those boxes look like as a page.
+**Look at it before you place anything.** The region list gives you boxes as
+**fractions of the image**, `0.0` to `1.0`; the image gives you what those
+boxes look like as a page. A box with `w: 0.5` is half the page wide, whatever
+size the copy you are looking at happens to be.
 
 Read off it: which sections share a row, how wide each is relative to its
 neighbours, which cards are equal height and which are deliberately not, where
@@ -42,7 +44,11 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 
 ## Rules
 
-- **Root chain is fixed.** `ROOT_ID → GRID_ID → rows`. When `global.tabs` is present: `ROOT_ID → TABS-<id> → TAB-<id> → ROW-...`, and each tab's rows sit under its `TAB` node.
+- **Root chain is fixed.** `ROOT_ID → GRID_ID → rows`. When `global.tabs` is
+  present: `ROOT_ID → TABS-<id> → TAB-<id> → ROW-...`, and each tab's rows sit
+  under its `TAB` node. Each region carries a `tab` saying which one it belongs
+  to — use it rather than guessing from geometry, because every tab's regions
+  occupy the same boxes.
 - **`width` is in twelfths of `content_box`, not of the canvas.** `content_box`
   is supplied: the area the surviving regions actually occupy, with the app
   shell already excluded. Convert each region's `bbox.w` as a fraction of
@@ -54,7 +60,12 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 
   `height = round(bbox.h / content_box.h × total_units) + 5`
 
-  where `total_units` is the whole design's height in grid units. The `+ 5`
+  `total_units` is **supplied** — the content's height in grid units, measured
+  from the real image. Do not derive it, and do not substitute a number of
+  your own; it is the only pixel fact in your input and every card's height is
+  a ratio against it. When it is `null` the image size could not be read: fall
+  back to `600` so the page still has sane proportions, and say so in
+  `adjustments`. The `+ 5`
   is Superset's chart header — roughly 40px of chrome the design does not
   draw, taken out of the card's content area. Omit it and the content is
   clipped: a KPI card sized at the design's own ratio has no room left for
