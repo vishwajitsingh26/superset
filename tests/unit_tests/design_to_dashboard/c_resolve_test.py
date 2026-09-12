@@ -365,3 +365,71 @@ def test_build_user_prompt_does_not_mutate_the_decision(
         children=[{"ref": "c1", "region_id": "r02", "viz_type": "x"}],
     )
     assert decision == before
+
+
+# --- stage A's component groups, and its registry candidate -----------------
+
+
+def _repeated(design: dict[str, Any]) -> dict[str, Any]:
+    """Stage A read r02 and r03 as the same component."""
+    design["regions"][2]["same_as"] = 2
+    design["regions"][2]["role"] = "kpi"
+    return design
+
+
+def test_splitting_a_component_group_without_saying_why_is_reported(
+    plan: dict[str, Any], design: dict[str, Any], binding_set: dict[str, Any]
+) -> None:
+    """Each extra name is another plugin built ten minutes later."""
+    problems = validate(plan, _repeated(design), binding_set, REGISTRY)
+    assert any("resolve to 2 viz types" in p for p in problems)
+
+
+def test_one_viz_type_across_the_group_is_fine(
+    plan: dict[str, Any], design: dict[str, Any], binding_set: dict[str, Any]
+) -> None:
+    plan["decisions"][1]["viz_type"] = "custom_metric_card"
+    plan["decisions"][1]["plugin_archetype"] = "viz"
+    assert validate(plan, _repeated(design), binding_set, REGISTRY) == []
+
+
+def test_a_split_explained_in_every_rationale_is_allowed(
+    plan: dict[str, Any], design: dict[str, Any], binding_set: dict[str, Any]
+) -> None:
+    """A may judge by pixels; C judges by what one component can render."""
+    plan["decisions"][0]["rationale"] = "this one drills and the other does not"
+    plan["decisions"][1]["rationale"] = "separate behaviour, so a split"
+    assert validate(plan, _repeated(design), binding_set, REGISTRY) == []
+
+
+def test_overturning_a_candidate_without_naming_it_is_reported(
+    plan: dict[str, Any], design: dict[str, Any], binding_set: dict[str, Any]
+) -> None:
+    """ "Looks fine" used to pass, and a table of coloured bars shipped as
+    plain text."""
+    design["regions"][2]["stock_candidate"] = "table"
+    plan["decisions"][1]["thumbnail_evidence"] = "looks fine"
+    assert any(
+        "never mentions it" in p for p in validate(plan, design, binding_set, REGISTRY)
+    )
+
+
+def test_naming_the_rejected_candidate_clears_it(
+    plan: dict[str, Any], design: dict[str, Any], binding_set: dict[str, Any]
+) -> None:
+    design["regions"][2]["stock_candidate"] = "table"
+    plan["decisions"][1]["thumbnail_evidence"] = (
+        "the `table` thumbnail renders every cell as text; the design draws a "
+        "coloured bar sized to the percentage"
+    )
+    assert validate(plan, design, binding_set, REGISTRY) == []
+
+
+def test_agreeing_with_the_candidate_needs_no_extra_words(
+    plan: dict[str, Any], design: dict[str, Any], binding_set: dict[str, Any]
+) -> None:
+    design["regions"][2]["stock_candidate"] = "table"
+    plan["decisions"][1]["decision"] = "configure"
+    plan["decisions"][1]["viz_type"] = "table"
+    plan["decisions"][1]["plugin_archetype"] = None
+    assert validate(plan, design, binding_set, REGISTRY) == []

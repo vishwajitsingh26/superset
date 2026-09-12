@@ -1,6 +1,6 @@
 # Stage C — Resolve
 
-**Input:** stage A's regions, stage B's tables and bindings, the viz registry, and a contact sheet of every plugin's thumbnail.
+**Input:** the design image(s), a contact sheet of every plugin's thumbnail, stage A's regions, stage B's tables and bindings, and the viz registry.
 **Tools:** MCP — `list_charts`, `get_chart_info`.
 **Output:** `ResolutionPlan`.
 
@@ -36,9 +36,15 @@ plugin per distinct component, route the filters, and set the design system.**
 
 ## Judging A's `stock_candidate`
 
-A checked the registry by name and reported a candidate, or `null`. You have
-the **thumbnails**, which A did not: a picture of the actual mark, layout and
-label placement, which is what a design specifies.
+You have both halves of the comparison: **the design**, and a **contact sheet**
+of every registered plugin's thumbnail. Your user message says which image is
+which. A had neither — it checked the registry by name, off its own description
+of the page.
+
+So look. A thumbnail shows the actual mark, layout and label placement, which
+is exactly what a design specifies, and the section beside it shows what was
+asked for. Stage A's `observed` is a careful account of the same thing; where
+your eyes and its prose disagree, the picture wins.
 
 For every section, compare and record what you saw in `thumbnail_evidence`. A
 decision without it is a guess, and a guess here costs a ten-minute plugin
@@ -56,8 +62,24 @@ against the thumbnail: if the plugin does not do the thing A described, it does
 not render this section, whatever its name suggests.
 
 Overturning A is normal in both directions — it named a candidate that the
-thumbnail disproves, or named none where a thumbnail plainly fits. Say which
-in `thumbnail_evidence`.
+thumbnail disproves, or named none where a thumbnail plainly fits.
+
+**When you reject A's candidate, name it and say what its thumbnail does that
+the design does not.** "The `table` thumbnail renders every cell as text; the
+design draws a coloured bar sized to the percentage" is evidence. "Looks fine"
+and "compared the thumbnails" are not, and this is checked.
+
+### When more than one plugin could do it, ask
+
+Sometimes two or three registered plugins genuinely render a section and the
+choice changes what the user gets — a table with its own pagination versus one
+without, a bar chart that supports drill versus one that does not. Do not pick
+by coin-flip and do not default to the first.
+
+Put it in `needs`: name the section by its visible title, list the plugins you
+are choosing between and what differs, and give a `default`. You are asked
+once and re-run with the answer, so ask about the choices that change the
+dashboard and settle the rest yourself.
 
 ## Components: start from `same_as`, and say why you differ
 
@@ -76,8 +98,12 @@ while layout and behaviour are not.
 - **Split a group** when one member needs behaviour the others do not — one
   card drills and the rest do not, so one component cannot serve them.
 
-Regroup deliberately and put the reason in `rationale`. Silent regrouping is
-how you get two plugins that each half-fit.
+**Splitting a group is checked.** If A read several regions as one component
+and you give them different viz types, every one of those decisions has to say
+in `rationale` what makes them different components — that they behave
+differently, that one drills, that they are not the same component. Each extra
+name is another plugin built ten minutes later by a stage that cannot see why,
+so silence is not an option. Merging is free: one name is one plugin.
 
 ## Wrappers
 

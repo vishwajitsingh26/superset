@@ -639,6 +639,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     thumbnail_sheet=str(THUMBNAIL_SHEET)
                     if THUMBNAIL_SHEET.exists()
                     else None,
+                    image_paths=session.image_paths,
                 )
                 total_cost += result.cost_usd
                 session.artifacts["plan"] = result.final

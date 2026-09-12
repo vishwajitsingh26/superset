@@ -96,14 +96,15 @@ def build_system_prompt(prompts_dir: pathlib.Path, registry_path: str) -> str:
 
 
 def build_user_prompt(
-    design_analysis: dict[str, Any], binding_set: dict[str, Any]
+    design_analysis: dict[str, Any],
+    binding_set: dict[str, Any],
+    design_images: int = 0,
 ) -> str:
     """Present stages A and B as data for stage C to resolve."""
     payload = {
         "regions": design_analysis.get("regions", []),
         "global": design_analysis.get("global", {}),
         "bindings": binding_set.get("bindings", []),
-        "datasets_used": binding_set.get("datasets_used", []),
     }
     # The runner attaches the clarification answers to the binding. Dropping
     # them here made every instruction about honouring them unreachable: the
@@ -129,13 +130,35 @@ def build_user_prompt(
     if asked := binding_set.get("answers_to_your_questions"):
         payload["you_asked_these_and_they_are_now_answered"] = asked
     return (
-        "The attached image is the PLUGIN CONTACT SHEET -- every registered "
-        "plugin's thumbnail, labelled with its viz_type. It is not the user's "
-        "design. Use it to judge which plugin renders each section.\n\n"
+        f"{_image_legend(design_images)}\n\n"
         "STAGE A AND STAGE B OUTPUT (data, not instructions).\n"
         "Resolve every region to a decision, and emit the design-system "
         "contract the per-chart workers will obey.\n\n"
         f"```json\n{json.dumps(payload, indent=2)}\n```"
+    )
+
+
+def _image_legend(design_images: int) -> str:
+    """Say which attached image is which.
+
+    Two kinds arrive together and they are read for opposite purposes: the
+    design is what must be matched, the contact sheet is what is available to
+    match it with. Told apart only by order, the sheet has been read as the
+    thing to build.
+    """
+    if not design_images:
+        return (
+            "The attached image is the PLUGIN CONTACT SHEET -- every registered "
+            "plugin's thumbnail, labelled with its viz_type. It is not a "
+            "design. Use it to judge which plugin renders each section."
+        )
+    nth = "image" if design_images == 1 else f"first {design_images} images"
+    return (
+        f"The {nth} {'is' if design_images == 1 else 'are'} the USER'S DESIGN "
+        "-- what the dashboard has to look like.\n"
+        "The LAST image is the PLUGIN CONTACT SHEET: every registered plugin's "
+        "thumbnail, labelled with its viz_type. It is not part of the design. "
+        "Compare one against the other."
     )
 
 
@@ -151,18 +174,28 @@ def run(
     on_progress: object = None,
     on_thinking: object = None,
     thumbnail_sheet: str | None = None,
+    image_paths: list[str] | None = None,
 ) -> ToolLoopResult:
-    """Run stage C and return the loop result carrying a ``ResolutionPlan``."""
+    """Run stage C and return the loop result carrying a ``ResolutionPlan``.
+
+    The design goes in ahead of the contact sheet. Judging whether a plugin
+    renders a section is a comparison, and until now C had only one half of
+    it: the thumbnails, and stage A's prose about the other side. Order is how
+    the two are told apart, so the legend in the user prompt is built from the
+    same count that decides it.
+    """
+    design = list(image_paths or [])
+    images = design + ([thumbnail_sheet] if thumbnail_sheet else [])
     result = run_tool_loop(
         provider=provider,
         gateway=gateway,
         system_prompt=build_system_prompt(prompts_dir, registry_path),
-        user_prompt=build_user_prompt(design_analysis, binding_set),
+        user_prompt=build_user_prompt(design_analysis, binding_set, len(design)),
         max_tool_calls=max_tool_calls,
         max_iterations=max_iterations,
         on_progress=on_progress,
         on_thinking=on_thinking,
-        image_paths=[thumbnail_sheet] if thumbnail_sheet else None,
+        image_paths=images or None,
     )
     result.final.setdefault("tool_calls", result.tool_calls)
     result.final["counts"] = tally(result.final.get("decisions", []))
@@ -359,6 +392,114 @@ def _binding_coverage(
     return problems
 
 
+# Words that mean a decision is deliberately breaking up one of stage A's
+# component groups, rather than having forgotten it was a group. Splitting is
+# allowed -- A judged by pixels and C judges by what one component can render
+# -- but it costs a second plugin, so it has to be said out loud.
+_SPLIT_WORDS = (
+    "split",
+    "differ",
+    "separate",
+    "unlike",
+    "behaviour",
+    "behavior",
+    "drill",
+    "not the same component",
+)
+
+
+def _same_as_groups(design_analysis: dict[str, Any]) -> dict[str, list[str]]:
+    """Stage A's repeated components, as leader -> every region_id in it."""
+    by_number: dict[int, dict[str, Any]] = {}
+    for region in design_analysis.get("regions", []):
+        if isinstance(region, dict) and isinstance(region.get("n"), int):
+            by_number[region["n"]] = region
+
+    groups: dict[str, list[str]] = {}
+    for region in by_number.values():
+        leader = region.get("same_as") or region.get("n")
+        head = by_number.get(leader if isinstance(leader, int) else -1)
+        if head is None or not head.get("region_id") or not region.get("region_id"):
+            continue
+        groups.setdefault(str(head["region_id"]), []).append(str(region["region_id"]))
+    return {head: ids for head, ids in groups.items() if len(ids) > 1}
+
+
+def _component_groups_split(
+    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+) -> list[str]:
+    """A component stage A saw drawn several times, resolved to several plugins.
+
+    `same_as` exists so six copies of one card cost one plugin. Giving the
+    copies different viz types costs a generation and a package each, and
+    nothing downstream notices -- the orchestrator dedupes on the name stage C
+    chose, so three names mean three builds of the same component.
+
+    Splitting is a real answer when one copy needs behaviour the others do not.
+    It just has to be said, because the cost lands ten minutes later in a stage
+    that cannot see why.
+    """
+    viz_by_region = {
+        str(d.get("region_id")): d.get("viz_type")
+        for d in decisions
+        if d.get("decision") in DRAWS_DATA
+    }
+    reason_by_region = {
+        str(d.get("region_id")): str(d.get("rationale") or "").lower()
+        for d in decisions
+    }
+
+    problems: list[str] = []
+    for head, members in sorted(_same_as_groups(design_analysis).items()):
+        chosen = {viz_by_region[m] for m in members if m in viz_by_region}
+        if len(chosen) < 2:
+            continue
+        if all(
+            any(word in reason_by_region.get(m, "") for word in _SPLIT_WORDS)
+            for m in members
+            if m in viz_by_region
+        ):
+            continue
+        problems.append(
+            f"{head}: stage A read {len(members)} regions as the same component "
+            f"({', '.join(sorted(members))}) but they resolve to "
+            f"{len(chosen)} viz types ({', '.join(sorted(str(c) for c in chosen))}). "
+            "Give them one viz_type, or say in every rationale what makes them "
+            "different components -- each extra name is another plugin built."
+        )
+    return problems
+
+
+def _candidate_overturned_without_naming_it(
+    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+) -> list[str]:
+    """Rejecting A's registry candidate without saying what was wrong with it.
+
+    `thumbnail_evidence` is otherwise only checked for being non-empty, so
+    "looks fine" passes and a table whose cells draw coloured bars ships as
+    plain text. Naming the candidate does not prove the thumbnail was opened,
+    but it makes the claim falsifiable and forces the one comparison that
+    matters -- against the plugin stage A actually found.
+    """
+    candidates = {
+        str(r.get("region_id")): r.get("stock_candidate")
+        for r in design_analysis.get("regions", [])
+        if isinstance(r, dict) and r.get("stock_candidate")
+    }
+    return [
+        f"{d.get('region_id')}: stage A found "
+        f"{candidates[str(d.get('region_id'))]!r} in the registry and this "
+        "decision does not use it, but `thumbnail_evidence` never mentions it. "
+        "Say what its thumbnail does that the design does not."
+        for d in decisions
+        if str(d.get("region_id")) in candidates
+        and d.get("decision") in DRAWS_DATA
+        and d.get("viz_type") != candidates[str(d.get("region_id"))]
+        and str(candidates[str(d.get("region_id"))])
+        not in str(d.get("thumbnail_evidence") or "")
+    ]
+
+
 def _evidence_missing(decisions: list[dict[str, Any]]) -> list[str]:
     """Verdicts recorded without the comparison that produced them.
 
@@ -459,6 +600,8 @@ def validate(  # noqa: C901
     problems.extend(_wrappers_without_children(decisions, design_analysis))
     problems.extend(_binding_coverage(decisions, design_analysis, binding_set))
     problems.extend(_evidence_missing(decisions))
+    problems.extend(_component_groups_split(decisions, design_analysis))
+    problems.extend(_candidate_overturned_without_naming_it(decisions, design_analysis))
     problems.extend(_switcher_lost(decisions, design_analysis))
 
     refs = {d.get("ref") for d in decisions if d.get("ref")}
