@@ -25,10 +25,6 @@ The runner writes one at the end of every run. Sessions live in the web
 process's memory and are lost on restart, so a run whose trace is never written
 leaves no evidence of *why* the pipeline decided what it did. That makes the
 trace the only durable artifact for judging how well the model performed.
-
-`design-to-dashboard/scripts/export_trace.py` renders the same report from the
-API for a session that is still in memory, and imports `render` from here so
-the two can never drift.
 """
 
 from __future__ import annotations
@@ -146,10 +142,17 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
             out.append("")
 
         elif kind == "tool_call":
+            # The outcome, not just the request. A tool the model reaches for
+            # and is refused by every time reads as ordinary activity without
+            # it, and the stage that went uninformed looks like it simply
+            # chose not to ask.
+            error = event.get("error")
             out.append(
-                f"- 🔧 `{event.get('tool')}` "
+                f"- {'❌' if error else '🔧'} `{event.get('tool')}` "
                 f"`{json.dumps(event.get('arguments'))[:160]}`"
             )
+            if error:
+                out.append(f"    - _refused_: {str(error)[:300]}")
         elif kind == "awaiting_input":
             out += ["", f"### ⏸ Asked the user ({event.get('kind')})", ""]
             for question in event.get("questions") or []:

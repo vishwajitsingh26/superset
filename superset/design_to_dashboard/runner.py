@@ -529,8 +529,12 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # ---- B: bind -----------------------------------------------------
             session.publish("stage_start", stage="B", label="Finding your data")
 
-            def _tool_progress(tool: str, arguments: dict[str, Any]) -> None:
-                session.publish("tool_call", tool=tool, arguments=arguments)
+            def _tool_progress(
+                tool: str, arguments: dict[str, Any], error: str | None = None
+            ) -> None:
+                session.publish(
+                    "tool_call", tool=tool, arguments=arguments, error=error
+                )
 
             binding = b_bind.run(
                 provider_for("B"),

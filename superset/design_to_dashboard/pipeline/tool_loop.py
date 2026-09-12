@@ -198,11 +198,18 @@ def run_tool_loop(
         observations = []
         for call in requested:
             calls_made += 1
+            observation = _execute(gateway, call)
+            observations.append(observation)
             if on_progress:
                 # Surfaces the actual tool the model reached for, so a long
-                # stage shows real activity rather than a spinner.
-                on_progress(call.get("tool", "?"), call.get("arguments") or {})
-            observations.append(_execute(gateway, call))
+                # stage shows real activity rather than a spinner -- and how
+                # the call went, because a tool that fails every time is
+                # otherwise indistinguishable from one that works.
+                on_progress(
+                    call.get("tool", "?"),
+                    call.get("arguments") or {},
+                    observation.get("error"),
+                )
 
         transcript.append({"tool_calls": requested, "observations": observations})
 
