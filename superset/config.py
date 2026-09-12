@@ -545,16 +545,24 @@ CURRENCIES = ["USD", "EUR", "GBP", "INR", "MXN", "JPY", "CNY"]
 # developer's credentials, so they must be opted into explicitly. Use
 # "anthropic_api" or "bedrock" in a deployment.
 #
-# "effort" is honoured by "claude_agent_sdk", "anthropic_api", "bedrock" and
-# "kiro_cli" -- but NOT by "claude_cli", which has no such flag and is passed
+# "effort" is honoured by "kiro_cli", "claude_agent_sdk", "anthropic_api" and
+# "bedrock" -- but NOT by "claude_cli", which has no such flag and is passed
 # none, so an effort set against it reads as configured and does nothing.
 # "max_turns" applies only to the Claude providers; the Kiro CLI has no turn
 # budget.
+#
+# Setting "record_calls" writes every model call -- prompt, reasoning, answer
+# and input images -- under design-to-dashboard/traces/<session_id>/. It is a
+# prompt-tuning aid, off by default: the files hold whatever the design and the
+# database contain, and nothing prunes them.
 DESIGN_TO_DASHBOARD_LLM: dict[str, Any] = {
-    # `claude_agent_sdk` rather than `claude_cli`: the CLI provider takes no
-    # effort setting -- it is not in its argv and the factory does not pass it
-    # -- so configuring one there is silently ignored.
-    "provider": "claude_agent_sdk",
+    # `kiro_cli` rather than `claude_cli`: it drives the Kiro CLI's v3 agent
+    # engine, which honours `effort`, keeps `model` pinned, and streams readable
+    # reasoning so stage thinking reaches the UI. Like any CLI provider it runs
+    # as the server's OS user, so it stays behind `allow_cli_provider` below.
+    "provider": "kiro_cli",
+    # Must be a name the chosen provider knows: the Kiro CLI rejects anything
+    # absent from `kiro-cli chat --list-models`.
     "model": "claude-sonnet-5",
     # Per call, not per run. Stage A reads a full-page design in one turn and
     # stage F writes an entire plugin in one; both are measured in minutes, and

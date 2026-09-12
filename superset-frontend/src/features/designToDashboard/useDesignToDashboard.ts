@@ -110,13 +110,22 @@ export type PendingAsk = {
   crop_url?: string;
   /** False on the last round: the plan can no longer be sent back. */
   can_revise?: boolean;
-  plan?: {
-    step: number;
-    what: string;
-    why?: string;
-    exactness?: string;
-    cost?: string;
-  }[];
+  /**
+   * A step is either the four fields split out, or one written line. Stage C
+   * is asked for the split form, but a model that writes the same content as
+   * prose is still describing the work, and a step that cannot be read is
+   * worse than one that is not broken up.
+   */
+  plan?: (
+    | string
+    | {
+        step?: number;
+        what?: string;
+        why?: string;
+        exactness?: string;
+        cost?: string;
+      }
+  )[];
   counts?: Record<string, number>;
 };
 

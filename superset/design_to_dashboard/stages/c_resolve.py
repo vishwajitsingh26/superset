@@ -120,6 +120,17 @@ def build_user_prompt(
     # mechanical, so fixing them is not a matter of taste.
     if problems := binding_set.get("validation_problems"):
         payload["fix_these_problems_from_your_last_plan"] = problems
+    # What earlier attempts already looked up. Each attempt is a fresh tool
+    # loop with an empty transcript, so without this the reuse survey is run
+    # from scratch every time -- three identical sweeps in a run that
+    # re-planned twice, each one a turn spent learning what was already known.
+    if searched := binding_set.get("charts_you_already_searched"):
+        payload["charts_you_already_searched"] = searched
+    # The plan being corrected. Sent so a patch can be read against it: the
+    # model is told to return only what changes, and it can only judge what
+    # changed if it can see what it wrote.
+    if previous := binding_set.get("your_last_plan"):
+        payload["your_last_plan"] = previous
     # The user read the plan and sent it back. Unlike a validation problem this
     # is a judgement, and it outranks yours: they can see the design, they know
     # the instance, and they are the reason the dashboard is being built.
@@ -175,6 +186,7 @@ def run(
     on_thinking: object = None,
     thumbnail_sheet: str | None = None,
     image_paths: list[str] | None = None,
+    previous_plan: dict[str, Any] | None = None,
 ) -> ToolLoopResult:
     """Run stage C and return the loop result carrying a ``ResolutionPlan``.
 
@@ -197,6 +209,10 @@ def run(
         on_thinking=on_thinking,
         image_paths=images or None,
     )
+    # A patch is made whole before anything reads it, so `counts` is tallied
+    # over the merged decisions and every caller still receives a complete plan.
+    if previous_plan:
+        result.final = merge_patch(previous_plan, result.final)
     result.final.setdefault("tool_calls", result.tool_calls)
     result.final["counts"] = tally(result.final.get("decisions", []))
     counts = result.final["counts"]
@@ -207,6 +223,92 @@ def run(
         counts.get("new_plugin"),
     )
     return result
+
+
+# The tools that answer "does a chart for this already exist". Their results are
+# carried between attempts; nothing else about a transcript is worth repeating.
+CHART_TOOLS = {"list_charts", "get_chart_info"}
+
+
+def chart_searches(
+    transcript: list[dict[str, Any]],
+    already: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Every chart lookup an attempt made, merged with what earlier ones found.
+
+    Deduplicated on the tool and its arguments. A replan re-ran the same
+    searches because its loop starts empty, and a record that repeats them
+    would answer a question the model is being told not to ask again.
+    """
+
+    def signature(entry: dict[str, Any]) -> str:
+        return json.dumps(
+            [entry.get("tool"), entry.get("arguments")], sort_keys=True, default=str
+        )
+
+    merged = {signature(entry): entry for entry in already or []}
+    for round_ in transcript or []:
+        if not isinstance(round_, dict):
+            continue
+        calls = {
+            call.get("id"): call
+            for call in round_.get("tool_calls") or []
+            if isinstance(call, dict)
+        }
+        for observation in round_.get("observations") or []:
+            if not isinstance(observation, dict):
+                continue
+            call = calls.get(observation.get("id")) or {}
+            tool = observation.get("tool") or call.get("tool")
+            if tool not in CHART_TOOLS:
+                continue
+            entry = {
+                "tool": tool,
+                "arguments": call.get("arguments"),
+                "result": observation.get("result"),
+                "error": observation.get("error"),
+            }
+            merged[signature(entry)] = entry
+    return list(merged.values())
+
+
+def merge_patch(previous: dict[str, Any], reply: dict[str, Any]) -> dict[str, Any]:
+    """A patched plan, whole again.
+
+    A correction touches one or two regions, and re-emitting the other fourteen
+    to carry them cost minutes of generation and bought nothing. So a replan may
+    return only what it changed; everything it leaves out is taken from the plan
+    it was correcting, and the result is validated in full exactly as before.
+
+    Decisions merge by `region_id` in the previous plan's order, because the
+    contract downstream is that a container's children come before it. Any other
+    field the reply carries replaces its predecessor whole: `plan_for_review`
+    and `design_system` are documents, not sets of parts, and merging them
+    field-wise would silently mix two versions.
+    """
+    if reply.get("revision") != "patch" or not previous:
+        return reply
+
+    merged = {**previous, **{k: v for k, v in reply.items() if k != "decisions"}}
+    by_region: dict[str, dict[str, Any]] = {
+        str(d.get("region_id")): d
+        for d in previous.get("decisions") or []
+        if isinstance(d, dict)
+    }
+    carried = len(by_region)
+    changed = 0
+    for decision in reply.get("decisions") or []:
+        if not isinstance(decision, dict):
+            continue
+        by_region[str(decision.get("region_id"))] = decision
+        changed += 1
+    merged["decisions"] = list(by_region.values())
+    logger.info(
+        "stage C returned a patch: %d decision(s) changed, %d carried over",
+        changed,
+        max(carried - changed, 0),
+    )
+    return merged
 
 
 def tally(decisions: list[dict[str, Any]]) -> dict[str, int]:
@@ -384,11 +486,26 @@ def _binding_coverage(
             )
             continue
         if isinstance(shared, int) and binding.get("dataset_id") == shared:
-            problems.append(
-                f"{region_id}: draws a chart but is bound to the shared "
-                "one-row dataset, which carries no data -- it would render "
-                "empty"
-            )
+            if roles.get(region_id) == "filter":
+                # A control is built, not dropped, so saying only that the
+                # binding is wrong leaves the one legal move unstated -- and a
+                # plan that cannot see it oscillates between rebuilding the
+                # control and deleting it until the attempts run out.
+                problems.append(
+                    f"{region_id}: a control reads data like any chart, and the "
+                    "shared one-row dataset gives it none. A date or time range "
+                    "wants the one-row view carrying `range_start` and "
+                    "`range_end`, so its calendar knows the window the data "
+                    "covers; a select wants a view of the values it offers. "
+                    "Bind it to that view, or fold the control into a region "
+                    "that has one."
+                )
+            else:
+                problems.append(
+                    f"{region_id}: draws a chart but is bound to the shared "
+                    "one-row dataset, which carries no data -- it would render "
+                    "empty"
+                )
     return problems
 
 

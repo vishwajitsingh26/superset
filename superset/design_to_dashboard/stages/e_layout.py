@@ -166,6 +166,9 @@ def build_user_prompt(
 # therefore clips whatever is inside it -- measured at roughly 40px, so five
 # grid units.
 CHART_HEADER_UNITS = 5
+# Superset's own floor for a grid row, from the frontend's grid constants.
+# A card may never be reduced below it, whatever its chrome.
+GRID_MIN_ROW_UNITS = 5
 # A page heading needs room for a large font plus padding; the model has chosen
 # 4 (32px) for a 26px heading and clipped it.
 MIN_TEXT_HEIGHT = 8
@@ -234,6 +237,65 @@ def drop_composed_children(  # noqa: C901
                     parent.get("children") or []
                 ):
                     parent["children"] = [c for c in parent["children"] if c != row_id]
+    return notes
+
+
+def strip_header_allowance(
+    position: dict[str, Any], headerless_refs: set[str]
+) -> list[str]:
+    """Give back the height reserved for a chart header that is hidden.
+
+    Stage E adds `CHART_HEADER_UNITS` to every card because Superset's slice
+    header eats into the content area. Where the chrome pass hides that header,
+    the allowance reserves space for nothing and the card stands taller than
+    the design draws it -- which is how a page heading ended up in a box twice
+    its height with its caption still clipped by the bottom edge.
+
+    Done a whole row at a time, and only when *every* chart in that row is
+    headerless. Superset lays a row out as one band, so shrinking one card in a
+    mixed row would leave its siblings disagreeing about their own height --
+    the exact fault `normalise` exists to prevent, reintroduced after it ran.
+
+    Mechanical, and done here rather than in the prompt: the model cannot see
+    the chrome decision, and a rule it applies by hand is a rule it applies
+    inconsistently across twelve regions.
+    """
+    notes: list[str] = []
+    for row_id, row in position.items():
+        if not isinstance(row, dict) or row.get("type") != "ROW":
+            continue
+        children = [
+            position[c]
+            for c in row.get("children", [])
+            if isinstance(position.get(c), dict)
+        ]
+        charts = [c for c in children if c.get("type") == "CHART"]
+        if not charts or len(charts) != len(children):
+            # A row holding anything but charts -- a markdown heading, a
+            # divider -- keeps its height: those carry no header allowance to
+            # give back, so the row's band is already theirs.
+            continue
+        if not all(ref_of(chart) in headerless_refs for chart in charts):
+            continue
+        heights = {
+            chart["meta"].get("height")
+            for chart in charts
+            if isinstance(chart.get("meta"), dict)
+        }
+        if len(heights) != 1 or not isinstance(next(iter(heights)), int):
+            continue
+        height = next(iter(heights))
+        # Never below the grid's own floor: a card with no header still has to
+        # hold its content.
+        reduced = max(GRID_MIN_ROW_UNITS, height - CHART_HEADER_UNITS)
+        if reduced == height:
+            continue
+        for chart in charts:
+            chart["meta"]["height"] = reduced
+        notes.append(
+            f"{row_id}: height {height} -> {reduced}, no chart header is drawn "
+            "on this row"
+        )
     return notes
 
 

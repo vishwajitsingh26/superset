@@ -83,7 +83,39 @@ Sweep the design top-left to bottom-right. Number every region `n`, starting at
 - `children` — region numbers this one contains, or `[]`
 - `same_as` — the number of the earlier region drawn the same way, or `null`
 - `frame` — for a wrapper, what its own chrome does to its children:
-  `none | tabs | toggle`. `null` for everything else.
+  `none` (just groups them) | `tabs` (a tab strip switches between them) |
+  `toggle` (a view toggle swaps how the same content renders). `null` for
+  everything else. **Always set this on every wrapper — it is never left
+  blank.** e.g. a card with a list/chart/grid toggle over one table is
+  `frame: "toggle"`.
+- `chrome` — what the section is *drawn on*, which decides what Superset is
+  allowed to draw around it. Superset wraps every chart in a holder that paints
+  a card, pads it, and puts a title and an overflow menu on top. Answer the
+  counterfactual, from the pixels: **if Superset drew its standard card here,
+  would this design change?**
+
+  ```json
+  { "surface": "card", "title": "plain", "actions": [],
+    "why": "white fill, 1px grey border, rounded corners, sits above the page" }
+  ```
+
+  - `surface` — `card` when the section sits on its own filled or bordered
+    surface, `bare` when it sits directly on the page background. A page
+    heading, a control band and a floating pill are almost always `bare`;
+    adding a card to one is the most visible way this pipeline has broken a
+    design.
+  - `title` — `none` when no label is drawn inside the section; `plain` when
+    it is text alone; `decorated` when anything else sits with it — an icon, a
+    badge, a count, a second line. Superset can render `plain` itself and
+    nothing else, so `decorated` is what tells the pipeline the section must
+    draw its own.
+  - `actions` — per-section affordances the design draws, the same shape as
+    `controls`: an overflow or kebab menu, a refresh arrow, a download icon, an
+    expand corner. Usually `[]`. Where you list one, Superset's own menu is
+    hidden and the drawn control is built instead, so list only what is
+    actually visible.
+  - `why` — one clause naming what in the pixels decided `surface`.
+
 - `controls` — the buttons, toggles and inputs drawn on this section's own
   chrome. These are **not** separate regions; they belong to the section they
   sit on. For each, give what it does and what it looks like, because the icon
@@ -188,6 +220,7 @@ the whole dashboard, so the next stage asks rather than letting you guess.
 - `palette` — hex values in order of prominence, and what each is used for
 - `typography` — the observed size/weight scale
 - `theme` — `light | dark`
+- `page_background` — the hex the cards sit on, which is not always white
 - `card_chrome` — the repeated card treatment: border, radius, shadow, padding,
   header style
 - `reading_order` — every region's `n`, each exactly once, decoration included,
@@ -202,10 +235,30 @@ the whole dashboard, so the next stage asks rather than letting you guess.
   Do not name it.
 - **Decoration is not a chart.** Logos, dividers, background art →
   `role: decoration`.
-- **Distinguish a filter bar from a filter drawn in the layout.** A dedicated
-  bar sets `global.filter_bar.present`. A control with its own border sitting
-  in the grid is a region. This decides native-filter vs. chart-widget
-  downstream.
+- **A control band is one region, not one region per control.** A row of
+  page-level controls — several selects and an Apply button — sets
+  `global.filter_bar.present` and is a **single** region with `role: "filter"`,
+  every control listed in `controls`. A border drawn around each select does not
+  make it its own region: they commit together and one component renders them.
+  Number a control on its own only when it acts alone and applies immediately,
+  such as a search box beside one table — or when it is a date range, which is
+  always its own region (next rule), even when the band is where it is drawn.
+  **Say how it commits.** A commit button drawn in the band (Apply, Search, Go)
+  goes in `controls`, and `interactions` says nothing takes effect until it is
+  pressed. With no such button, say the selections apply as they change. That is
+  the difference between one dashboard refresh and one per control, so it is not
+  a detail to leave out.
+- **A date or time range control is always its own region**, wherever it is
+  drawn — a pill in the header band, a field inside a control row. Give it
+  `role: "filter"`, put the range it displays in `observed` verbatim (`"Apr 1,
+  2025 – Apr 30, 2025"`), and in `implied_data` say it needs **the earliest and
+  latest value of the time column it filters**, because the calendar built from
+  it opens on that window and refuses dates outside it. This is the one control
+  that is always built, so it always needs a region of its own.
+- **Host-application chrome is not a region.** A notification bell, a user
+  avatar, a product nav: put them in the owning section's `controls`, or
+  `role: "nav"` when they form a band of their own. Superset draws its own user
+  menu, and nothing downstream can build one from a region.
 - Where the user's requirement contradicts the design, record both in
   `conflicts` and do not resolve it.
 

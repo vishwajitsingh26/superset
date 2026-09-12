@@ -639,16 +639,37 @@ def _review_note(decision: dict[str, Any]) -> str:
 BARREL_SYMBOLS = ("t", "styled", "useTheme", "supersetTheme", "css")
 
 
+def _renamed_prop_pattern(stale: str) -> str:
+    """Where a renamed antd prop is actually being *used* as a prop.
+
+    `visible` is both an antd v4 prop and an ordinary English word, so a bare
+    `\\bvisible\\s*=` matched `const visible = slices.slice(...)` and rejected a
+    working donut plugin. A JSX attribute is distinguishable: it is not
+    introduced by a declaration keyword, is not a member access, and its value
+    opens with a brace or a quote rather than a bare expression.
+    """
+    return rf"(?<![\w.$])(?<!const )(?<!let )(?<!var )\b{stale}\s*=\s*[{{\"']"
+
+
 def _missing_imports(path: str, contents: str) -> list[str]:
-    """Symbols a file uses but never imports."""
+    """Symbols a file uses but never imports.
+
+    Read from the source with comments stripped, for the reason `code_only`
+    gives: a comment explaining which theme hook the file's tokens come from
+    is documentation, not a use, and a commented-out import is not an import.
+    Matching raw text rejected three plugins over the line
+    `// theme token read from `useTheme()`` and lost four regions of a
+    dashboard to it.
+    """
+    source = code_only(contents)
     imported: set[str] = set()
-    for match in re.finditer(r"import\s+(?:type\s+)?\{([^}]*)\}", contents, re.S):
+    for match in re.finditer(r"import\s+(?:type\s+)?\{([^}]*)\}", source, re.S):
         imported |= {
             name.strip().split(" as ")[-1].strip() for name in match.group(1).split(",")
         }
-    for match in re.finditer(r"^import\s+(\w+)\s+from", contents, re.M):
+    for match in re.finditer(r"^import\s+(\w+)\s+from", source, re.M):
         imported.add(match.group(1))
-    body = re.sub(r"import[^;]*;", "", contents, flags=re.S)
+    body = re.sub(r"import[^;]*;", "", source, flags=re.S)
     return [
         f"{path}: uses `{symbol}` but never imports it"
         for symbol in BARREL_SYMBOLS
@@ -718,7 +739,7 @@ def validate(  # noqa: C901
                     )
         problems.extend(_missing_imports(entry.get("path") or "?", contents))
         for stale, replacement in RENAMED_PROPS.items():
-            if re.search(rf"\b{stale}\s*=", source):
+            if re.search(_renamed_prop_pattern(stale), source):
                 problems.append(
                     f"{entry.get('path')}: uses the antd v4 prop {stale!r}; "
                     f"in v5 it is {replacement}"

@@ -83,7 +83,31 @@ Produce the `POST /api/v1/chart/` body that renders this region.
   already have cut the view with `LIMIT`, so your limit is a ceiling, not the
   thing doing the work. `adhoc_filters` is a real array (`[]` when the
   binding has none and the design asks for none).
-- **Set the time range explicitly.** Default to `"No filter"` rather than leaving it unset.
+- **Set the time range explicitly, and carry a `TEMPORAL_RANGE` filter whenever
+  the page has a date control.** A dashboard date filter does not filter on its
+  own: it *overwrites the value* of whatever `TEMPORAL_RANGE` filters a chart
+  already has. A chart carrying none is silently unaffected by it, however the
+  scope is set — so a chart the design means to follow the page's date range
+  must declare one on its own temporal column, or the control will appear to do
+  nothing to it.
+  For the comparator, write **the range the design displays** rather than
+  `"No filter"` when a date control is drawn and this chart should obey it. The
+  chart then arrives correctly windowed on its first request, instead of
+  loading unfiltered and refetching the moment the control mounts. Use
+  `"No filter"` where the design draws no date control, or where this chart is
+  meant to show its full history regardless.
+- **A region that draws a series needs a span, and the span is mandatory.**
+  Where the design draws a sparkline, a trend line or a run of bars — whether
+  beside a single value or on its own — count the periods it draws and set the
+  plugin's span control to that count. Four bars labelled Jan to Apr is a span
+  of four months. The plugin queries that span separately from its headline, so
+  the number follows the page's date range while the series keeps enough
+  periods to be a series.
+  **Never set a span below two, whatever the design appears to draw.** One
+  point is not a line and gives no period-over-period delta. The floor is two
+  of whatever `time_grain_sqla` says: two months at `P1M`, two days at `P1D`,
+  two weeks at `P1W`. Where the design's own count is lower, or you cannot
+  count it, use the largest span the data supports rather than the smallest.
 - Use only columns and metrics named in your binding. Nothing else exists.
 
 ## Charts that hold other charts

@@ -123,6 +123,16 @@ Superset requires a datasource on every chart:
   the **shared dataset**. It is one row and one column and it exists for
   exactly this. Create it the same way as any other table, named
   `shared_no_query`; if it already exists you get its id back.
+- **A `filter` region reads data like any chart.** It is built as a real control
+  and it needs real columns, so the shared dataset is never the answer for one:
+  - **A date or time range control** → a **one-row view carrying the earliest
+    and latest value** of the time column it filters, columns named
+    `range_start` and `range_end`, plus that column's own name in
+    `time_column`. The calendar opens on that window and rejects dates outside
+    it, so a control bound to the shared dataset is a calendar with no range at
+    all. Name it for the series it bounds: `cloud_spend_date_bounds`.
+  - **A select** → a view of the distinct values it offers, one column per
+    field. Several selects in one control band share one view.
 - **Everything else** → the view that serves it.
 
 **`same_as` never collapses two bindings.** Two regions can be the same

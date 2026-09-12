@@ -1,6 +1,6 @@
 {
   "generated_from": "source",
-  "count": 53,
+  "count": 55,
   "viz_types": [
     {
       "viz_type": "ag-grid-table",
@@ -272,6 +272,47 @@
       "source": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/index.ts",
       "thumbnail": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/images/thumbnail.png",
       "control_panel": "superset-frontend/plugins/legacy-plugin-chart-country-map/src/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_date_range_filter",
+      "plugin_class": "CustomDateRangeFilterPlugin",
+      "name": "Date Range Filter",
+      "category": "Filter",
+      "description": "A date range control is always a filter_widget plugin: it reads range_start/range_end from dataset 65 so the calendar cannot open outside Jan 1 \u2013 Apr 30 2025,\u2026",
+      "tags": [
+        "Custom Charts",
+        "Generated"
+      ],
+      "behaviors": [
+        "NativeFilter"
+      ],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-custom-date-range-filter-b3d605/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-date-range-filter-b3d605/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-custom-date-range-filter-b3d605/src/plugin/controlPanel.ts",
+      "metadata_found": true
+    },
+    {
+      "viz_type": "custom_kpi_spark_card",
+      "plugin_class": "CustomKpiSparkCardPlugin",
+      "name": "Kpi Spark Card",
+      "category": "Custom Charts",
+      "description": "The user chose one custom KPI card plugin for all four cards: accent icon + label row, a 30px value, a green delta for a decrease, a \u2019vs. last month\u2019 caption a\u2026",
+      "tags": [
+        "Custom Charts",
+        "Generated"
+      ],
+      "behaviors": [
+        "InteractiveChart",
+        "DrillToDetail"
+      ],
+      "custom": true,
+      "is_filter": false,
+      "source": "superset-frontend/plugins/plugin-chart-custom-kpi-spark-card-b3d605/src/plugin/index.ts",
+      "thumbnail": "superset-frontend/plugins/plugin-chart-custom-kpi-spark-card-b3d605/src/images/thumbnail.png",
+      "control_panel": "superset-frontend/plugins/plugin-chart-custom-kpi-spark-card-b3d605/src/plugin/controlPanel.ts",
       "metadata_found": true
     },
     {

@@ -180,6 +180,13 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
             "cancelled",
         ):
             out.append(f"- _{kind}_: {event.get('label')}")
+        elif kind == "chrome_effects":
+            # Not a bullet like the other notices: this is the one place the
+            # run tells the user what matching the design took away, and a
+            # single line among tool calls is where that gets missed.
+            out += ["", f"### {event.get('label')}", ""]
+            out += [f"- {effect}" for effect in event.get("effects") or []]
+            out += [""]
         elif kind == "error":
             out += ["", "### ❌ Error", "", f"```\n{event.get('detail')}\n```", ""]
 

@@ -28,7 +28,7 @@ from .base import LLMError, LLMProvider
 logger = logging.getLogger(__name__)
 
 DEFAULTS = {
-    "provider": "claude_cli",
+    "provider": "kiro_cli",
     "model": "claude-opus-5",
     "timeout": 300,
     "max_turns": 6,

@@ -38,6 +38,7 @@ import re
 import unicodedata
 from typing import Any
 
+from superset.design_to_dashboard import chrome
 from superset.design_to_dashboard.llm.base import LLMProvider
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
 from superset.design_to_dashboard.registry import (
@@ -292,6 +293,48 @@ def _validate_geometry(regions: list[dict[str, Any]]) -> list[str]:
     return problems
 
 
+def _validate_chrome(region: dict[str, Any]) -> list[str]:
+    """Whether the reading says what Superset may draw around this section.
+
+    Absent chrome is not an error: a reading from before this field existed
+    still describes a usable page, and the compiler falls back to Superset's
+    own behaviour. A chrome that is *present and wrong* is the error, because
+    "card" and "bare" are the difference between a heading on the page and a
+    heading in a box the design never drew.
+    """
+    value = region.get("chrome")
+    if value is None:
+        return []
+    if not isinstance(value, dict):
+        return [f"{_label(region)}: chrome is not an object"]
+
+    problems: list[str] = []
+    surface = value.get("surface")
+    if surface not in chrome.SURFACES:
+        problems.append(
+            f"{_label(region)}: chrome.surface {surface!r} is not one of "
+            f"{sorted(chrome.SURFACES)} -- say whether the section sits on its "
+            "own card or directly on the page"
+        )
+    title = value.get("title")
+    if title not in chrome.TITLE_KINDS:
+        problems.append(
+            f"{_label(region)}: chrome.title {title!r} is not one of "
+            f"{sorted(chrome.TITLE_KINDS)}"
+        )
+    actions = value.get("actions")
+    if actions is not None and not isinstance(actions, list):
+        problems.append(f"{_label(region)}: chrome.actions is not a list")
+    elif isinstance(actions, list):
+        for index, action in enumerate(actions):
+            if not isinstance(action, dict) or not action.get("kind"):
+                problems.append(
+                    f"{_label(region)}: chrome.actions[{index}] needs a `kind` "
+                    "naming the affordance the design draws"
+                )
+    return problems
+
+
 def validate(  # noqa: C901
     design_analysis: dict[str, Any], known_viz_types: set[str] | None = None
 ) -> list[str]:
@@ -361,6 +404,8 @@ def validate(  # noqa: C901
                 f"{_label(region)}: frame is {frame!r} but only a wrapper has "
                 "one; a leaf region frames nothing"
             )
+
+        problems += _validate_chrome(region)
 
         candidate = region.get("stock_candidate")
         if candidate is not None:

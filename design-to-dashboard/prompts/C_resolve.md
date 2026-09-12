@@ -215,12 +215,33 @@ There is no filter-bar route. Superset's own native filters are configured by
 hand afterwards by anyone who wants them; nothing here creates one. A control
 the design draws is a control the dashboard draws, in the same place.
 
+**Carry the commit mode into the decision.** Stage A records whether the band
+draws a commit button. Say in `rationale` which way it goes — selections held
+until Apply is pressed, or applied as each control changes — because it decides
+how many times the dashboard requeries, and it is the one thing about a filter
+the user can see going wrong.
+
+**A date or time range control is a `new_plugin` with
+`plugin_archetype: "filter_widget"`, always.** Stage B binds it to a one-row
+view carrying `range_start` and `range_end`; keep that binding. The plugin reads
+those two dates and renders a calendar bounded by them, so the user can only
+pick a window the data actually covers, and pushes the chosen range as
+`extraFormData`. Say in `fidelity_loss` if it lands anywhere other than where
+the design draws it. Never resolve one to the shared placeholder dataset — a
+calendar with no bounds is a control that cannot open.
+
 ## Text costs no generation
 
-- **`configure` with `custom_text`** when the design's typography matters. That
-  plugin exists and exposes size, weight, colour and alignment as controls; set
-  them from the design's `typography` and `palette`.
-- **`grid_text`** when plain Markdown in the dashboard's own styling is enough.
+- **`grid_text` by default, and especially for anything the design draws bare.**
+  A `grid_text` decision becomes a text node, which carries no chart header and
+  no overflow menu. A `configure` decision becomes a chart, and a chart on this
+  dashboard is a card. A page heading sitting directly on the page background
+  is the single most common thing this pipeline has put in a box the design
+  never drew, and `region.chrome.surface` of `bare` is stage A telling you so.
+- **`configure` with `custom_text`** only when the text needs typography that
+  the dashboard's own styling cannot reach *and* the design draws it on a card.
+  Typography mattering is not on its own a reason: the chrome you inherit by
+  becoming a chart costs more fidelity than the font gains.
 
 **Never build a new plugin to render text.** It costs ten minutes, a package
 and a rebuild to do what `custom_text` already does for nothing.
@@ -274,6 +295,11 @@ Emit one; every stage D worker obeys it.
 }
 ```
 
+`card_chrome` describes the card **Superset's own chart holder** is restyled
+to match, once, for the whole dashboard. No plugin draws it. Report it
+faithfully and do not thin it out for a plugin's benefit: plugin source may not
+carry a literal colour, and the dashboard's stylesheet is where this one lands.
+
 `card_chrome` and `typography` come straight from stage A's `global`:
 reconcile them into one repeated treatment rather than inventing your own.
 They matter more than they look. Plugin authors run in parallel, each seeing
@@ -305,17 +331,36 @@ Fold every one into the plan and emit `needs: []` — you do not get asked again
 and the plan you return now is what gets built.
 
 If it carries `validation_problems`, your previous plan was checked and
-rejected. Those are mechanical checks, not opinions. Fix exactly those
-decisions and emit the **whole plan again**, not a patch.
+rejected. Those are mechanical checks, not opinions.
+
+**Fix them as a patch.** Your last plan comes back to you as `your_last_plan` —
+read it, because it is what you are correcting. Set `"revision": "patch"` and
+put only the regions you are changing in `decisions`, each one whole, not a diff
+of fields. Everything you leave out carries over from `your_last_plan`
+untouched, and the merged plan is re-checked in full, so a decision you omit is
+one you are standing behind.
+Include `plan_for_review` again only if the fix changes what the user would
+read; the same goes for `design_system` and `summary`. Re-emitting sixteen
+unchanged decisions to correct one spends minutes and buys nothing.
+
+If it carries `charts_you_already_searched`, that survey is **done**: it holds
+every chart search from your earlier attempts and what each returned. Do not run
+them again — read them and decide. Search only for something you have not looked
+for yet, and never to confirm a result you already have.
 
 If it carries `plan_feedback`, the user read your plan and sent it back. That
 outranks your judgement.
 
 ## Output
 
+This is your stage's contract, not the reply itself. Per the response envelope,
+wrap the whole thing as `{"final": { ...this... }}` — never return it bare, and
+never mix it with `tool_calls`.
+
 ```json
 {
   "status": "ready" | "needs_approval",
+  "revision": "full" | "patch",
   "design_system": { ... },
   "decisions": [{
     "region_id": "...", "ref": "c1",
@@ -334,7 +379,13 @@ outranks your judgement.
               "options": ["..."], "default": "..." }],
   "counts": { "reuse": 0, "configure": 0, "new_plugin": 0,
               "grid_text": 0, "drop": 0 },
-  "plan_for_review": [ ... ],
+  "plan_for_review": [{
+    "step": 1,
+    "what": "one line naming the work in plain words",
+    "why": "the thumbnail comparison or binding that decided it",
+    "exactness": "how close to the design this lands",
+    "cost": "queries per load, and whether code gets written"
+  }],
   "tool_calls": 0,
   "summary": "N reused, M configured, K new plugins."
 }
@@ -347,9 +398,15 @@ so every container's children come before it.
 ## The plan a human will read
 
 `plan_for_review` is shown to the user for approval **before anything is
-created**, so write it for them. One step per meaningful piece of work, each
-saying **what** you will do, **why** (citing the thumbnail comparison or the
+created**, so write it for them. One object per meaningful piece of work,
+carrying **what** you will do, **why** (citing the thumbnail comparison or the
 binding), how **exact** the result will be, and what it **costs**.
+
+**Four separate keys, not one sentence.** The four are shown in different
+places: `what` is the step's heading, `why` sits under it, and `exactness` and
+`cost` are labelled and set apart, because a caveat buried mid-paragraph is a
+caveat nobody reads. A step written as a single prose string still renders, but
+it arrives as an unbroken block with the caveat hidden in it.
 
 - **Name the archetype in plain words.** "A wrapper card holding your three
   provider charts behind tabs" tells the user something; "custom plugin for

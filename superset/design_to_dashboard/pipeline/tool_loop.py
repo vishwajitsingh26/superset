@@ -38,12 +38,16 @@ logger = logging.getLogger(__name__)
 ENVELOPE_INSTRUCTIONS = """
 ## Response envelope
 
-**These tools are not native tools and you cannot call them directly.** You may
-also have a real tool surface available (for reading an attached image, say);
-that is unrelated. The *only* way to use the tools below is to emit the JSON
-envelope described here — this program reads it, runs the tool, and returns the
-result to you. If you look for these tools among your own and do not find them,
-that is expected: emit the envelope instead. Never report them as unreachable.
+**These tools are not native tools and you cannot call them directly.** The
+*only* way to use the tools below is to emit the JSON envelope described here —
+this program reads it, runs the tool, and returns the result to you. If you look
+for these tools among your own and do not find them, that is expected: emit the
+envelope instead. Never report them as unreachable.
+
+**Any image is already attached to this message.** You are looking at it now;
+there is nothing to open, fetch or read first. Plan no step for it, and do not
+put off answering until you have "read" it — describe what you can see, and say
+plainly if you cannot see something rather than describing what is likely there.
 
 Every reply is a single JSON object and nothing else. Choose exactly one shape.
 

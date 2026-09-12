@@ -31,6 +31,7 @@ import threading
 from typing import Any, Callable
 
 from superset.design_to_dashboard import (
+    chrome,
     crop,
     plugin_review,
     trace,
@@ -590,7 +591,20 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 fans out must resolve its provider before starting the pool.
                 """
                 if stage not in _provider_cache:
-                    _provider_cache[stage] = get_llm_provider(stage)
+                    provider = get_llm_provider(stage)
+                    if _config().get("record_calls"):
+                        # Wrapped rather than recorded stage by stage: every
+                        # stage reaches the model through the provider, so this
+                        # also catches the tool loop's intermediate turns and
+                        # F's per-region calls, which the runner never sees.
+                        from superset.design_to_dashboard.llm.recorder import (
+                            RecordingProvider,
+                        )
+
+                        provider = RecordingProvider(
+                            provider, stage, session.id, REPO_ROOT
+                        )
+                    _provider_cache[stage] = provider
                 return _provider_cache[stage]
 
             gateway = InProcessGateway()
@@ -754,24 +768,48 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             if answers:
                 binding_with_answers["user_answers"] = answers
 
+            # Every chart lookup stage C has made, carried across attempts. A
+            # replan runs a fresh tool loop, so without this the reuse survey is
+            # repeated in full each time -- the same searches, the same answer,
+            # a turn each.
+            chart_searches: list[dict[str, Any]] = []
+
             def _resolve(extra: dict[str, Any] | None = None) -> Any:
                 """One stage C attempt. `extra` is what this attempt knows that
                 the last one did not -- validation problems, or the user's own
                 words about the plan."""
-                nonlocal total_cost
-                result = c_resolve.run(
-                    provider_for("C"),
-                    gateway,
-                    design_analysis,
-                    {**binding_with_answers, **(extra or {})},
-                    PROMPTS,
-                    str(REGISTRY),
-                    on_progress=_tool_progress,
-                    on_thinking=_thinking_for("C"),
-                    thumbnail_sheet=str(THUMBNAIL_SHEET)
-                    if THUMBNAIL_SHEET.exists()
-                    else None,
-                    image_paths=session.image_paths,
+                nonlocal total_cost, chart_searches
+                # The plan being corrected. Passing it lets the attempt reply
+                # with only what changes; `c_resolve` merges it back to a whole
+                # plan, so everything downstream is unaffected.
+                previous_plan = session.artifacts.get("plan")
+                payload = {**binding_with_answers, **(extra or {})}
+                if chart_searches:
+                    payload["charts_you_already_searched"] = chart_searches
+                if previous_plan:
+                    payload["your_last_plan"] = previous_plan
+                result = _retry(
+                    session,
+                    "Choosing chart types",
+                    2,
+                    lambda: c_resolve.run(
+                        provider_for("C"),
+                        gateway,
+                        design_analysis,
+                        payload,
+                        PROMPTS,
+                        str(REGISTRY),
+                        on_progress=_tool_progress,
+                        on_thinking=_thinking_for("C"),
+                        thumbnail_sheet=str(THUMBNAIL_SHEET)
+                        if THUMBNAIL_SHEET.exists()
+                        else None,
+                        image_paths=session.image_paths,
+                        previous_plan=previous_plan,
+                    ),
+                )
+                chart_searches = c_resolve.chart_searches(
+                    result.transcript, chart_searches
                 )
                 total_cost += result.cost_usd
                 session.artifacts["plan"] = result.final
@@ -787,9 +825,20 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # One round. It is re-run with the answers and must then decide,
             # because a stage that can keep asking will, and the user did not
             # come here to be interviewed.
+            # Superset's own default until the user says otherwise: a card
+            # the design drew keeps its menu, a bare region never had one.
+            menus = chrome.MENU_DATA_ONLY
+
+            # Asked from Python, not from stage C: a design never draws
+            # Superset's overflow menu, so a model reading the design answers
+            # "no menu" every time. Whether the menu is wanted is a fact about
+            # who uses the dashboard, not about the picture. It rides along
+            # with C's own needs so the user is stopped once, not twice.
+            chrome_entries = chrome.resolve(design_analysis, plan.final)
+            chrome_question = chrome.question(chrome_entries)
             if needs := [
                 n for n in plan.final.get("needs") or [] if isinstance(n, dict)
-            ]:
+            ] + ([chrome_question] if chrome_question else []):
                 merged_needs = {"questions": needs}
                 questions.normalise_questions(merged_needs)
                 session.publish(
@@ -804,10 +853,15 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         "questions": merged_needs["questions"],
                     },
                 )
+                replies = c_resolve.replies_of(need_answers)
                 binding_with_answers["user_answers"] = {
                     **c_resolve.replies_of(binding_with_answers.get("user_answers")),
-                    **c_resolve.replies_of(need_answers),
+                    **replies,
                 }
+                if chrome_question:
+                    menus = chrome.menus_from_answer(
+                        replies.get(chrome.MENU_QUESTION_ID)
+                    )
                 plan = _resolve(
                     {"answers_to_your_questions": merged_needs["questions"]}
                 )
@@ -1390,6 +1444,18 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             )
             total_cost += cost
             session.artifacts["layout"] = layout
+            headerless = {
+                entry.ref
+                for entry in chrome.resolve(design_analysis, plan.final, menus)
+                if entry.ref and entry.title != "superset" and not entry.menu
+            }
+            if given_back := e_layout.strip_header_allowance(
+                layout.get("position_json") or {}, headerless
+            ):
+                layout.setdefault("adjustments", []).extend(
+                    {"row_id": note.split(":")[0], "issue": note, "resolution": note}
+                    for note in given_back
+                )
             problems = e_layout.validate(layout, plan.final)
             _reasoning = session.take_thinking()
             session.publish(
@@ -1423,9 +1489,20 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     chart_specs=chart_specs,
                     layout=layout,
                     dashboard_title=(design_analysis.get("global") or {}).get("title"),
+                    menus=menus,
                 )
             except ApplyError as ex:
                 raise RuntimeError(str(ex)) from ex
+
+            # The user asked to be told what matching the design costs, rather
+            # than to have the trade made quietly. Published as its own event
+            # so it survives into the run's write-up.
+            if applied.chrome_effects:
+                session.publish(
+                    "chrome_effects",
+                    label="What matching the design's chrome changed",
+                    effects=applied.chrome_effects,
+                )
 
             _photograph_new_plugins(session, plan.final)
 

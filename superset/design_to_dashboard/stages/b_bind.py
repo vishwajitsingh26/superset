@@ -128,12 +128,21 @@ def run(
         image_paths=image_paths,
     )
     result.final.setdefault("tool_calls", result.tool_calls)
+
+    def _count(key: str) -> int:
+        """Length of a `final` field the model was supposed to return as a
+        list. Diagnostic logging is not the place to raise on a shape the
+        model got wrong -- that is `validate`'s job, run after this returns.
+        """
+        value = result.final.get(key)
+        return len(value) if isinstance(value, list) else 0
+
     logger.info(
         "stage B complete: status=%s tables=%d views=%d bindings=%d tool_calls=%d",
         result.final.get("status"),
-        len(result.final.get("fact_tables") or []),
-        len(result.final.get("views") or []),
-        len(result.final.get("bindings") or []),
+        _count("fact_tables"),
+        _count("views"),
+        _count("bindings"),
         result.tool_calls,
     )
     return result

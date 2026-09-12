@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-kpi-spark-card-b3d605",
+  "version": "0.1.0",
+  "description": "The user chose one custom KPI card plugin for all four cards: accent icon + label row, a 30px value, a green delta for a decrease, a ’vs. last month’ caption a…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

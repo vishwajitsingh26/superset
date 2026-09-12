@@ -25,6 +25,7 @@ plugin as built.
 from __future__ import annotations
 
 import pathlib
+import re
 import time
 from typing import Any
 
@@ -44,6 +45,8 @@ from superset.design_to_dashboard.stages.f_scaffold import (
     _build_failure_note,
     _check_exemplar,
     _chrome_note,
+    _missing_imports,
+    _renamed_prop_pattern,
     _unusual_note,
     resolve_children,
     validate,
@@ -472,6 +475,65 @@ def test_a_comment_naming_a_forbidden_construct_is_not_a_violation(
             "const ok = 1;\n",
         )
     )
+
+
+def test_a_hook_named_in_a_comment_is_not_a_use() -> None:
+    """The false positive that cost a run four regions of its dashboard.
+
+    Three plugins generated cleanly and were rejected over one prose line
+    explaining where their theme tokens came from. Every region they served
+    was dropped, and the reason was never written down.
+    """
+    assert not _missing_imports(
+        "src/constants.ts",
+        "// theme token read from `useTheme()`, so the table follows "
+        "light and dark.\nexport const GAP = 8;\n",
+    )
+
+
+def test_a_hook_used_in_code_is_still_caught() -> None:
+    """Stripping comments must not blind the check to the real thing."""
+    assert _missing_imports("src/C.tsx", "const theme = useTheme();")
+
+
+def test_a_commented_out_import_does_not_satisfy_the_check() -> None:
+    """Reading imports from stripped source closes the opposite hole too."""
+    assert _missing_imports(
+        "src/C.tsx",
+        "// import { useTheme } from '@superset-ui/core';\nconst theme = useTheme();",
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "const visible = slices.slice(0, sliceCount - 1);",
+        "let visible = true;",
+        "const { visible = true } = props;",
+        "state.visible = false;",
+        "if (a.visible === b) {}",
+    ],
+)
+def test_an_ordinary_variable_is_not_an_antd_prop(source: str) -> None:
+    """`visible` is an antd v4 prop and an ordinary English word.
+
+    A bare word-boundary match rejected a working donut plugin over a local
+    holding the non-`Others` slices.
+    """
+    assert not re.search(_renamed_prop_pattern("visible"), source)
+
+
+@pytest.mark.parametrize(
+    "stale,source",
+    [
+        ("visible", "<Modal visible={open} />"),
+        ("visible", "<Tooltip\n  visible={isOpen}\n/>"),
+        ("dropdownMatchSelectWidth", "<Select dropdownMatchSelectWidth={false} />"),
+        ("bodyStyle", "<Card bodyStyle={{ padding: 0 }} />"),
+    ],
+)
+def test_a_renamed_prop_in_jsx_is_still_caught(stale: str, source: str) -> None:
+    assert re.search(_renamed_prop_pattern(stale), source)
 
 
 def test_a_computed_colour_is_not_a_literal() -> None:

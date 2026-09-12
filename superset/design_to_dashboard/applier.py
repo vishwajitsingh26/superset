@@ -35,6 +35,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from superset.design_to_dashboard import chrome, filter_scope
 from superset.design_to_dashboard.stages.e_layout import ensure_uuids, REF_PREFIX
 from superset.utils import json
 
@@ -54,6 +55,9 @@ class ApplyResult:
     ref_to_id: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     created_datasets: list[dict[str, Any]] = field(default_factory=list)
+    # What matching the design's chrome cost, in plain words. Returned rather
+    # than logged because the user asked to be told, not to have it decided.
+    chrome_effects: list[str] = field(default_factory=list)
 
 
 def substitute_refs(value: Any, ref_to_id: dict[str, int]) -> Any:
@@ -519,6 +523,8 @@ def apply_plan(  # noqa: C901
     chart_specs: list[dict[str, Any]],
     layout: dict[str, Any],
     dashboard_title: str | None = None,
+    menus: str = chrome.MENU_DATA_ONLY,
+    filter_scope_answer: str = filter_scope.SCOPE_EXCEPT_TRENDS,
 ) -> ApplyResult:
     """Create the charts and the dashboard described by the plan.
 
@@ -618,7 +624,6 @@ def apply_plan(  # noqa: C901
             if not isinstance(params, dict):
                 params = json.loads(body.get("params") or "{}")
             params = substitute_refs(params, result.ref_to_id)
-
             datasource_type = body.get("datasource_type", "table")
             # Prefer a query context from stage D; derive one otherwise so the
             # chart is queryable through the API, not only inside a dashboard.
@@ -702,12 +707,33 @@ def apply_plan(  # noqa: C901
             if all_ids
             else []
         )
+        # The design's card is a literal hex, which plugin source may not
+        # carry. This is the one writable surface where it is legal, so the
+        # holder is restyled here instead of redrawn inside every plugin.
+        # A control in the grid is a cross-filter emitter, and an emitter with
+        # no entry here has no scope -- which means its mask reaches every
+        # chart on the dashboard. Registering nothing as a *native* filter is
+        # what keeps the filter panel from rendering at all.
+        metadata["chart_configuration"] = filter_scope.build(
+            plan, usable, result.ref_to_id, filter_scope_answer, design_analysis
+        )
+        entries = chrome.resolve(design_analysis, plan, menus)
+        css = chrome.compile_css(
+            entries,
+            result.ref_to_id,
+            plan.get("design_system") or {},
+            (design_analysis.get("global") or {}).get("page_background"),
+        )
+        result.chrome_effects = chrome.effects(entries) + filter_scope.effects(
+            plan, usable, filter_scope_answer, design_analysis
+        )
         UpdateDashboardCommand(
             dashboard.id,
             {
                 "position_json": json.dumps(position),
                 "json_metadata": json.dumps(metadata),
                 "slices": slice_objects,
+                "css": css,
             },
         ).run()
 

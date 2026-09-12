@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-date-range-filter-b3d605",
+  "version": "0.1.0",
+  "description": "A date range control is always a filter_widget plugin: it reads range_start/range_end from dataset 65 so the calendar cannot open outside Jan 1 – Apr 30 2025,…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

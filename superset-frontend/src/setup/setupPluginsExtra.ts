@@ -21,6 +21,16 @@
 
 import { CustomTextPlugin } from '@superset-ui/plugin-chart-custom-text';
 
+import { CustomDateRangeFilterPlugin } from '@superset-ui/plugin-chart-custom-date-range-filter-b3d605';
+
+import { CustomKpiSparkCardPlugin } from '@superset-ui/plugin-chart-custom-kpi-spark-card-b3d605';
+
 export default function setupPluginsExtra() {
   new CustomTextPlugin().configure({ key: 'custom_text' }).register();
+  new CustomDateRangeFilterPlugin()
+    .configure({ key: 'custom_date_range_filter' })
+    .register();
+  new CustomKpiSparkCardPlugin()
+    .configure({ key: 'custom_kpi_spark_card' })
+    .register();
 }

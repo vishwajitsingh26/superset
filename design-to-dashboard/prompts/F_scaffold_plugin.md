@@ -101,9 +101,80 @@ how it looks:
   controls — and never re-implement a child's chart. The children keep their own
   queries, cross-filtering and drill.
 - **`filter_widget`** — a plugin that *is* a filter: it sits in the grid like a
-  card and drives every other chart on the dashboard.
+  card and drives the other charts on the dashboard. It drives them by calling
+  `setDataMask({ extraFormData, filterState })`; every chart in its scope
+  requeries when it does.
+  **Declare `Behavior.InteractiveChart` as well as `Behavior.NativeFilter`**,
+  exactly as Superset's own `filter_select` and `filter_time` do. A control in
+  the grid is a cross-filter emitter whatever its metadata claims, and
+  `InteractiveChart` is the flag that gives it an entry in the dashboard's
+  `chart_configuration` — which is where its scope lives. Declare only
+  `NativeFilter` and it has no entry, no scope, and its value silently reaches
+  *every* chart on the page. That is not a hypothetical: it is how one month's
+  data ended up across a whole dashboard.
+  **Commit on the button, or on change — the design decides which.** Where an
+  Apply (or Search, or Go) button is drawn, hold every selection in local state
+  and call `setDataMask` **once**, when it is pressed: one refresh for three
+  changed dropdowns is the reason the design has the button. Keep it disabled
+  while nothing is pending, and make it visible that what is on screen is not
+  yet applied. Where no such button is drawn, each control calls `setDataMask`
+  as it changes and the dashboard follows immediately — do not invent a timer or
+  a batch, and do not add a button the design does not show.
+  A **date or time range** filter is bound to a one-row dataset carrying
+  `range_start` and `range_end`. Query those two values, render a calendar whose
+  selectable span is exactly that window — a date outside it returns nothing, so
+  offering it is offering an empty dashboard — and open on the range the design
+  displays. Push the selection as a `time_range` in `extraFormData`. Show the
+  bounds while the query is in flight rather than an empty field: the control is
+  drawn before its own data arrives.
+  **Push `time_range` and nothing else.** Do not also emit an explicit
+  `filters` clause naming the date column. `time_range` is an *override*: it
+  replaces the value of whatever `TEMPORAL_RANGE` filter each chart already
+  carries, so every chart resolves it against its own temporal column and a
+  chart with no such filter is simply unaffected. A `filters` clause is an
+  *append*: it is added verbatim to every chart in scope, including charts
+  whose dataset has no column by that name, and those queries fail.
 - **`table`** — cells that are drawn rather than written: ratio bars,
   sparklines, trend arrows, chips, expandable hierarchy rows.
+
+### A series and a headline are two queries, never one
+
+Where your region draws a series — a sparkline, a trend line, a run of bars —
+the series and any single value beside it want different amounts of data, and
+one query cannot serve both. A dashboard date range set to one month leaves a
+sparkline with one point and a "vs. last month" delta with nothing to compare
+against. This is not a rare edge: it is what happens the first time anyone uses
+the date control the design draws.
+
+So a plugin that draws a series **must**:
+
+- **Expose a span control** — how many periods the series covers, as a number.
+  Stage D sets it from the periods the design draws and never below two.
+  Default it to a sane count and clamp anything under two on read; one point is
+  not a line.
+- **Issue two query objects.** The first is the base object you are handed: it
+  already carries the dashboard's date range, and it produces the headline
+  value. The second is the series, over a window you widen yourself.
+- **Widen by rewriting `time_range`, anchored to the end of the effective
+  range** so the series moves when the dashboard's date moves instead of
+  ignoring it. Read the effective range from `formData.extra_form_data
+  ?.time_range` and fall back to this chart's own `TEMPORAL_RANGE` comparator.
+  Take the text after `" : "` as the end. Then build a second context from a
+  clone of the form data whose `extra_form_data.time_range` is
+  `` `DATEADD(DATETIME('<end>'), -<span>, <grain>) : <end>` ``, and concatenate
+  its `queries` onto the first context's. Superset parses that expression
+  server-side, so do no date arithmetic of your own.
+  The grain comes from `time_grain_sqla`: `P1M` is `month`, `P1W` is `week`,
+  `P1D` is `day`, `PT1H` is `hour`. Where the effective range is `No filter` or
+  absent, pass `No filter` through for the series too and let it read whatever
+  history exists.
+- **Read them back by position** in `transformProps`: `queriesData[0]` is the
+  headline, `queriesData[1]` is the series. Derive any period-over-period delta
+  from the **series**, never from the headline query, which may hold one row.
+
+This is the pattern core uses for time comparison, where a second context is
+built from a form data clone with `extra_form_data.time_range` overridden. You
+are widening rather than dropping it; the mechanism is the same.
 - **`navigation`** — breadcrumbs and drill headers, which move the dashboard
   between states rather than plotting data.
 
@@ -173,13 +244,24 @@ it exactly:
 - Reproduce the observed layout — where labels sit relative to values, what is
   above versus beside what.
 - Reproduce the observed number formatting, including magnitude suffixes.
-- Reproduce the card chrome from the design-system contract's `card_chrome`
-  and `typography`: radius, border, shadow, padding, header style, and the
-  size/weight scale. **Take these from the contract, not from your crop**,
-  even where your crop looks slightly different. Every plugin in this run is
-  written in parallel by a worker that sees only its own card; the contract
-  is the one thing that makes six of them agree, and the card treatment is
-  the most repeated element on the page.
+- **Never draw the card.** No border, no radius, no shadow, no background, no
+  outer padding. Superset already wraps your component in a chart holder, and
+  that holder is restyled from the contract's `card_chrome` for the whole
+  dashboard at once. Draw one yourself and the page shows two, nested. This
+  used to be the instruction and it could not be obeyed: a design's card is a
+  literal colour such as `1px solid #E2E8F0`, and the rules below reject a
+  literal colour in plugin source, so the only way to pass was to draw a card
+  that did not match. Your component fills the space it is given.
+- Reproduce the contract's `typography`: the size and weight scale for the
+  label, the value and any caption. **Take these from the contract, not from
+  your crop**, even where your crop looks slightly different. Every plugin in
+  this run is written in parallel by a worker that sees only its own card, and
+  the contract is the one thing that makes six of them agree.
+- **Draw the section's own title when the region has one.** Superset's chart
+  header is hidden wherever the design decorates its title with an icon, a
+  badge or a second line, because that header renders plain text and nothing
+  else. Where your region's `chrome.title` is `decorated`, the title is yours
+  to draw; where it is `plain`, Superset draws it and you must not.
 - Use theme tokens (`theme.colorText`, `theme.sizeUnit`, `theme.fontSizeXL`)
   rather than hardcoded colours, so the chart follows light and dark themes.
 - **Never write a literal colour into the plugin source** -- not in

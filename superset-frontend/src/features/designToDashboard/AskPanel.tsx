@@ -325,7 +325,12 @@ export default function AskPanel({ pending, onReply }: Props) {
   }
 
   if (pending.kind === 'plan') {
-    const steps = pending.plan ?? [];
+    // A step written as one line carries the same content in `what`, so the
+    // list renders from one shape either way. Read straight from the object,
+    // an unsplit step showed as a numbered bullet with nothing beside it.
+    const steps = (pending.plan ?? []).map(step =>
+      typeof step === 'string' ? { what: step } : step,
+    );
     return (
       <Block data-test="d2d-plan-approval">
         {steps.length === 0 && (
@@ -333,7 +338,7 @@ export default function AskPanel({ pending, onReply }: Props) {
         )}
         <Steps>
           {steps.map(step => (
-            <li key={step.step}>
+            <li key={step.what}>
               <StepWhat>{step.what}</StepWhat>
               {step.why && <StepLine>{step.why}</StepLine>}
               {step.exactness && (

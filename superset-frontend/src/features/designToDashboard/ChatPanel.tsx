@@ -23,6 +23,18 @@ import { buildConversation, Stage } from './stageModel';
 import AskPanel from './AskPanel';
 import { PendingAsk, StageEvent } from './useDesignToDashboard';
 
+/**
+ * What the run is asking for, per gate. Every gate but the first was headed
+ * "A few questions first", which read as a question when the plugin and
+ * dataset gates are approvals of work about to happen.
+ */
+const ASK_HEADINGS: Record<PendingAsk['kind'], string> = {
+  questions: t('A few questions first'),
+  plan: t('Review the plan'),
+  datasets: t('Data I need to create'),
+  plugins: t('The plugins I would write'),
+};
+
 const Wrap = styled.div`
   ${({ theme }) => `
     display: flex;
@@ -375,9 +387,7 @@ export default function ChatPanel({
           <Turn from="agent">
             <Bubble from="agent">
               <Who>
-                {pending.kind === 'plan'
-                  ? t('Review the plan')
-                  : t('A few questions first')}
+                {ASK_HEADINGS[pending.kind] ?? t('A few questions first')}
               </Who>
               <AskPanel pending={pending} onReply={onReply} />
             </Bubble>
