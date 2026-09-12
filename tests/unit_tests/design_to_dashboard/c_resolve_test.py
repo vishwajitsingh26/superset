@@ -35,8 +35,16 @@ from superset.design_to_dashboard.stages.f_scaffold import (
 )
 from superset.utils import json
 
-FIXTURES = pathlib.Path(__file__).resolve().parents[3] / "design-to-dashboard/fixtures"
-REGISTRY = str(FIXTURES / "viz_registry.json")
+# Recorded stage outputs live beside the tests that assert on them. The viz
+# registry does not: it is a runtime asset the pipeline itself loads, and a
+# copy here would drift from the one stage C is actually given.
+FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
+REGISTRY = str(
+    pathlib.Path(__file__).resolve().parents[3]
+    / "design-to-dashboard"
+    / "fixtures"
+    / "viz_registry.json"
+)
 
 
 def _fixture(name: str) -> dict[str, Any]:

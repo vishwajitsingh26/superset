@@ -28,8 +28,6 @@ import { useDesignToDashboard } from 'src/features/designToDashboard/useDesignTo
  * The conversation pane and the preview pane are built out in
  * `src/features/designToDashboard/`. This file stays thin: routing,
  * layout frame, and nothing else.
- *
- * Interaction model and build order: `design-to-dashboard/UI_PLAN.md`.
  */
 
 const Layout = styled.div`

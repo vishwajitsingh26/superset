@@ -1,7 +1,0 @@
-{
-  "status": "success",
-  "columns": ["probe"],
-  "data": [{"probe": 1}],
-  "row_count": 1,
-  "note": "Fixture gateway: SQL is not really executed. Treat a success here as 'syntax plausible', not as proof."
-}

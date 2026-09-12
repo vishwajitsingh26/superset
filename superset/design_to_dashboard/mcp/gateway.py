@@ -16,16 +16,14 @@
 # under the License.
 """Access to Superset's MCP tools for the Design-to-Dashboard pipeline.
 
-Stages never import MCP tool functions directly. They go through a gateway so
-the same stage code runs against a live Superset (`InProcessGateway`) or
-against recorded fixtures (`FixtureGateway`) with no changes.
+Stages never import MCP tool functions directly. They go through a gateway,
+so what a stage calls and how that call reaches Superset stay separable.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import pathlib
 from typing import Any, Protocol
 
 from superset.utils import json
@@ -117,42 +115,3 @@ class InProcessGateway:
             return data
 
         return result
-
-
-class FixtureGateway:
-    """Serves recorded tool responses from a directory of JSON files.
-
-    Lets stages and prompts be developed and tested without a running Superset.
-    Files are named `<tool>.json`; a file may hold either a single response or
-    a mapping of argument-signature to response.
-    """
-
-    name = "fixture"
-
-    def __init__(self, directory: str | pathlib.Path) -> None:
-        self.directory = pathlib.Path(directory)
-        if not self.directory.is_dir():
-            raise MCPError(f"Fixture directory not found: {self.directory}")
-        self.calls: list[dict[str, Any]] = []
-
-    def call(self, tool: str, arguments: dict[str, Any]) -> Any:
-        self.calls.append({"tool": tool, "arguments": arguments})
-        path = self.directory / f"{tool}.json"
-        if not path.exists():
-            raise MCPError(f"No fixture for tool {tool!r} at {path}")
-
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(payload, dict) and "__by_argument__" in payload:
-            # MCP tools take a single `request` model, so the key we switch on
-            # is nested one level down. Accept both shapes.
-            flat = arguments.get("request")
-            flat = flat if isinstance(flat, dict) else arguments
-            key = str(flat.get(payload.get("__key__", "identifier"), ""))
-            responses = payload["__by_argument__"]
-            if key not in responses:
-                raise MCPError(
-                    f"Fixture {path.name} has no entry for {key!r}. "
-                    f"Available: {sorted(responses)}"
-                )
-            return responses[key]
-        return payload
