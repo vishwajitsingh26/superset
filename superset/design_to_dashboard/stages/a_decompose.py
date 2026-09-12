@@ -54,6 +54,23 @@ COMPOSITIONS = {"atomic", "container", "control"}
 # the wrong space is out by tens of percent and must still be caught.
 BBOX_SLACK = 0.02
 
+# How much of a region has to sit inside a container before it is that
+# container's content rather than its neighbour. Cards butt up against the
+# frames around them, so this is deliberately short of total containment.
+INSIDE = 0.75
+
+# One repair pass. Reading the design is the longest call in the pipeline, so a
+# blind re-ask was rightly refused -- but the problems are mechanical and now
+# in hand, and losing a whole run to a single bad enum value is worse than one
+# extra call. Every other stage already repairs this way.
+MAX_ATTEMPTS = 2
+
+# Roles that draw data, and so are the ones a container would be drawing twice.
+# A control *is* allowed to sit inside a container's bbox: a toggle in a panel
+# header is its own region by design, and is what makes the frame a container
+# in the first place.
+DRAWN_ROLES = {"kpi", "chart", "table"}
+
 
 def build_system_prompt(prompts_dir: pathlib.Path) -> str:
     """Assemble the stage A system prompt: preamble, then the stage."""
@@ -125,6 +142,72 @@ def _check_canvas_matches_image(  # noqa: C901
     return problems
 
 
+def _box(region: dict[str, Any]) -> tuple[float, float, float, float] | None:
+    """`(x, y, w, h)` as floats, or None when the bbox is unusable."""
+    bbox = region.get("bbox")
+    if not isinstance(bbox, dict):
+        return None
+    try:
+        x, y = float(bbox["x"]), float(bbox["y"])
+        w, h = float(bbox["w"]), float(bbox["h"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (x, y, w, h) if w > 0 and h > 0 else None
+
+
+def _inside(
+    inner: tuple[float, float, float, float], outer: tuple[float, float, float, float]
+) -> float:
+    """The fraction of `inner`'s area that lies within `outer`."""
+    ix, iy, iw, ih = inner
+    ox, oy, ow, oh = outer
+    overlap_w = max(0.0, min(ix + iw, ox + ow) - max(ix, ox))
+    overlap_h = max(0.0, min(iy + ih, oy + oh) - max(iy, oy))
+    return (overlap_w * overlap_h) / (iw * ih)
+
+
+def _containers_beside_their_contents(regions: list[Any]) -> list[str]:
+    """Containers that were emitted *and* had their contents emitted too.
+
+    The prompt used to say both: that four KPI cards in a row are four regions,
+    and that a panel around those four cards is a container. Read together that
+    is five regions -- the frame and the four things inside it -- with nothing
+    in the contract to say which belongs to which. The pipeline's only
+    containment mechanism is the `:N` suffix stage B mints, and that assumes the
+    frame arrived as one region, so the children are laid out a second time on
+    their own.
+
+    Bboxes are the evidence, and the only evidence: nothing else in the reading
+    relates one region to another.
+    """
+    problems: list[str] = []
+    boxed = [
+        (region, box)
+        for region in regions
+        if isinstance(region, dict) and (box := _box(region)) is not None
+    ]
+    for region, outer in boxed:
+        if region.get("composition") != "container":
+            continue
+        swallowed = [
+            other["region_id"]
+            for other, inner in boxed
+            if other is not region
+            and other.get("role") in DRAWN_ROLES
+            and _inside(inner, outer) >= INSIDE
+        ]
+        if swallowed:
+            problems.append(
+                f"{region['region_id']}: is a container and {len(swallowed)} other "
+                f"regions are drawn inside it ({', '.join(sorted(swallowed)[:4])}"
+                f"{', ...' if len(swallowed) > 4 else ''}). A container is one "
+                "region: describe what it holds in `observed` and drop those "
+                "regions, or -- if the frame only draws a border -- keep them and "
+                "make this region `atomic`, or drop it as `decoration`."
+            )
+    return problems
+
+
 def validate(  # noqa: C901
     design_analysis: dict[str, Any], image_paths: list[str] | None = None
 ) -> list[str]:
@@ -171,6 +254,7 @@ def validate(  # noqa: C901
             )
 
     problems += _validate_geometry(design_analysis, regions, seen, image_paths or [])
+    problems += _containers_beside_their_contents(regions)
 
     order = (design_analysis.get("global") or {}).get("reading_order")
     if not isinstance(order, list):
@@ -232,12 +316,26 @@ def _validate_geometry(
     return problems
 
 
+def _repair_note(problems: list[str]) -> str:
+    """The previous reading's faults, to be fixed rather than re-derived."""
+    listed = "\n".join(f"- {problem}" for problem in problems)
+    return (
+        "\n\nYour previous reading of this design failed these checks. They are "
+        "mechanical, not matters of taste -- an enum value that is not in the "
+        "list, a box outside the canvas, a region in `reading_order` that does "
+        "not exist. Keep everything that was right and return the whole "
+        "analysis again with each of these fixed.\n"
+        f"{listed}"
+    )
+
+
 def run(
     provider: LLMProvider,
     requirement: str,
     image_paths: list[str],
     prompts_dir: pathlib.Path,
     on_thinking: Any = None,
+    attempts: int = MAX_ATTEMPTS,
 ) -> tuple[dict[str, Any], float]:
     """Read the design. Returns ``(design_analysis, cost_usd)``.
 
@@ -245,11 +343,41 @@ def run(
     JSON is retried with the call, not after it: this stage is the longest
     single call in the pipeline, and losing it to one unparseable turn costs
     the same as losing it to a transient error.
+
+    A reading that parses but fails :func:`validate` is asked again with the
+    problems in hand. The caller still validates what it gets back and still
+    fails the run if it is wrong -- this only spends one more call first.
     """
-    response = provider.complete(
-        build_system_prompt(prompts_dir),
-        build_user_prompt(requirement),
-        image_paths,
-        on_thinking=on_thinking,
-    )
-    return extract_json(response.text), response.cost_usd or 0.0
+    system_prompt = build_system_prompt(prompts_dir)
+    user_prompt = build_user_prompt(requirement)
+    cost = 0.0
+    analysis: dict[str, Any] = {}
+
+    for attempt in range(1, attempts + 1):
+        response = provider.complete(
+            system_prompt,
+            user_prompt,
+            image_paths,
+            on_thinking=on_thinking,
+        )
+        cost += response.cost_usd or 0.0
+        analysis = extract_json(response.text)
+
+        problems = validate(analysis, image_paths)
+        if not problems or attempt == attempts:
+            if problems:
+                logger.warning(
+                    "stage A still has %d problem(s) after %d attempt(s)",
+                    len(problems),
+                    attempt,
+                )
+            return analysis, cost
+
+        logger.info(
+            "stage A attempt %d had %d problem(s); asking again",
+            attempt,
+            len(problems),
+        )
+        user_prompt = build_user_prompt(requirement) + _repair_note(problems)
+
+    return analysis, cost

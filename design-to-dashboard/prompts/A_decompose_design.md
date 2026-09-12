@@ -135,17 +135,31 @@ Then emit `global`:
 - **A group of visually identical cards is N regions, not one.** Four KPI tiles in a row are `r01`–`r04`. Downstream deduplicates.
 - **A control drawn inside another section's header is its own region.** A
   currency toggle beside a card title, a scope dropdown above a table, a
-  segmented view switcher in a panel header: emit each as its own `filter` or
-  `control` region, not as a sentence inside the header's `observed`. Folded
-  into the header it becomes text downstream, and a text node cannot draw a
-  switch — the control disappears from the dashboard.
+  segmented view switcher in a panel header: emit each as its own region with
+  `role: filter` and `composition: control`, not as a sentence inside the
+  header's `observed`. Folded into the header it becomes text downstream, and a
+  text node cannot draw a switch — the control disappears from the dashboard.
+  Note that `control` is a **composition**, never a `role`: the roles are the
+  eight listed above and `control` is not among them.
 - **Distinguish filter bar from filter widget.** A control in a dedicated top/left bar is `role: filter` with `global.filter_bar.present = true`. A filter drawn as a card inside the grid is `role: filter` sitting in the reading order. This distinction decides native-filter vs. chart-widget downstream — get it right.
 - **A wrapper is one region with tabs.** If a single card contains a tab switcher over several *different* charts, emit one region, `role: chart`, `composition: container`, and put the tab labels in `observed`. Do not split it into one region per tab. Describe each thing the card holds in `observed` — a later stage builds one child chart per item, and it can only build what you described.
 - **A container is a frame, not a rich card.** Four separate KPI cards in a
   row are four `atomic` regions. One card containing a number *and* a delta
   *and* a sparkline — all describing the same measure — is a single `atomic`
-  region, not a container. A bordered panel holding those four cards *is* a
-  container.
+  region, not a container.
+- **A container replaces its contents; it never sits beside them.** A container
+  is *one* region. Describe what it holds in `observed` and emit nothing for
+  the things inside it — a later stage mints one child per item you described.
+  Emitting the frame *and* the four cards inside it gives five regions with
+  nothing to say which belongs to which, and the cards are drawn twice: once by
+  the frame and once on their own.
+- **Only make a frame a container when the frame does something.** A tab
+  switcher, a toggle that swaps which chart is shown, a panel whose header
+  controls its contents: the grid cannot do these, so the frame has to be a
+  region that holds the others. A border, a background, a shared heading over
+  cards that are otherwise independent does none of that — emit the cards as
+  their own regions and let the grid lay them out in a row. A container costs a
+  custom plugin; a border does not need one.
 - **Nothing you see is off-limits.** Custom components are written for this design when no stock chart fits, so never soften an observation to make it sound buildable. Report the labels above the bars, the bar inside the table cell, the breadcrumb above the grid. A design detail you smooth over is a detail the dashboard will not have.
 - **Decoration is not a chart.** Logos, dividers, background art → `role: decoration`. Downstream drops them.
 - **Do not infer intent.** If the design shows a number with no label, say so. Do not name it.

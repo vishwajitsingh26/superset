@@ -24,7 +24,9 @@ from typing import Any
 
 import pytest
 
+from superset.design_to_dashboard.llm.base import LLMResponse
 from superset.design_to_dashboard.stages.a_decompose import validate
+from superset.utils import json
 
 
 def _region(region_id: str, **overrides: Any) -> dict[str, Any]:
@@ -185,3 +187,176 @@ def _write_image(tmp_path: pathlib.Path, width: int, height: int) -> str:
     path = tmp_path / f"design_{width}x{height}.png"
     pillow.new("RGB", (width, height)).save(path)
     return str(path)
+
+
+# --- a container emitted beside the things it contains -----------------------
+
+
+def _panel(analysis: dict[str, Any], role: str = "kpi") -> dict[str, Any]:
+    """A bordered panel, and four cards drawn inside it.
+
+    The reading the old prompt asked for in two different bullets: four KPI
+    tiles are four regions, *and* the panel around them is a container.
+    """
+    analysis["regions"] = [
+        _region(
+            "r29_coverage",
+            composition="container",
+            role="chart",
+            bbox={"x": 0, "y": 0, "w": 800, "h": 200},
+        ),
+        *[
+            _region(
+                f"r3{index}_card",
+                role=role,
+                bbox={"x": 10 + index * 190, "y": 20, "w": 180, "h": 160},
+            )
+            for index in range(4)
+        ],
+    ]
+    analysis["global"]["reading_order"] = [r["region_id"] for r in analysis["regions"]]
+    return analysis
+
+
+def test_a_container_drawn_around_other_regions_is_reported(
+    analysis: dict[str, Any],
+) -> None:
+    problems = validate(_panel(analysis))
+    assert any(
+        "is a container and 4 other regions are drawn inside it" in p for p in problems
+    )
+
+
+def test_the_same_regions_without_a_container_are_fine(
+    analysis: dict[str, Any],
+) -> None:
+    """Four cards in a row is the correct reading -- the grid lays them out."""
+    panel = _panel(analysis)
+    panel["regions"][0]["composition"] = "atomic"
+    assert validate(panel) == []
+
+
+def test_a_control_inside_a_container_is_not_its_content(
+    analysis: dict[str, Any],
+) -> None:
+    """A toggle in a panel header is its own region by design -- it is what
+    makes the frame a container rather than a border."""
+    panel = _panel(analysis, role="filter")
+    assert validate(panel) == []
+
+
+def test_a_container_beside_its_neighbours_is_fine(analysis: dict[str, Any]) -> None:
+    """Adjacency is not containment: a card next to a tabbed panel is its own
+    region and must not be read as living inside it."""
+    analysis["regions"] = [
+        _region(
+            "r29_tabs",
+            composition="container",
+            bbox={"x": 0, "y": 0, "w": 400, "h": 200},
+        ),
+        _region("r30_next", bbox={"x": 410, "y": 0, "w": 380, "h": 200}),
+    ]
+    analysis["global"]["reading_order"] = ["r29_tabs", "r30_next"]
+    assert validate(analysis) == []
+
+
+def test_a_card_merely_overlapping_a_container_is_not_reported(
+    analysis: dict[str, Any],
+) -> None:
+    """Boxes are read by eye and bleed into each other; only a region mostly
+    inside the frame is the frame's content."""
+    analysis["regions"] = [
+        _region(
+            "r29_panel",
+            composition="container",
+            bbox={"x": 0, "y": 0, "w": 400, "h": 200},
+        ),
+        _region("r30_card", bbox={"x": 350, "y": 0, "w": 380, "h": 200}),
+    ]
+    analysis["global"]["reading_order"] = ["r29_panel", "r30_card"]
+    assert validate(analysis) == []
+
+
+# --- one repair pass ---------------------------------------------------------
+
+
+class _Provider:
+    """Replies with each payload in turn, recording the prompts it was given.
+
+    The parameter names match `LLMProvider.complete` exactly: a Protocol is
+    satisfied structurally, and a renamed keyword argument does not satisfy it.
+    """
+
+    name = "stub"
+
+    def __init__(self, *payloads: dict[str, Any]) -> None:
+        self._payloads = list(payloads)
+        self.prompts: list[str] = []
+
+    def complete(
+        self, system_prompt: str, user_prompt: str, *_args: Any, **_kwargs: Any
+    ) -> LLMResponse:
+        self.prompts.append(user_prompt)
+        return LLMResponse(text=json.dumps(self._payloads.pop(0)), cost_usd=1.0)
+
+
+def _prompts_dir() -> pathlib.Path:
+    import superset.design_to_dashboard.stages.a_decompose as module
+
+    root = pathlib.Path(module.__file__).parents[3]
+    return root / "design-to-dashboard" / "prompts"
+
+
+def test_a_bad_reading_is_asked_again(analysis: dict[str, Any]) -> None:
+    """The failure that cost a whole run: `role: 'control'`, which is a
+    composition and not a role, in four regions."""
+    from superset.design_to_dashboard.stages.a_decompose import run
+
+    broken = copy.deepcopy(analysis)
+    broken["regions"][1]["role"] = "control"
+    provider = _Provider(broken, analysis)
+
+    result, cost = run(provider, "a dashboard", [], _prompts_dir())
+
+    assert validate(result) == [], "the second reading is the one returned"
+    assert cost == 2.0, "both calls are paid for"
+    assert len(provider.prompts) == 2
+
+
+def test_the_repair_names_what_was_wrong(analysis: dict[str, Any]) -> None:
+    """A blind re-ask was refused for good reason; this one is not blind."""
+    from superset.design_to_dashboard.stages.a_decompose import run
+
+    broken = copy.deepcopy(analysis)
+    broken["regions"][1]["role"] = "control"
+    provider = _Provider(broken, analysis)
+    run(provider, "a dashboard", [], _prompts_dir())
+
+    assert "role 'control' is not one of" in provider.prompts[1]
+
+
+def test_a_good_reading_is_not_asked_twice(analysis: dict[str, Any]) -> None:
+    """Stage A is the longest call in the pipeline -- never spend it twice
+    when the first answer was fine."""
+    from superset.design_to_dashboard.stages.a_decompose import run
+
+    provider = _Provider(analysis)
+    _result, cost = run(provider, "a dashboard", [], _prompts_dir())
+    assert len(provider.prompts) == 1
+    assert cost == 1.0
+
+
+def test_a_reading_that_stays_broken_is_returned_for_the_caller_to_reject(
+    analysis: dict[str, Any],
+) -> None:
+    """`run` does not raise: the runner validates and reports the problems."""
+    from superset.design_to_dashboard.stages.a_decompose import run
+
+    broken = copy.deepcopy(analysis)
+    broken["regions"][1]["role"] = "control"
+    provider = _Provider(broken, copy.deepcopy(broken))
+
+    result, _cost = run(provider, "a dashboard", [], _prompts_dir())
+
+    assert len(provider.prompts) == 2, "it stops after the repair pass"
+    assert any("role 'control' is not one of" in p for p in validate(result))
