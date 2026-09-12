@@ -14,265 +14,232 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""Structural validation of stage B's bindings, and the joins that read them."""
+"""Structural checks on the data stage B builds.
+
+Stage B creates the tables rather than finding them, so the failures worth
+catching changed: not "is this column real" but "did you actually create what
+you are binding to, and did you check the SQL runs".
+"""
 
 from __future__ import annotations
 
-import copy
 from typing import Any
 
 import pytest
 
-from superset.design_to_dashboard.applier import _dataset_for
-from superset.design_to_dashboard.stages.b_bind import parent_of, validate
-from superset.design_to_dashboard.stages.clarify import _dedupe
+from superset.design_to_dashboard.stages.b_bind import (
+    build_user_prompt,
+    created_dataset_ids,
+    validate,
+)
+
+SHARED = 23
 
 
 @pytest.fixture
 def design() -> dict[str, Any]:
-    """Two atomic regions and one container."""
     return {
+        "global": {"title": "Database Spend — Multi-Cloud", "reading_order": [1, 2, 3]},
         "regions": [
-            {"region_id": "r01_title", "role": "header", "composition": "atomic"},
-            {"region_id": "r02_trend", "role": "chart", "composition": "atomic"},
-            {"region_id": "r03_card", "role": "kpi", "composition": "container"},
-        ]
+            {"region_id": "r01_coverage", "n": 1, "role": "wrapper"},
+            {"region_id": "r02_aws_coverage", "n": 2, "role": "kpi"},
+            {"region_id": "r03_gcp_coverage", "n": 3, "role": "kpi", "same_as": 2},
+        ],
     }
-
-
-def _binding(region_id: str, **overrides: Any) -> dict[str, Any]:
-    binding = {
-        "region_id": region_id,
-        "state": "bound",
-        "dataset_id": 42,
-        "measures": ["total_cost"],
-        "dimensions": [],
-    }
-    binding.update(overrides)
-    return binding
 
 
 @pytest.fixture
 def bindings() -> dict[str, Any]:
-    """A binding set that satisfies every rule."""
     return {
         "status": "ok",
-        "bindings": [
-            _binding("r02_trend"),
-            _binding("r03_card:1"),
-            _binding("r03_card:2"),
+        "dashboard_name": "database_spend_multi_cloud",
+        "shared_dataset_id": SHARED,
+        "fact_tables": [
+            {
+                "name": "database_coverage",
+                "dataset_id": 24,
+                "grain": "one row per instance family per cloud",
+                "columns": ["instance_family", "cloud", "coverage_pct"],
+                "row_count": 3,
+            }
         ],
-        "questions": [],
-        "created_datasets": [],
+        "views": [
+            {
+                "name": "coverage_by_cloud",
+                "dataset_id": 31,
+                "sql": "SELECT cloud, AVG(coverage_pct) AS coverage FROM "
+                "d2d.database_coverage GROUP BY cloud",
+                "validated": True,
+            }
+        ],
+        "bindings": [
+            {"region_id": "r01_coverage", "dataset_id": SHARED},
+            {
+                "region_id": "r02_aws_coverage",
+                "dataset_id": 31,
+                "dimensions": ["cloud"],
+                "measures": ["coverage"],
+            },
+            {
+                "region_id": "r03_gcp_coverage",
+                "dataset_id": 31,
+                "dimensions": ["cloud"],
+                "measures": ["coverage"],
+            },
+        ],
     }
 
 
-def test_valid_binding_set(bindings: dict[str, Any], design: dict[str, Any]) -> None:
+def test_a_well_formed_binding_set_has_no_problems(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
     assert validate(bindings, design) == []
 
 
-def test_container_children_are_not_unknown_regions(
+# --- every region gets exactly one binding ----------------------------------
+
+
+def test_a_region_left_unbound_is_reported(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
-    """The `:N` suffix is the contract, not an error."""
-    assert not any("unknown region" in p for p in validate(bindings, design))
+    bindings["bindings"] = bindings["bindings"][:2]
+    assert "region not bound: r03_gcp_coverage" in validate(bindings, design)
 
 
-def test_dropped_region_is_reported(
+def test_a_binding_for_an_unknown_region_is_reported(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
-    bindings["bindings"] = [
-        b for b in bindings["bindings"] if b["region_id"] != "r02_trend"
-    ]
-    assert "region not bound: r02_trend" in validate(bindings, design)
+    bindings["bindings"].append({"region_id": "r99_ghost", "dataset_id": SHARED})
+    assert "binding for unknown region: r99_ghost" in validate(bindings, design)
 
 
-def test_binding_for_unknown_region_is_reported(
+def test_one_region_is_one_binding(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
-    bindings["bindings"].append(_binding("r09_ghost"))
-    assert "binding for unknown region: r09_ghost" in validate(bindings, design)
+    """The `:N` suffix retired with nesting -- a child is a region already."""
+    bindings["bindings"].append({"region_id": "r02_aws_coverage", "dataset_id": 31})
+    assert any("2 bindings" in p for p in validate(bindings, design))
 
 
-def test_container_bound_as_a_single_measure_is_reported(
+def test_a_repeated_component_is_not_collapsed(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
-    bindings["bindings"] = [_binding("r02_trend"), _binding("r03_card")]
+    """`same_as` means one plugin, never one binding: a coverage panel and a
+    runtime panel are built identically and read nothing in common."""
+    assert validate(bindings, design) == []
+    assert {b["region_id"] for b in bindings["bindings"]} == {
+        "r01_coverage",
+        "r02_aws_coverage",
+        "r03_gcp_coverage",
+    }
+
+
+# --- what was created, and what was only described --------------------------
+
+
+def test_a_fact_table_without_an_id_was_never_created(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    del bindings["fact_tables"][0]["dataset_id"]
+    assert any("has no dataset_id" in p for p in validate(bindings, design))
+
+
+def test_a_view_without_an_id_was_never_saved(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    del bindings["views"][0]["dataset_id"]
+    assert any("create_virtual_dataset" in p for p in validate(bindings, design))
+
+
+def test_an_unvalidated_view_is_reported(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    """The stage can run its own SQL now, so not running it is a choice."""
+    bindings["views"][0]["validated"] = False
+    assert any("was not validated" in p for p in validate(bindings, design))
+
+
+def test_a_view_without_sql_is_reported(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    bindings["views"][0]["sql"] = "  "
+    assert any("has no SQL" in p for p in validate(bindings, design))
+
+
+def test_a_fact_table_without_columns_is_reported(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    bindings["fact_tables"][0]["columns"] = []
+    assert any("names no columns" in p for p in validate(bindings, design))
+
+
+# --- what a binding points at -----------------------------------------------
+
+
+def test_binding_to_a_dataset_nothing_created_is_reported(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    bindings["bindings"][1]["dataset_id"] = 999
+    assert any("was not created by this stage" in p for p in validate(bindings, design))
+
+
+def test_a_binding_needs_a_real_datasource(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    bindings["bindings"][1]["dataset_id"] = None
+    assert any("every chart needs" in p for p in validate(bindings, design))
+
+
+def test_a_wrapper_takes_the_shared_dataset(
+    bindings: dict[str, Any], design: dict[str, Any]
+) -> None:
+    """Superset needs a datasource on a frame that never queries."""
+    bindings["bindings"][0]["dataset_id"] = 31
     assert any(
-        "is a container but has one unsuffixed" in p for p in validate(bindings, design)
+        "rather than the shared dataset" in p for p in validate(bindings, design)
     )
 
 
-def test_an_atomic_region_split_into_children_is_reported(
+def test_a_missing_shared_dataset_is_reported(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
-    bindings["bindings"].append(_binding("r02_trend:1"))
-    assert any(
-        "is not a container but has 2 bindings" in p for p in validate(bindings, design)
-    )
+    del bindings["shared_dataset_id"]
+    assert any("shared_dataset_id is missing" in p for p in validate(bindings, design))
 
 
-def test_invalid_status_is_reported(
+def test_a_data_region_must_name_columns(
     bindings: dict[str, Any], design: dict[str, Any]
 ) -> None:
+    bindings["bindings"][1]["dimensions"] = []
+    bindings["bindings"][1]["measures"] = []
+    assert any("names no columns" in p for p in validate(bindings, design))
+
+
+def test_status_must_be_known(bindings: dict[str, Any], design: dict[str, Any]) -> None:
     bindings["status"] = "done"
     assert any("invalid status" in p for p in validate(bindings, design))
 
 
-def test_bound_without_columns_is_reported(
-    bindings: dict[str, Any], design: dict[str, Any]
+def test_created_dataset_ids_covers_all_three_kinds(
+    bindings: dict[str, Any],
 ) -> None:
-    bindings["bindings"][0]["measures"] = []
-    assert any("names no columns" in p for p in validate(bindings, design))
+    assert created_dataset_ids(bindings) == {24, 31, SHARED}
 
 
-def test_unavailable_binding_requires_needs_input(
-    bindings: dict[str, Any], design: dict[str, Any]
-) -> None:
-    bindings["bindings"][0]["state"] = "unavailable"
-    assert any("status is not 'needs_input'" in p for p in validate(bindings, design))
+# --- what the stage is given ------------------------------------------------
 
 
-# --- created datasets: the join that caused the apply failure ---------------
+def test_every_region_reaches_the_stage(design: dict[str, Any]) -> None:
+    """Wrappers used to be filtered out, which left them with no datasource."""
+    prompt = build_user_prompt(design)
+    for region_id in ("r01_coverage", "r02_aws_coverage", "r03_gcp_coverage"):
+        assert region_id in prompt
 
 
-def _pending(bindings: dict[str, Any], region_ids: list[str]) -> dict[str, Any]:
-    """Container children waiting on a dataset this run will create."""
-    pending = copy.deepcopy(bindings)
-    for binding in pending["bindings"]:
-        if binding["region_id"].startswith("r03_card"):
-            binding["dataset_id"] = None
-            binding["state"] = "placeholder"
-    pending["created_datasets"] = [
-        {
-            "name": "d2d_card",
-            "kind": "placeholder",
-            "database_id": 1,
-            "region_ids": region_ids,
-        }
-    ]
-    return pending
-
-
-def test_dataset_listing_only_the_parent_is_reported(
-    bindings: dict[str, Any], design: dict[str, Any]
-) -> None:
-    """The confirmed apply failure: `region_ids: ["r03_card"]` while the
-    bindings are `r03_card:1` and `:2`, so neither child is ever repointed."""
-    problems = validate(_pending(bindings, ["r03_card"]), design)
-    assert any("no created dataset lists it" in p for p in problems)
-
-
-def test_dataset_listing_the_children_is_accepted(
-    bindings: dict[str, Any], design: dict[str, Any]
-) -> None:
-    assert validate(_pending(bindings, ["r03_card:1", "r03_card:2"]), design) == []
-
-
-def test_derived_dataset_may_leave_the_binding_bound(
-    bindings: dict[str, Any], design: dict[str, Any]
-) -> None:
-    """A `derived` dataset carries real data, so its regions stay `bound` even
-    though the dataset has no id yet -- the stage prompt says so explicitly."""
-    pending = _pending(bindings, ["r03_card:1", "r03_card:2"])
-    for binding in pending["bindings"]:
-        if binding["region_id"].startswith("r03_card"):
-            binding["state"] = "bound"
-    assert validate(pending, design) == []
-
-
-def test_dataset_naming_an_unknown_region_is_reported(
-    bindings: dict[str, Any], design: dict[str, Any]
-) -> None:
-    bindings["created_datasets"] = [
-        {"name": "ghost", "kind": "derived", "database_id": 1, "region_ids": ["r99_no"]}
-    ]
-    assert any("names an unknown region" in p for p in validate(bindings, design))
-
-
-def test_dataset_serving_no_region_is_reported(
-    bindings: dict[str, Any], design: dict[str, Any]
-) -> None:
-    bindings["created_datasets"] = [
-        {"name": "orphan", "kind": "derived", "database_id": 1, "region_ids": []}
-    ]
-    assert any("serves no region" in p for p in validate(bindings, design))
-
-
-# --- the applier's side of the same join ------------------------------------
-
-
-@pytest.mark.parametrize(
-    "mapping,region_id,expected",
-    [
-        ({"r13_top": 7}, "r13_top:1", 7),
-        ({"r13_top": 7}, "r13_top", 7),
-        ({"r13_top": 7, "r13_top:1": 9}, "r13_top:1", 9),
-        ({"r13_top": 7}, "r14_other:1", None),
-        ({"r13_top": 7}, None, None),
-    ],
-)
-def test_dataset_for_falls_back_to_the_parent(
-    mapping: dict[str, int], region_id: str | None, expected: int | None
-) -> None:
-    assert _dataset_for(mapping, region_id) == expected
-
-
-def test_parent_of() -> None:
-    assert parent_of("r07_card:2") == "r07_card"
-    assert parent_of("r07_card") == "r07_card"
-
-
-# --- duplicate questions ----------------------------------------------------
-
-
-def test_questions_about_the_same_region_collapse() -> None:
-    kept, notes = _dedupe(
-        [
-            {
-                "region_id": "r05_f",
-                "question": "The Filter button never shows its contents. Drop it?",
-            },
-            {
-                "region_id": "r05_f",
-                "question": "The Filter button never shows what it filters. "
-                "Drop it or wire it?",
-                "why_it_matters": "it would ship a dead control",
-                "default": "use the native filter bar",
-            },
-        ]
-    )
-    assert len(kept) == 1
-    assert kept[0]["default"] == "use the native filter bar", "the fuller one wins"
-    assert notes
-
-
-def test_reworded_questions_without_a_region_collapse() -> None:
-    kept, _ = _dedupe(
-        [
-            {
-                "question": "None of the 21 datasets hold cloud cost data. "
-                "Create placeholder tables, or point me at your billing database?"
-            },
-            {
-                "question": "None of the 21 datasets visible hold cloud cost "
-                "data. Should I create placeholder tables, or do you have a "
-                "database with real billing data?"
-            },
-        ]
-    )
-    assert len(kept) == 1
-
-
-def test_distinct_questions_are_kept() -> None:
-    kept, notes = _dedupe(
-        [
-            {"region_id": "r01", "question": "Embedded or standalone?"},
-            {
-                "region_id": "r02",
-                "question": "Dotted forecast line on the trend chart?",
-            },
-        ]
-    )
-    assert len(kept) == 2
-    assert not notes
+def test_the_dashboard_name_reaches_the_stage(design: dict[str, Any]) -> None:
+    """It names the fact tables, so it has to arrive. Non-ASCII is escaped by
+    `json.dumps` on the way in and read back by the model, so the assertion is
+    on the part that survives verbatim."""
+    prompt = build_user_prompt(design)
+    assert '"dashboard_title"' in prompt
+    assert "Database Spend" in prompt

@@ -105,7 +105,61 @@ GET_CHART_INFO: ToolSpec = {
     },
 }
 
-STAGE_B_TOOLS: list[ToolSpec] = [LIST_DATASETS, GET_DATASET_INFO, EXECUTE_SQL]
+CREATE_FACT_TABLE: ToolSpec = {
+    "name": "create_fact_table",
+    "description": (
+        "Create one physical table in the `d2d` schema and register it as a "
+        "dataset. Rows are the values you supply. The table is read back "
+        "before you are answered, so the row count and column list in the "
+        "response come from the warehouse -- if they do not match what you "
+        "sent, the table is not what you think it is. Re-running replaces a "
+        "table of the same name. Names must be lowercase snake_case."
+    ),
+    "arguments": {
+        "request": {
+            "name": "string - lowercase snake_case; name it after the dashboard",
+            "database_id": "int - from list_databases",
+            "columns": (
+                "[{name, type}] - type is one of TEXT, BIGINT, INTEGER, "
+                "DOUBLE PRECISION, NUMERIC, BOOLEAN, DATE, TIMESTAMP"
+            ),
+            "rows": "[[value, ...]] - one list per row, in column order",
+        }
+    },
+}
+
+CREATE_VIRTUAL_DATASET: ToolSpec = {
+    "name": "create_virtual_dataset",
+    "description": (
+        "Save a SELECT as a dataset. Use it for the per-section views over a "
+        "fact table you have already created -- run the SQL with execute_sql "
+        "first, because a view that does not run is a chart that renders an "
+        "error."
+    ),
+    "arguments": {
+        "request": {
+            "database_id": "int - from list_databases",
+            "sql": "string - the SELECT to save",
+            "dataset_name": "string - what this view serves",
+        }
+    },
+}
+
+LIST_DATABASES: ToolSpec = {
+    "name": "list_databases",
+    "description": (
+        "The databases this user can reach. Call it once to find the id every "
+        "other call needs."
+    ),
+    "arguments": {"request": {"page_size": "int - keep small"}},
+}
+
+STAGE_B_TOOLS: list[ToolSpec] = [
+    LIST_DATABASES,
+    CREATE_FACT_TABLE,
+    CREATE_VIRTUAL_DATASET,
+    EXECUTE_SQL,
+]
 STAGE_C_TOOLS: list[ToolSpec] = [LIST_CHARTS, GET_CHART_INFO]
 
 

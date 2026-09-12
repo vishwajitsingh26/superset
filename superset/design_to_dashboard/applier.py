@@ -250,17 +250,17 @@ def plan_datasets(plan: dict[str, Any]) -> list[dict[str, Any]]:
     for spec in plan.get("created_datasets") or []:
         if not isinstance(spec, dict) or not spec.get("name"):
             continue
-        if spec.get("kind") not in {"derived", "placeholder"}:
+        if spec.get("kind") not in DATASET_KINDS:
             raise ApplyError(
                 f"dataset {spec['name']!r} has kind {spec.get('kind')!r}; "
-                "expected 'derived' or 'placeholder'"
+                f"expected one of {sorted(DATASET_KINDS)}"
             )
         if not spec.get("database_id"):
             raise ApplyError(f"dataset {spec['name']!r} has no database_id")
-        if spec["kind"] == "derived" and not (spec.get("sql") or "").strip():
-            raise ApplyError(f"derived dataset {spec['name']!r} has no SQL")
-        if spec["kind"] == "placeholder" and not (spec.get("rows") or []):
-            raise ApplyError(f"placeholder dataset {spec['name']!r} has no rows")
+        if spec["kind"] == "view" and not (spec.get("sql") or "").strip():
+            raise ApplyError(f"view dataset {spec['name']!r} has no SQL")
+        if spec["kind"] == "fact" and not (spec.get("rows") or []):
+            raise ApplyError(f"fact table {spec['name']!r} has no rows")
         specs.append(spec)
     return specs
 
@@ -270,7 +270,21 @@ def plan_datasets(plan: dict[str, Any]) -> list[dict[str, Any]]:
 # distinct-value fetching for filters, column typing, Explore -- and matching
 # the design's behaviour exactly is the point of building it at all. Confining
 # them to one schema keeps them obvious and makes cleanup a single DROP SCHEMA.
-PLACEHOLDER_SCHEMA = "d2d_generated"
+# One dashboard, one fact table, named after the design it serves. A physical
+# table behaves identically to a real one everywhere in Superset -- distinct
+# values for filters, column typing, Explore -- so the finished dashboard
+# behaves exactly as it will once someone repoints it at real data. Which is
+# also why the columns are named as the real table would name them: swapping
+# the datasource is only painless when the names already line up.
+#
+# `view` datasets are saved SELECTs over that table, one per group of sections
+# that need the same shape. `shared` is the single row every dashboard borrows
+# for a chart that renders but never queries -- a nav bar, a wrapper frame.
+#
+# Confining all of it to one schema keeps it obvious and makes cleanup a single
+# DROP SCHEMA.
+DATASET_SCHEMA = "d2d"
+DATASET_KINDS = {"fact", "view", "shared"}
 _IDENTIFIER = re.compile(r"^[a-z_][a-z0-9_]{0,60}$")
 _COLUMN_TYPES = {
     "TEXT",
@@ -295,9 +309,7 @@ def _identifier(name: str, what: str) -> str:
     return name
 
 
-def materialise_placeholder(
-    spec: dict[str, Any], schema: str = PLACEHOLDER_SCHEMA
-) -> None:
+def materialise_fact_table(spec: dict[str, Any], schema: str = DATASET_SCHEMA) -> None:
     """Create a real table holding the design's own values.
 
     Values are bound as parameters; only identifiers and the column type are
@@ -314,7 +326,7 @@ def materialise_placeholder(
     columns = spec.get("columns") or []
     rows = spec.get("rows") or []
     if not columns or not rows:
-        raise ApplyError(f"placeholder {table!r} needs columns and rows")
+        raise ApplyError(f"fact table {table!r} needs columns and rows")
 
     names = [_identifier(c["name"], "column") for c in columns]
     types = []
@@ -349,9 +361,6 @@ def materialise_placeholder(
     logger.info("materialised %s.%s with %d row(s)", schema, table, len(rows))
 
 
-PLACEHOLDER_PREFIX = "d2d_placeholder_"
-
-
 def create_dataset(spec: dict[str, Any], user_id: int) -> int:
     """Create the Superset dataset a spec describes.
 
@@ -364,14 +373,11 @@ def create_dataset(spec: dict[str, Any], user_id: int) -> int:
     from superset.commands.dataset.create import CreateDatasetCommand
 
     name = spec["name"]
-    if spec["kind"] == "placeholder":
-        if not name.startswith(PLACEHOLDER_PREFIX):
-            name = f"{PLACEHOLDER_PREFIX}{name}"
-        spec = {**spec, "name": name}
-        materialise_placeholder(spec)
+    if spec["kind"] in {"fact", "shared"}:
+        materialise_fact_table(spec)
         properties = {
             "database": spec["database_id"],
-            "schema": PLACEHOLDER_SCHEMA,
+            "schema": DATASET_SCHEMA,
             "table_name": name,
             "owners": [user_id],
         }
@@ -472,14 +478,13 @@ def _assert_datasets_exist(specs: list[dict[str, Any]]) -> None:
     wanted.discard(None)
     if not wanted:
         return
+    # Addressed through `__table__.c` rather than the mapped attribute:
+    # `SqlaTable` inherits `id: int` from superset_core's `Dataset`, so the
+    # attribute resolves to its Python type and loses the column's `in_`.
+    # The table's own column carries no such annotation.
+    dataset_id = SqlaTable.__table__.c.id
     found = {
-        row[0]
-        # `SqlaTable` inherits `id: int` from superset_core's `Dataset`, so mypy
-        # resolves the attribute to its Python type and loses the column's
-        # `in_`. The query is correct; only the annotation disagrees.
-        for row in db.session.query(SqlaTable.id)
-        .filter(SqlaTable.id.in_(wanted))  # type: ignore[attr-defined]
-        .all()
+        row[0] for row in db.session.query(dataset_id).filter(dataset_id.in_(wanted))
     }
     if missing := sorted(wanted - found):
         raise ApplyError(
@@ -776,7 +781,7 @@ def _compensate(
             dataset = db.session.query(SqlaTable).get(dataset_id)
             if dataset is None:
                 continue
-            if dataset.schema == PLACEHOLDER_SCHEMA and dataset.database:
+            if dataset.schema == DATASET_SCHEMA and dataset.database:
                 try:
                     with (
                         dataset.database.get_sqla_engine() as engine,
@@ -785,13 +790,13 @@ def _compensate(
                         connection.execute(
                             text(
                                 "DROP TABLE IF EXISTS "
-                                f"{PLACEHOLDER_SCHEMA}.{dataset.table_name}"
+                                f"{DATASET_SCHEMA}.{dataset.table_name}"
                             )
                         )
                 except Exception:  # noqa: BLE001 - cleanup is best-effort
                     logger.exception(
                         "could not drop placeholder table %s.%s",
-                        PLACEHOLDER_SCHEMA,
+                        DATASET_SCHEMA,
                         dataset.table_name,
                     )
             db.session.delete(dataset)

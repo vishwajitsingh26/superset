@@ -256,7 +256,7 @@ def _describe_dataset(spec: dict[str, Any]) -> str:
     """One line naming a dataset and what it costs the user to accept."""
     name = spec.get("name", "?")
     regions = len(spec.get("region_ids") or [])
-    if spec.get("kind") == "placeholder":
+    if spec.get("kind") in {"fact", "shared"}:
         return (
             f"{name} — {len(spec.get('rows') or [])} invented row(s) written as a "
             f"real table, serving {regions} section(s). {spec.get('reason') or ''}"
@@ -267,59 +267,39 @@ def _describe_dataset(spec: dict[str, Any]) -> str:
     ).strip()
 
 
-def gate_datasets(session: Any, specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Decide which proposed datasets this run may create.
+def announce_datasets(session: Any, binding_set: dict[str, Any]) -> None:
+    """Tell the user what stage B built.
 
-    The two kinds cost the user very differently, so they are not asked about
-    the same way.
+    Nothing is gated here any more. Stage B creates its own tables so it can
+    run a view's SQL against them and catch a query that does not execute --
+    which means by the time this runs, the datasets exist. Asking permission
+    after the fact would be theatre.
 
-    A ``derived`` dataset is a saved SELECT over tables the user already has:
-    nothing is written, and the numbers are real. Asking permission buys
-    nothing they can act on -- it is the same query the chart would run anyway
-    -- so it is created and announced rather than gated.
-
-    A ``placeholder`` both invents the numbers and writes a real table into the
-    warehouse, so it is always put to the user first. Declining ends the run:
-    every section that needed one has no data, and a dashboard of empty cards
-    is not a smaller version of what was asked for.
+    What is left is worth saying plainly: every number in these tables was read
+    off the design, not out of the user's warehouse, and someone has to repoint
+    these charts before anyone trusts a figure on the dashboard.
     """
-    derived = [s for s in specs if s.get("kind") == "derived"]
-    placeholders = [s for s in specs if s.get("kind") == "placeholder"]
-
-    if derived:
-        session.publish(
-            "datasets_planned",
-            label=f"Building {len(derived)} dataset(s) from your existing data",
-            detail="; ".join(_describe_dataset(s) for s in derived),
-            datasets=derived,
-        )
-    if not placeholders:
-        return derived
-
-    answer = session.ask(
-        "datasets",
-        {
-            "label": (
-                f"{len(placeholders)} section(s) need data no dataset here holds. "
-                "I can create sample tables so the dashboard is real and "
-                "working, but every number in them is read off the design, not "
-                "your data — someone must repoint these charts before anyone "
-                "trusts the figures."
-            ),
-            "datasets": placeholders,
-            "detail": "; ".join(_describe_dataset(s) for s in placeholders),
-            "options": [
-                "Create the sample tables — clearly marked to repoint later",
-                "Stop, and let me point you at the real data",
-            ],
-        },
+    tables = binding_set.get("fact_tables") or []
+    views = binding_set.get("views") or []
+    if not tables and not views:
+        return
+    rows = sum(int(t.get("row_count") or 0) for t in tables if isinstance(t, dict))
+    session.publish(
+        "datasets_created",
+        label=(
+            f"Built {len(tables)} table(s) and {len(views)} view(s) in the d2d "
+            "schema — the numbers in them come from the design, not your data"
+        ),
+        detail="; ".join(
+            f"{t.get('name', '?')} — {t.get('grain') or 'no grain given'}, "
+            f"{t.get('row_count', 0)} row(s)"
+            for t in tables
+            if isinstance(t, dict)
+        ),
+        tables=tables,
+        views=views,
+        total_rows=rows,
     )
-    if not answer.get("approved"):
-        raise RunCancelledError(
-            "no sample data was created. Point me at a database holding this "
-            "data and run it again."
-        )
-    return derived + placeholders
 
 
 def _retry(session: Any, label: str, attempts: int, call: Any) -> Any:
@@ -545,6 +525,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 PROMPTS,
                 on_progress=_tool_progress,
                 on_thinking=_thinking_for("B"),
+                image_paths=session.image_paths,
             )
             total_cost += binding.cost_usd
             session.artifacts["binding_set"] = binding.final
@@ -562,11 +543,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     detail="; ".join(problems)[:1000],
                     problems=problems,
                 )
-            # Settled before clarify runs, so it neither spends a question on
-            # this nor asks something the orchestrator has already decided.
-            approved_datasets = gate_datasets(
-                session, binding.final.get("created_datasets") or []
-            )
+            # Reported, not gated: stage B has already created these, which is
+            # what let it validate every view against a real table.
+            announce_datasets(session, binding.final)
 
             binding_questions = binding.final.get("questions", [])
             _reasoning = session.take_thinking()
@@ -639,7 +618,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             binding_with_answers = dict(binding.final)
             # Stage C plans against the datasets that will actually exist, not
             # the ones stage B wished for.
-            binding_with_answers["created_datasets"] = approved_datasets
+            binding_with_answers["created_datasets"] = binding.final.get("views") or []
             if answers:
                 binding_with_answers["user_answers"] = answers
 
@@ -775,7 +754,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         # Creating a dataset writes to the user's database, so
                         # it belongs in what they approve, not only in the
                         # answers.
-                        "datasets": approved_datasets,
+                        "datasets": binding.final.get("fact_tables") or [],
                         "can_revise": attempt < PLAN_FEEDBACK_ROUNDS,
                     },
                 )
@@ -1177,14 +1156,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "stage_start", stage="apply", label="Creating the dashboard"
             )
             try:
-                # Stage B proposes the datasets a section needs; the applier
-                # creates them. C is not asked to echo the specs through --
-                # a stage that merely copies data is a stage that can drop it.
                 plan_for_apply = dict(plan.final)
-                # Only what the user agreed to, never stage B's raw proposal:
-                # the specs it wrote are a request, and `gate_datasets` is what
-                # answered it.
-                plan_for_apply["created_datasets"] = approved_datasets
+                # Stage B creates its own tables and views -- that is what lets
+                # it run a view's SQL against a real table before saving it --
+                # so by here every dataset exists and the applier makes none.
+                plan_for_apply["created_datasets"] = []
 
                 applied = apply_plan(
                     design_analysis=design_analysis,
