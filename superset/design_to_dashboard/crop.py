@@ -41,25 +41,9 @@ MARGIN = 12
 MIN_SIDE = 24
 
 
-def _scale(canvas: dict[str, Any] | None, width: int, height: int) -> float:
-    """How many image pixels to one design pixel.
-
-    Stage A reports boxes in the design's own coordinates and the canvas they
-    belong to. Usually that is the image's own size, but a design exported at
-    2x would put every box at half the pixels it should be.
-    """
-    declared = float((canvas or {}).get("w") or 0)
-    if declared <= 0:
-        return 1.0
-    ratio = width / declared
-    # A canvas that disagrees wildly is a misread, not a scale factor.
-    return ratio if 0.2 <= ratio <= 5.0 else 1.0
-
-
 def region_crop(
     image_paths: list[str],
     region: dict[str, Any],
-    canvas: dict[str, Any] | None,
     out_dir: pathlib.Path,
 ) -> str | None:
     """Write the region's pixels to a PNG and return its path.
@@ -81,11 +65,13 @@ def region_crop(
 
         with Image.open(image_paths[index]) as image:
             width, height = image.size
-            ratio = _scale(canvas, width, height)
-            left = int(float(bbox.get("x", 0)) * ratio) - MARGIN
-            top = int(float(bbox.get("y", 0)) * ratio) - MARGIN
-            right = left + int(float(bbox.get("w", 0)) * ratio) + 2 * MARGIN
-            bottom = top + int(float(bbox.get("h", 0)) * ratio) + 2 * MARGIN
+            # Stage A reports fractions of the image, so the image's own size
+            # is the only scale there is -- and it is right per image, which
+            # matters when a scrolled capture is a different size to the first.
+            left = int(float(bbox.get("x", 0)) * width) - MARGIN
+            top = int(float(bbox.get("y", 0)) * height) - MARGIN
+            right = left + int(float(bbox.get("w", 0)) * width) + 2 * MARGIN
+            bottom = top + int(float(bbox.get("h", 0)) * height) + 2 * MARGIN
             box = (
                 max(0, left),
                 max(0, top),

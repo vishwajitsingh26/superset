@@ -181,7 +181,6 @@ def _repair_broken_plugins(  # noqa: C901
                 region_image=crop.region_crop(
                     session.image_paths,
                     region_for(region_id),
-                    (design_analysis.get("global") or {}).get("canvas"),
                     crops_dir,
                 ),
                 children=f_scaffold.resolve_children(
@@ -478,6 +477,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     session.image_paths,
                     PROMPTS,
                     on_thinking=_thinking_for("A"),
+                    registry_path=str(REGISTRY),
                 ),
             )
             total_cost += stage_a_cost
@@ -502,7 +502,9 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # and this is the cheapest point at which to say so. A re-ask would
             # cost another eight-minute call without telling the model what was
             # wrong, so the run fails and the problems are reported instead.
-            if problems := a_decompose.validate(design_analysis, session.image_paths):
+            if problems := a_decompose.validate(
+                design_analysis, chart_types(load_registry(str(REGISTRY)))
+            ):
                 logger.error("stage A validation: %s", "; ".join(problems))
                 session.publish(
                     "validation_failed",
@@ -911,7 +913,6 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                             region_image=crop.region_crop(
                                 session.image_paths,
                                 _region_for(region_id),
-                                (design_analysis.get("global") or {}).get("canvas"),
                                 crops_dir,
                             ),
                             # Refs mean nothing to the author of a wrapper.

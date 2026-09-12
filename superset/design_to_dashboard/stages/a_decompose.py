@@ -21,6 +21,13 @@ the key B binds, C decides on, D configures and E places. A malformed reading
 here is not caught by anything downstream -- it surfaces as a chart that cannot
 be created, twenty minutes and several dollars later. So this module validates
 its own output before the run is allowed to continue.
+
+The stage reports what it sees and nothing it would have to compute. It numbers
+regions; `region_id` is minted here from that number and the visible title, so
+the same design read twice produces the same ids by construction rather than by
+instruction. It reports boxes as fractions of the image, so pixels are derived
+wherever they are needed. Both used to be arithmetic the model did by hand, and
+both produced readings that failed validation after the pipeline's longest call.
 """
 
 from __future__ import annotations
@@ -28,36 +35,42 @@ from __future__ import annotations
 import logging
 import pathlib
 import re
+import unicodedata
 from typing import Any
 
 from superset.design_to_dashboard.llm.base import LLMProvider
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
+from superset.design_to_dashboard.registry import (
+    load as load_registry,
+    render_summaries,
+)
 
 logger = logging.getLogger(__name__)
 
-# `r<NN>_<slug>`, per the stage prompt. The optional `:<N>` suffix is the
-# pipeline's shared grammar for one chart inside a container -- stage A does
-# not mint those (it emits the frame as one region) but the grammar is shared
-# with stage B, which does, so the pattern accepts them.
-REGION_ID = re.compile(r"^r\d{2}_[a-z0-9_]+(:\d+)?$")
+ROLES = {
+    "wrapper",
+    "kpi",
+    "chart",
+    "table",
+    "filter",
+    "nav",
+    "header",
+    "text",
+    "decoration",
+}
 
-ROLES = {"kpi", "chart", "table", "filter", "nav", "header", "text", "decoration"}
-# `composite` is deliberately absent: it meant "a card holding several
-# things", which a rich single card also is, and the ambiguity split KPI
-# cards into pieces nothing could reassemble. A card about one subject is
-# `atomic` however much it draws; only a frame over separate subjects is a
-# `container`.
-COMPOSITIONS = {"atomic", "container", "control"}
+# What a wrapper's own chrome does to the children it holds. Only a wrapper has
+# one; a leaf region draws no frame around anything.
+FRAMES = {"none", "tabs", "toggle"}
 
-# Boxes are read off a picture by eye, so they do not land on exact pixels.
-# This slack is for rounding, not for a different coordinate space: a box in
-# the wrong space is out by tens of percent and must still be caught.
+# Boxes are read off a picture by eye, so they do not land exactly. This slack
+# is for that, not for a different coordinate system.
 BBOX_SLACK = 0.02
 
-# How much of a region has to sit inside a container before it is that
-# container's content rather than its neighbour. Cards butt up against the
-# frames around them, so this is deliberately short of total containment.
-INSIDE = 0.75
+# How much of a child has to lie within its declared parent. Cards butt up
+# against the frames around them and a border has thickness, so this is
+# deliberately short of total containment.
+INSIDE = 0.9
 
 # One repair pass. Reading the design is the longest call in the pipeline, so a
 # blind re-ask was rightly refused -- but the problems are mechanical and now
@@ -65,81 +78,77 @@ INSIDE = 0.75
 # extra call. Every other stage already repairs this way.
 MAX_ATTEMPTS = 2
 
-# Roles that draw data, and so are the ones a container would be drawing twice.
-# A control *is* allowed to sit inside a container's bbox: a toggle in a panel
-# header is its own region by design, and is what makes the frame a container
-# in the first place.
-DRAWN_ROLES = {"kpi", "chart", "table"}
+# Regions whose `stock_candidate` is meaningless: a wrapper is a frame we write
+# ourselves, and no registered viz type composes one.
+NO_STOCK_CANDIDATE = {"wrapper"}
 
 
-def build_system_prompt(prompts_dir: pathlib.Path) -> str:
-    """Assemble the stage A system prompt: preamble, then the stage."""
+def build_system_prompt(
+    prompts_dir: pathlib.Path, registry_path: str | None = None
+) -> str:
+    """Assemble the stage A system prompt: preamble, stage, and the registry.
+
+    The registry is for `stock_candidate` alone, and the stage prompt orders its
+    contract so `observed` and `unusual_treatment` are written before it is
+    consulted. A model that knows `echarts_timeseries_bar` exists before it has
+    described the picture starts seeing "a bar chart" where the design draws
+    bars with their labels above them -- which is the one detail worth having.
+    """
     preamble = (prompts_dir / "shared" / "_preamble.md").read_text(encoding="utf-8")
     stage = (prompts_dir / "A_decompose_design.md").read_text(encoding="utf-8")
-    return "\n\n---\n\n".join([preamble, stage])
+    parts = [preamble, stage]
+    if registry_path:
+        parts.append(
+            "## Registered viz types\n\n"
+            "Consult this only for a leaf region's `stock_candidate`, and only "
+            "after you have written what you see. A plugin that is *close* is "
+            "not a match.\n\n" + render_summaries(load_registry(registry_path))
+        )
+    return "\n\n---\n\n".join(parts)
 
 
 def build_user_prompt(requirement: str) -> str:
-    """The user's requirement. The images are attached by the provider."""
+    """The user's requirement. The images are attached by the provider.
+
+    Nothing about the images is stated here: boxes are fractions, so the stage
+    needs no dimensions and there is nothing a provider has to report.
+    """
     return f"USER_REQUIREMENT:\n{requirement}"
 
 
-def _image_size(path: str) -> tuple[int, int] | None:
-    """The image's dimensions, or None when they cannot be read.
+def _slug(text: str) -> str:
+    """A region id's readable half: the visible title, flattened.
 
-    A missing Pillow or an unreadable file must not fail a run: the checks that
-    depend on this are skipped instead.
+    Accents are folded rather than dropped so a titled section keeps a
+    recognisable id; anything still unrepresentable becomes a separator, and a
+    title that survives as nothing falls back to the role.
     """
-    try:
-        from PIL import Image
-
-        with Image.open(path) as image:
-            return int(image.size[0]), int(image.size[1])
-    except Exception:  # noqa: BLE001 - an unreadable image is checked elsewhere
-        logger.info("could not read the size of %s", path)
-        return None
+    folded = unicodedata.normalize("NFKD", text)
+    ascii_only = folded.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", ascii_only.lower())).strip("_")
 
 
-def _check_canvas_matches_image(  # noqa: C901
-    canvas: dict[str, Any], image_paths: list[str]
-) -> list[str]:
-    """Confirm the boxes are in the coordinate space they claim to be in.
+def assign_region_ids(design_analysis: dict[str, Any]) -> dict[str, Any]:
+    """Mint `region_id` for every region, in place, and return the analysis.
 
-    The design image is handed to the model through a tool that downscales it
-    and reports the original dimensions, so the model is always in a position
-    to report boxes in either space. Either one works on its own -- the crop
-    converts between them -- but a reading that rescales the boxes and reports
-    the *other* canvas is out by the scale factor everywhere, and every
-    consumer downstream silently believes it.
-
-    `crop.region_crop` cannot catch this: it derives the scale from this very
-    canvas, so a consistent lie and an inconsistent one look identical to it.
-    Comparing against the file on disk is the only independent check available.
+    The stage reports `n` and a visible `title`; the id is derived from those
+    here. Deriving rather than asking is what makes the promise downstream
+    depends on -- that the same design read twice produces the same ids -- true
+    by construction. Asking produced `r03_kpi_aws` for a card titled "AWS"
+    often enough to be the rule rather than the exception.
     """
-    if not image_paths:
-        return []
-    size = _image_size(image_paths[0])
-    if size is None:
-        return []
-    width, height = size
-    declared_w = float(canvas.get("w") or 0)
-    declared_h = float(canvas.get("h") or 0)
-    if declared_w <= 0 or declared_h <= 0:
-        return []
-
-    problems = []
-    for axis, declared, actual in (
-        ("w", declared_w, width),
-        ("h", declared_h, height),
-    ):
-        if abs(declared - actual) > actual * BBOX_SLACK:
-            problems.append(
-                f"global.canvas.{axis} is {declared:g} but the design image is "
-                f"{actual}px -- the bboxes are in neither the image's space nor "
-                f"a space anything can convert from. Report the size you were "
-                f"shown, and boxes in that same space."
-            )
-    return problems
+    for region in design_analysis.get("regions") or []:
+        if not isinstance(region, dict):
+            continue
+        try:
+            number = int(region["n"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        slug = _slug(str(region.get("title") or "")) or _slug(
+            str(region.get("role") or "")
+        )
+        region["region_id"] = f"r{number:02d}_{slug or 'region'}"
+    return design_analysis
 
 
 def _box(region: dict[str, Any]) -> tuple[float, float, float, float] | None:
@@ -166,153 +175,221 @@ def _inside(
     return (overlap_w * overlap_h) / (iw * ih)
 
 
-def _containers_beside_their_contents(regions: list[Any]) -> list[str]:
-    """Containers that were emitted *and* had their contents emitted too.
+def _label(region: dict[str, Any]) -> str:
+    """How a region is named in a problem, before ids exist."""
+    title = region.get("title")
+    return f"region {region.get('n')}" + (f" ({title})" if title else "")
 
-    The prompt used to say both: that four KPI cards in a row are four regions,
-    and that a panel around those four cards is a container. Read together that
-    is five regions -- the frame and the four things inside it -- with nothing
-    in the contract to say which belongs to which. The pipeline's only
-    containment mechanism is the `:N` suffix stage B mints, and that assumes the
-    frame arrived as one region, so the children are laid out a second time on
-    their own.
 
-    Bboxes are the evidence, and the only evidence: nothing else in the reading
-    relates one region to another.
+def _validate_nesting(  # noqa: C901
+    regions: list[dict[str, Any]], by_number: dict[int, dict[str, Any]]
+) -> list[str]:
+    """`children` must describe a tree, and each child must sit inside it.
+
+    Nesting is the contract's only way to say one section holds another, and
+    geometry is the only independent evidence for it: a wrapper claiming a child
+    it does not enclose has misread the design, and a child claimed by two
+    parents is drawn twice. Containment is also what this check used to
+    *forbid*, back when a container replaced its contents rather than holding
+    them -- the rule inverted with the contract.
     """
     problems: list[str] = []
-    boxed = [
-        (region, box)
-        for region in regions
-        if isinstance(region, dict) and (box := _box(region)) is not None
-    ]
-    for region, outer in boxed:
-        if region.get("composition") != "container":
+    claimed: dict[int, int] = {}
+
+    for region in regions:
+        number = region["n"]
+        children = region.get("children") or []
+        if not isinstance(children, list):
+            problems.append(f"{_label(region)}: children is not a list")
             continue
-        swallowed = [
-            other["region_id"]
-            for other, inner in boxed
-            if other is not region
-            and other.get("role") in DRAWN_ROLES
-            and _inside(inner, outer) >= INSIDE
-        ]
-        if swallowed:
+        if children and region.get("role") != "wrapper":
             problems.append(
-                f"{region['region_id']}: is a container and {len(swallowed)} other "
-                f"regions are drawn inside it ({', '.join(sorted(swallowed)[:4])}"
-                f"{', ...' if len(swallowed) > 4 else ''}). A container is one "
-                "region: describe what it holds in `observed` and drop those "
-                "regions, or -- if the frame only draws a border -- keep them and "
-                "make this region `atomic`, or drop it as `decoration`."
+                f"{_label(region)}: has children but role is "
+                f"{region.get('role')!r} -- a section holding other sections "
+                "is a wrapper"
+            )
+        for child in children:
+            if child == number:
+                problems.append(f"{_label(region)}: lists itself as a child")
+                continue
+            if child not in by_number:
+                problems.append(f"{_label(region)}: child {child!r} is not a region")
+                continue
+            if child in claimed:
+                problems.append(
+                    f"region {child} is claimed by both region {claimed[child]} "
+                    f"and region {number}"
+                )
+                continue
+            claimed[child] = number
+
+            outer, inner = _box(region), _box(by_number[child])
+            if outer and inner and _inside(inner, outer) < INSIDE:
+                problems.append(
+                    f"{_label(by_number[child])}: is a child of region {number} "
+                    "but its bbox is not inside it. A wrapper encloses what it "
+                    "holds: correct the boxes, or drop the child if the frame "
+                    "does not actually contain it."
+                )
+    return problems
+
+
+def _validate_same_as(
+    regions: list[dict[str, Any]], by_number: dict[int, dict[str, Any]]
+) -> list[str]:
+    """`same_as` must point back at a real, earlier, first occurrence.
+
+    The field exists so a component drawn six times is generated once, and the
+    grouping is only usable if every repeat names the *same* region. A chain --
+    5 pointing at 4 pointing at 3 -- splits one component into several groups
+    that each look complete.
+    """
+    problems: list[str] = []
+    for region in regions:
+        target = region.get("same_as")
+        if target is None:
+            continue
+        if target not in by_number:
+            problems.append(f"{_label(region)}: same_as {target!r} is not a region")
+        elif target == region["n"]:
+            problems.append(f"{_label(region)}: same_as points at itself")
+        elif target > region["n"]:
+            problems.append(
+                f"{_label(region)}: same_as {target} comes later -- point at the "
+                "first region drawn this way, not a later one"
+            )
+        elif by_number[target].get("same_as") is not None:
+            problems.append(
+                f"{_label(region)}: same_as {target}, which is itself a repeat. "
+                f"Point every copy at the first occurrence "
+                f"({by_number[target].get('same_as')})."
+            )
+    return problems
+
+
+def _validate_geometry(regions: list[dict[str, Any]]) -> list[str]:
+    """Every box is a fraction of its image, so the canvas is the unit square."""
+    problems: list[str] = []
+    for region in regions:
+        box = _box(region)
+        if box is None:
+            problems.append(
+                f"{_label(region)}: bbox {region.get('bbox')!r} is not "
+                "{x, y, w, h} with positive w and h, as fractions of the image"
+            )
+            continue
+        x, y, w, h = box
+        if (
+            x < -BBOX_SLACK
+            or y < -BBOX_SLACK
+            or x + w > 1 + BBOX_SLACK
+            or y + h > 1 + BBOX_SLACK
+        ):
+            problems.append(
+                f"{_label(region)}: bbox {region['bbox']!r} falls outside the "
+                "image. Coordinates are fractions from 0.0 to 1.0, not pixels."
             )
     return problems
 
 
 def validate(  # noqa: C901
-    design_analysis: dict[str, Any], image_paths: list[str] | None = None
+    design_analysis: dict[str, Any], known_viz_types: set[str] | None = None
 ) -> list[str]:
     """Structural checks on the reading, before any stage joins against it.
 
     Everything here is mechanical. Whether the model read the design *well* is
     not knowable from the JSON; whether it read it into a shape the rest of the
     pipeline can use is, and that is what this checks.
+
+    `known_viz_types` is optional: without it a `stock_candidate` is taken on
+    trust, which is what happens when the caller has no registry to hand.
     """
     problems: list[str] = []
 
     if design_analysis.get("status") != "ok":
         problems.append(f"invalid status: {design_analysis.get('status')!r}")
 
-    regions = design_analysis.get("regions")
-    if not isinstance(regions, list) or not regions:
+    raw = design_analysis.get("regions")
+    if not isinstance(raw, list) or not raw:
         return problems + ["no regions were read from the design"]
 
-    seen: set[str] = set()
-    for index, region in enumerate(regions):
+    regions: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for index, region in enumerate(raw):
         if not isinstance(region, dict):
             problems.append(f"region at index {index} is not an object")
             continue
-        region_id = region.get("region_id")
-        if not isinstance(region_id, str) or not REGION_ID.match(region_id):
+        try:
+            number = int(region["n"])
+        except (KeyError, TypeError, ValueError):
             problems.append(
-                f"region at index {index} has region_id {region_id!r}, "
-                "expected the form 'r01_some_slug'"
+                f"region at index {index} has n {region.get('n')!r}, expected a "
+                "whole number giving its place in reading order"
             )
             continue
-        if region_id in seen:
-            problems.append(f"duplicate region_id: {region_id}")
-        seen.add(region_id)
+        if number < 1:
+            problems.append(f"region at index {index}: n must start at 1")
+            continue
+        if number in seen:
+            problems.append(f"duplicate n: {number}")
+            continue
+        seen.add(number)
+        region["n"] = number
+        regions.append(region)
 
-        if region.get("role") not in ROLES:
+    if not regions:
+        return problems + ["no usable regions were read from the design"]
+
+    by_number = {region["n"]: region for region in regions}
+
+    for region in regions:
+        role = region.get("role")
+        if role not in ROLES:
             problems.append(
-                f"{region_id}: role {region.get('role')!r} is not one of "
-                f"{sorted(ROLES)}"
+                f"{_label(region)}: role {role!r} is not one of {sorted(ROLES)}"
             )
-        if region.get("composition") not in COMPOSITIONS:
+        frame = region.get("frame")
+        if role == "wrapper":
+            if frame not in FRAMES:
+                problems.append(
+                    f"{_label(region)}: frame {frame!r} is not one of "
+                    f"{sorted(FRAMES)} -- say what this wrapper's own chrome "
+                    "does to the sections it holds"
+                )
+        elif frame is not None:
             problems.append(
-                f"{region_id}: composition {region.get('composition')!r} is not "
-                f"one of {sorted(COMPOSITIONS)}"
+                f"{_label(region)}: frame is {frame!r} but only a wrapper has "
+                "one; a leaf region frames nothing"
             )
 
-    problems += _validate_geometry(design_analysis, regions, seen, image_paths or [])
-    problems += _containers_beside_their_contents(regions)
+        candidate = region.get("stock_candidate")
+        if candidate is not None:
+            if role in NO_STOCK_CANDIDATE:
+                problems.append(
+                    f"{_label(region)}: stock_candidate {candidate!r} on a "
+                    "wrapper -- no registered viz type composes a frame, so "
+                    "this is always null"
+                )
+            elif known_viz_types and candidate not in known_viz_types:
+                problems.append(
+                    f"{_label(region)}: stock_candidate {candidate!r} is not a "
+                    "registered viz type"
+                )
+
+    problems += _validate_geometry(regions)
+    problems += _validate_nesting(regions, by_number)
+    problems += _validate_same_as(regions, by_number)
 
     order = (design_analysis.get("global") or {}).get("reading_order")
     if not isinstance(order, list):
         problems.append("global.reading_order is missing")
-    elif seen and set(order) != seen:
-        for missing in sorted(seen - set(order)):
-            problems.append(f"reading_order omits {missing}")
-        for unknown in sorted(set(order) - seen):
+    else:
+        listed = {n for n in order if isinstance(n, int)}
+        for missing in sorted(seen - listed):
+            problems.append(f"reading_order omits region {missing}")
+        for unknown in sorted(listed - seen):
             problems.append(f"reading_order names an unknown region: {unknown}")
 
-    return problems
-
-
-def _validate_geometry(
-    design_analysis: dict[str, Any],
-    regions: list[Any],
-    known: set[str],
-    image_paths: list[str],
-) -> list[str]:
-    """The canvas, and every box that claims to sit inside it."""
-    problems: list[str] = []
-    canvas = (design_analysis.get("global") or {}).get("canvas")
-    if not isinstance(canvas, dict):
-        return ["global.canvas is missing"]
-
-    width = float(canvas.get("w") or 0)
-    height = float(canvas.get("h") or 0)
-    if width <= 0 or height <= 0:
-        return [f"global.canvas is {canvas!r}, expected positive w and h"]
-
-    problems += _check_canvas_matches_image(canvas, image_paths)
-
-    for region in regions:
-        if not isinstance(region, dict) or region.get("region_id") not in known:
-            continue
-        region_id = region["region_id"]
-        bbox = region.get("bbox")
-        if not isinstance(bbox, dict):
-            problems.append(f"{region_id}: bbox is missing")
-            continue
-        try:
-            x, y = float(bbox["x"]), float(bbox["y"])
-            w, h = float(bbox["w"]), float(bbox["h"])
-        except (KeyError, TypeError, ValueError):
-            problems.append(f"{region_id}: bbox {bbox!r} is not {{x, y, w, h}}")
-            continue
-        if w <= 0 or h <= 0:
-            problems.append(f"{region_id}: bbox has no area ({w:g}x{h:g})")
-        if (
-            x < -width * BBOX_SLACK
-            or y < -height * BBOX_SLACK
-            or x + w > width * (1 + BBOX_SLACK)
-            or y + h > height * (1 + BBOX_SLACK)
-        ):
-            problems.append(
-                f"{region_id}: bbox {bbox!r} falls outside the "
-                f"{width:g}x{height:g} canvas"
-            )
     return problems
 
 
@@ -322,9 +399,9 @@ def _repair_note(problems: list[str]) -> str:
     return (
         "\n\nYour previous reading of this design failed these checks. They are "
         "mechanical, not matters of taste -- an enum value that is not in the "
-        "list, a box outside the canvas, a region in `reading_order` that does "
-        "not exist. Keep everything that was right and return the whole "
-        "analysis again with each of these fixed.\n"
+        "list, a box outside the image, a child that is not inside its parent. "
+        "Keep everything that was right and return the whole analysis again "
+        "with each of these fixed.\n"
         f"{listed}"
     )
 
@@ -336,6 +413,7 @@ def run(
     prompts_dir: pathlib.Path,
     on_thinking: Any = None,
     attempts: int = MAX_ATTEMPTS,
+    registry_path: str | None = None,
 ) -> tuple[dict[str, Any], float]:
     """Read the design. Returns ``(design_analysis, cost_usd)``.
 
@@ -348,8 +426,13 @@ def run(
     problems in hand. The caller still validates what it gets back and still
     fails the run if it is wrong -- this only spends one more call first.
     """
-    system_prompt = build_system_prompt(prompts_dir)
+    system_prompt = build_system_prompt(prompts_dir, registry_path)
     user_prompt = build_user_prompt(requirement)
+    known = (
+        {str(entry.get("viz_type")) for entry in load_registry(registry_path)}
+        if registry_path
+        else None
+    )
     cost = 0.0
     analysis: dict[str, Any] = {}
 
@@ -363,7 +446,13 @@ def run(
         cost += response.cost_usd or 0.0
         analysis = extract_json(response.text)
 
-        problems = validate(analysis, image_paths)
+        # A refusal is an answer, not a fault. Repairing one asks the model to
+        # invent regions for a design it has just said it cannot read, and
+        # spends a second full-image call doing it.
+        if analysis.get("status") in {"unreadable", "separate_designs"}:
+            return analysis, cost
+
+        problems = validate(analysis, known)
         if not problems or attempt == attempts:
             if problems:
                 logger.warning(
@@ -371,7 +460,7 @@ def run(
                     len(problems),
                     attempt,
                 )
-            return analysis, cost
+            return assign_region_ids(analysis), cost
 
         logger.info(
             "stage A attempt %d had %d problem(s); asking again",
@@ -380,4 +469,4 @@ def run(
         )
         user_prompt = build_user_prompt(requirement) + _repair_note(problems)
 
-    return analysis, cost
+    return assign_region_ids(analysis), cost
