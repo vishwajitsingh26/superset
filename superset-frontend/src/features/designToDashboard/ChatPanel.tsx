@@ -437,7 +437,7 @@ export default function ChatPanel({
             ref={inputRef}
             type="file"
             accept="image/png,image/jpeg,image/webp,application/pdf"
-              multiple
+            multiple
             hidden
             onChange={choose}
           />
