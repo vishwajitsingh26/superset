@@ -20,7 +20,7 @@ Produce the `POST /api/v1/chart/` body that renders this region.
     "body": {
       "slice_name": "...",
       "viz_type": "...",
-      "datasource_id": 0,
+      "datasource_id": <the binding's dataset_id>,
       "datasource_type": "table",
       "params": "<JSON-ENCODED STRING>",
       "query_context": "<JSON-ENCODED STRING or null>"
@@ -36,6 +36,11 @@ Produce the `POST /api/v1/chart/` body that renders this region.
 
 ## Rules
 
+- **`datasource_id` is the binding's `dataset_id`. Never `0`.** Superset
+  requires a real datasource on every chart, including one that draws no data:
+  a title, a text block, a card whose content is entirely static. If this
+  region has no binding of its own, you are given a fallback dataset to attach
+  it to — use that id. A `0` is not a dataset and the run cannot be applied.
 - **`params` and `query_context` are JSON-encoded *strings*, not nested objects.** This is the single most common failure against Superset's API. Get it right.
 - **Every key in `params` must exist in your injected control schema.** If the design needs something the schema has no control for, do not invent a key — record it in `unmapped`. An unknown key is silently dropped by Superset and the chart renders wrong with no error.
 - **Respect control types.** A `SelectControl` takes one of its declared `choices`. A metric control takes a saved metric name or a well-formed adhoc metric object. A `BoundsControl` takes `[min, max]`. Read the schema; do not pattern-match from other charts.
