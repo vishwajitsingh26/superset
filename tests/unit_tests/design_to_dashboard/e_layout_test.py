@@ -29,7 +29,7 @@ from typing import Any
 import pytest
 
 from superset.design_to_dashboard.stages.c_resolve import (
-    _containers_without_children,
+    _wrappers_without_children,
 )
 from superset.design_to_dashboard.stages.e_layout import (
     content_box,
@@ -130,42 +130,66 @@ def test_a_plan_with_no_children_is_left_alone() -> None:
 # --- stage C has to say which pieces a card draws ----------------------------
 
 
-DESIGN = {"regions": [{"region_id": "r07_card", "composition": "container"}]}
+DESIGN = {
+    "regions": [
+        {"region_id": "r07_card", "role": "wrapper", "children": [8]},
+        {"region_id": "r08_inner", "role": "chart", "children": []},
+    ]
+}
 
 
-def test_a_container_configured_without_children_is_reported() -> None:
-    """`children` is the only thing that tells the layout a piece is drawn
-    inside the card. Without it the piece gets its own node and appears twice,
-    and no check anywhere says so."""
+def test_a_wrapper_resolved_without_children_is_reported() -> None:
+    """`children` is the only thing telling the layout a piece is drawn inside
+    the card. Without it the piece gets its own node and appears twice, and no
+    check anywhere else says so."""
     decisions = [
-        {"ref": "c2", "region_id": "r07_card", "decision": "configure"},
-        {"ref": "c1", "region_id": "r07_card:2", "decision": "configure"},
+        {"ref": "c2", "region_id": "r07_card", "decision": "new_plugin"},
+        {"ref": "c1", "region_id": "r08_inner", "decision": "configure"},
     ]
     assert any(
-        "names no `children`" in p
-        for p in _containers_without_children(decisions, DESIGN)
+        "holding 1 other section" in p
+        for p in _wrappers_without_children(decisions, DESIGN)
     )
 
 
 def test_naming_the_children_clears_it() -> None:
     decisions: list[dict[str, Any]] = [
+        {"ref": "c1", "region_id": "r08_inner", "decision": "configure"},
         {
             "ref": "c2",
             "region_id": "r07_card",
-            "decision": "configure",
+            "decision": "new_plugin",
             "children": ["c1"],
         },
-        {"ref": "c1", "region_id": "r07_card:2", "decision": "configure"},
     ]
-    assert _containers_without_children(decisions, DESIGN) == []
+    assert _wrappers_without_children(decisions, DESIGN) == []
 
 
-def test_a_container_whose_charts_have_no_decisions_is_fine() -> None:
-    """The card draws them itself and no separate chart was planned."""
+def test_a_dropped_wrapper_needs_no_children() -> None:
+    """A frame the plan discards holds nothing by definition."""
     decisions: list[dict[str, Any]] = [
-        {"ref": "c2", "region_id": "r07_card", "decision": "configure"}
+        {"ref": "c1", "region_id": "r08_inner", "decision": "configure"},
+        {"ref": "c2", "region_id": "r07_card", "decision": "drop"},
     ]
-    assert _containers_without_children(decisions, DESIGN) == []
+    assert _wrappers_without_children(decisions, DESIGN) == []
+
+
+def test_children_on_a_region_stage_a_read_as_a_leaf_is_reported() -> None:
+    """The other direction: a card about one subject is one chart, however
+    much it draws."""
+    decisions: list[dict[str, Any]] = [
+        {
+            "ref": "c1",
+            "region_id": "r08_inner",
+            "decision": "new_plugin",
+            "children": ["c2"],
+        },
+        {"ref": "c2", "region_id": "r07_card", "decision": "configure"},
+    ]
+    assert any(
+        "stage A read no sections inside it" in p
+        for p in _wrappers_without_children(decisions, DESIGN)
+    )
 
 
 # --- unplaced distinguishes "nowhere" from "inside its parent" ---------------

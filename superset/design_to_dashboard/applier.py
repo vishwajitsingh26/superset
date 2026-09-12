@@ -680,9 +680,11 @@ def apply_plan(  # noqa: C901
         ).run()
         created_dashboard_id = dashboard.id
 
-        metadata = {
+        metadata: dict[str, Any] = {
             "color_scheme": (plan.get("design_system") or {}).get("color_scheme"),
-            "native_filter_configuration": _build_native_filters(plan),
+            # Native filters are configured by hand afterwards by whoever
+            # wants them; nothing in this pipeline creates one.
+            "native_filter_configuration": [],
             "chart_configuration": {},
             "global_chart_configuration": {
                 "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
@@ -816,28 +818,3 @@ def _compensate(
             chart_ids,
             dashboard_id,
         )
-
-
-def _build_native_filters(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    """Translate stage C's native filters into dashboard metadata."""
-    filters: list[dict[str, Any]] = []
-    for index, native in enumerate(plan.get("native_filters") or []):
-        filter_id = f"NATIVE_FILTER-d2d-{index}"
-        filters.append(
-            {
-                "id": filter_id,
-                "name": native.get("name") or f"Filter {index + 1}",
-                "filterType": native.get("filterType") or "filter_select",
-                "type": "NATIVE_FILTER",
-                "targets": native.get("targets") or [],
-                "defaultDataMask": {
-                    "extraFormData": {},
-                    "filterState": {},
-                    "ownState": {},
-                },
-                "controlValues": {"multiSelect": True, "enableEmptyFilter": False},
-                "scope": {"rootPath": ["ROOT_ID"], "excluded": []},
-                "cascadeParentIds": [],
-            }
-        )
-    return filters

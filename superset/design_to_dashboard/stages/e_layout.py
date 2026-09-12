@@ -53,7 +53,7 @@ NODE_TYPES = {
     "DIVIDER",
 }
 # Decisions that never occupy a grid cell.
-NON_GRID_DECISIONS = {"native_filter", "drop"}
+NON_GRID_DECISIONS = {"drop"}
 # `grid_text` does occupy a cell, but as a MARKDOWN/HEADER node, which carries
 # no chart ref. Counting it among the refs a CHART node must claim failed the
 # whole layout with "ref 'c1' was never placed on the grid".

@@ -67,9 +67,9 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 - **Charts reference `__REF__:<ref>` placeholders**, never numeric ids — the orchestrator substitutes real ids after chart creation.
 - **Every node needs a correct `parents` array** listing its full ancestor chain from `ROOT_ID`. Superset's drag-and-drop breaks without it.
 - **`uuid` is a fresh uuid4 per CHART node.**
-- **Skip `decoration` regions** and any decision of `drop`. Skip `native_filter` decisions — those live in `json_metadata`, not the grid.
-- **Never lay out a wrapper's children.** When a decision has a `children` array (a `wrap`, or a `new_plugin` with `plugin_archetype: "container"`), the parent gets **one** CHART node and the children get **none** — they are rendered inside the parent, by the parent. Giving a child its own grid node draws it twice: once in the wrapper and once loose on the dashboard.
-- **A `filter_widget` plugin does get a grid node.** It is a chart that happens to filter, so it sits in the layout where the design draws it — unlike a `native_filter`, which does not.
+- **Skip `decoration` regions** and any decision of `drop`.
+- **Never lay out a wrapper's children.** When a decision has a `children` array (a `new_plugin` with `plugin_archetype: "container"`), the parent gets **one** CHART node and the children get **none** — they are rendered inside the parent, by the parent. Giving a child its own grid node draws it twice: once in the wrapper and once loose on the dashboard.
+- **A `filter_widget` plugin gets a grid node like any other chart.** It is a chart that happens to filter, so it sits in the layout exactly where the design draws it.
 - **Set `sliceNameOverride` to the label the design shows.** A chart's
   `slice_name` is long on purpose so it is findable among hundreds
   (`Video Game Sales Overview — Global Sales`), but the design's card says

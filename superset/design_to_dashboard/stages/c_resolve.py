@@ -39,7 +39,6 @@ from superset.design_to_dashboard.pipeline.tool_loop import (
 )
 from superset.design_to_dashboard.registry import (
     chart_types,
-    filter_types,
     load as load_registry,
     render_summaries,
 )
@@ -59,19 +58,21 @@ MAX_ITERATIONS = 10
 # chart. It exists because a dashboard viewed with the chrome hidden has no
 # title bar, so the page heading has to live in the grid -- and `configure`
 # without a viz_type is not a chart the rest of the pipeline can build.
+# `wrap` retired with stage A's nesting: a frame that holds other sections
+# arrives as a region with `children`, and becomes a container plugin. There is
+# no longer a case for reusing a registered composing plugin, because none
+# composes the frames these designs draw.
 DECISIONS = {
     "reuse",
     "configure",
-    "wrap",
     "new_plugin",
-    "native_filter",
     "grid_text",
     "drop",
 }
 # What kind of component a `new_plugin` is. A plugin is a React component we
 # own, so this is not limited to "a chart shape Superset lacks".
 ARCHETYPES = {"viz", "container", "filter_widget", "table", "navigation"}
-NON_DATA_ROLES = {"nav", "header", "text", "decoration"}
+NON_DATA_ROLES = {"wrapper", "nav", "header", "text", "decoration"}
 
 
 def build_system_prompt(prompts_dir: pathlib.Path, registry_path: str) -> str:
@@ -109,8 +110,11 @@ def build_user_prompt(
     # user answered, and stage C never saw it.
     if answers := binding_set.get("user_answers"):
         payload["user_answers"] = answers
-    if datasets := binding_set.get("created_datasets"):
-        payload["created_datasets"] = datasets
+    # What stage B built, so a decision can be judged against the data that
+    # actually exists rather than against a proposal.
+    for key in ("fact_tables", "views", "shared_dataset_id"):
+        if (value := binding_set.get(key)) is not None:
+            payload[key] = value
     # A second attempt: the first plan failed these checks, and they are
     # mechanical, so fixing them is not a matter of taste.
     if problems := binding_set.get("validation_problems"):
@@ -182,21 +186,11 @@ def tally(decisions: list[dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
-def _base_region(region_id: Any) -> str:
-    """The region a decision belongs to.
-
-    A container is bound and resolved one chart at a time, with ids suffixed
-    `:1`, `:2` (`B_bind_data.md`). Those children belong to the frame;
-    comparing them against stage A's list, which has no suffixes, reads every
-    one as a decision for a region that does not exist.
-    """
-    return str(region_id or "").split(":", 1)[0]
-
-
 # Phrases that mean Superset's own chrome will not be rendered. When the chrome
-# is hidden a `native_filter` is invisible and a dropped heading is simply gone,
-# so those decisions contradict the user rather than merely differing from the
-# design. Two prompt-level instructions failed to prevent this, so it is checked.
+# is hidden a dropped heading is simply gone rather than deferred to the
+# dashboard title, so that decision contradicts the user rather than merely
+# differing from the design. A prompt-level instruction failed to prevent this,
+# so it is checked.
 _CHROME_HIDDEN_HINTS = (
     "chrome hidden",
     "chrome is hidden",
@@ -226,12 +220,6 @@ def _answer_conflicts(
     for decision in decisions:
         region_id = decision.get("region_id")
         kind = decision.get("decision")
-        if kind == "native_filter":
-            problems.append(
-                f"{region_id}: native_filter, but the user said the dashboard "
-                "chrome is hidden -- the filter bar will not render, so this "
-                "filter would be invisible. Use a chart_widget in the grid."
-            )
         if kind == "drop" and roles.get(region_id) in {"header", "text"}:
             problems.append(
                 f"{region_id}: dropped to dashboard chrome, but the user said "
@@ -252,20 +240,20 @@ def _text_as_plugin(
 ) -> list[str]:
     """Text regions resolved to a plugin instead of `grid_text`.
 
-    A `container` region is exempt, and the exemption is the whole point: a
-    header row that also carries a currency toggle is a frame holding separate
-    things, not a line of prose, and a MARKDOWN node cannot draw a control.
-    Without this, that region is caught by this rule *and* by
-    `_containers_without_children` -- one demanding no plugin, the other demanding a
-    container plugin -- and no plan can satisfy both.
+    A wrapper is exempt, and the exemption is the whole point: a header row
+    that also holds a currency toggle and a date picker is a frame around
+    separate sections, not a line of prose, and a MARKDOWN node cannot draw a
+    control. Without this, that region is caught by this rule *and* by
+    `_wrappers_without_children` -- one demanding no plugin, the other a
+    container plugin -- and no plan could satisfy both.
     """
     roles = {
         r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
     }
-    containers = {
+    wrappers = {
         r.get("region_id")
         for r in design_analysis.get("regions", [])
-        if r.get("composition") == "container"
+        if r.get("children")
     }
     return [
         f"{d.get('region_id')}: role is {roles.get(d.get('region_id'))!r}, which "
@@ -276,74 +264,51 @@ def _text_as_plugin(
         for d in decisions
         if d.get("decision") == "new_plugin"
         and roles.get(d.get("region_id")) in TEXT_ROLES
-        and d.get("region_id") not in containers
+        and d.get("region_id") not in wrappers
     ]
 
 
-def _containers_without_children(
+def _wrappers_without_children(
     decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
 ) -> list[str]:
-    """Containers that became a plugin hosting nothing.
+    """A frame that holds sections, resolved to something that holds nothing.
 
-    Stage A marks a frame holding several *different* charts
-    `composition: container`. One frame is one plugin with `children`; splitting
-    it into a frame plugin plus sibling plugins for its contents produces two
-    packages and two charts where the design draws one card, with the contents
-    beside the frame rather than inside it.
-
-    A region stage A called `atomic` is not checked here at all: however much a
-    card draws, if it is about one subject it is one chart with no children.
+    Stage A gives a wrapper the region numbers it contains. One frame is one
+    container plugin whose `children` are the refs of those regions' decisions;
+    a plugin that draws only the frame leaves its contents beside it rather
+    than inside it, and the design's card is two cards.
     """
-    containers = {
-        r.get("region_id")
+    regions = {
+        r.get("region_id"): r
         for r in design_analysis.get("regions", [])
-        if r.get("composition") == "container"
+        if isinstance(r, dict)
+    }
+    wrappers = {
+        region_id for region_id, region in regions.items() if region.get("children")
     }
     problems = [
-        f"{d.get('region_id')}: stage A read this as a container -- a frame over "
-        "several different charts -- so it is one `new_plugin` with "
-        '`plugin_archetype: "container"` and its contents in `children`, not a '
-        "plugin that draws only the frame. If the card is really about one "
-        "subject, stage A was wrong and this is a `viz`."
+        f"{d.get('region_id')}: stage A read this as a frame holding "
+        f"{len(regions[str(d.get('region_id'))].get('children') or [])} other "
+        "section(s), so it is one `new_plugin` with `plugin_archetype: "
+        '"container"` and their refs in `children`.'
         for d in decisions
-        if d.get("decision") == "new_plugin"
-        and d.get("region_id") in containers  # the frame, not a `:N` child
-        and d.get("plugin_archetype") != "container"
+        if d.get("region_id") in wrappers
         and not (d.get("children") or [])
+        and d.get("decision") not in {"drop", "grid_text"}
     ]
-
-    # The same frame, resolved with `configure` instead. Checking only
-    # `new_plugin` let a container reuse an existing plugin and name no
-    # children at all -- and `children` is the *only* thing that tells stage E a
-    # piece is drawn inside the card. Without it E gives the piece its own grid
-    # node and it appears twice: once in the card, once loose beside it. No
-    # error anywhere; the dashboard is just wrong.
-    decided = {d.get("region_id") for d in decisions}
-    for decision in decisions:
-        region_id = decision.get("region_id")
-        if decision.get("decision") != "configure" or region_id not in containers:
-            continue
-        if decision.get("children"):
-            continue
-        pieces = sorted(
-            other
-            for other in decided
-            if isinstance(other, str)
-            and other != region_id
-            and _base_region(other) == region_id
-        )
-        if pieces:
-            problems.append(
-                f"{region_id}: this card also has decisions for {pieces}, but "
-                "names no `children`. List their refs -- that is what tells "
-                "the layout they are drawn inside this card rather than "
-                "beside it."
-            )
+    problems += [
+        f"{d.get('region_id')}: has children but stage A read no sections "
+        "inside it -- a card about one subject is one chart, however much it "
+        "draws"
+        for d in decisions
+        if (d.get("children") or []) and d.get("region_id") not in wrappers
+    ]
     return problems
 
 
-# Decisions that put a chart on the dashboard, so they need data behind them.
-DRAWS_DATA = {"configure", "wrap", "new_plugin"}
+# Decisions that put a querying chart on the dashboard, and so need data
+# behind them. `reuse` is absent: an existing chart already carries its own.
+DRAWS_DATA = {"configure", "new_plugin"}
 
 
 def _binding_coverage(
@@ -351,51 +316,45 @@ def _binding_coverage(
     design_analysis: dict[str, Any],
     binding_set: dict[str, Any],
 ) -> list[str]:
-    """Decisions and bindings must account for each other, both ways.
+    """A chart that queries must have data behind it.
 
-    `_base_region` collapses `r07_card:1` onto `r07_card`, which is right for
-    checking that stage A's regions are all covered -- and wrong for checking
-    anything per piece. Under it a plan that resolves `:2` and silently forgets
-    `:1` looks complete, and the chart stage B found data for is never built.
-
-    The other direction is worse: a decision with no binding reaches stage D
-    with no dataset and no columns, and the model invents a `datasource_id`
-    that Superset rejects at the very end of the run.
+    Stage B binds every region, including the ones that draw nothing -- those
+    take the shared one-row dataset because Superset requires a datasource on
+    every chart. So the check is no longer "is this region bound" but "does the
+    thing this decision will query actually read data": a `configure` or
+    `new_plugin` on a data region pointed at the shared dataset is a chart that
+    renders nothing, and that is invisible until someone opens the dashboard.
     """
     problems: list[str] = []
     roles = {
-        r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
+        r.get("region_id"): r.get("role")
+        for r in design_analysis.get("regions", [])
+        if isinstance(r, dict)
     }
-    bound = {
-        b.get("region_id")
-        for b in binding_set.get("bindings", [])
-        if isinstance(b.get("region_id"), str)
-        and b.get("state") not in {"unavailable", "not_applicable"}
+    shared = binding_set.get("shared_dataset_id")
+    bindings = {
+        b.get("region_id"): b
+        for b in binding_set.get("bindings") or []
+        if isinstance(b, dict)
     }
-    decided = {d.get("region_id") for d in decisions if d.get("region_id")}
-    absorbed = {_base_region(region_id) for region_id in decided}
-
-    for region_id in sorted(bound):
-        # A parent's decision stands in for a piece it draws itself.
-        if region_id in decided or _base_region(region_id) in decided:
-            continue
-        problems.append(
-            f"{region_id}: stage B bound this piece and no decision draws it -- "
-            "resolve it, or name it in the parent decision's `children`"
-        )
 
     for decision in decisions:
-        region_id = decision.get("region_id")
+        region_id = str(decision.get("region_id") or "")
         if decision.get("decision") not in DRAWS_DATA:
             continue
-        if roles.get(_base_region(region_id)) in NON_DATA_ROLES:
+        if roles.get(region_id) in NON_DATA_ROLES:
             continue
-        if region_id in bound or _base_region(region_id) in absorbed & bound:
-            continue
-        if not any(_base_region(b) == _base_region(region_id) for b in bound):
+        binding = bindings.get(region_id)
+        if binding is None:
             problems.append(
-                f"{region_id}: draws a chart but stage B bound no data for it "
-                "or any part of its card, so there is nothing to query"
+                f"{region_id}: draws a chart but stage B bound nothing to it"
+            )
+            continue
+        if isinstance(shared, int) and binding.get("dataset_id") == shared:
+            problems.append(
+                f"{region_id}: draws a chart but is bound to the shared "
+                "one-row dataset, which carries no data -- it would render "
+                "empty"
             )
     return problems
 
@@ -418,51 +377,37 @@ def _evidence_missing(decisions: list[dict[str, Any]]) -> list[str]:
     ]
 
 
-def _tabs_flattened(
+def _switcher_lost(
     decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
 ) -> list[str]:
-    """A tabbed card resolved to something that cannot hold tabs.
+    """A card whose switcher was quietly dropped.
 
-    Stage A records a tab switcher in `interactions`, and three prompts agree
-    that an unseen tab is built showing "Coming soon" rather than dropped. None
-    of that was checked, and a card quietly built as its visible tab alone
-    looks correct -- nobody notices the tabs that are not there.
+    Stage A reports a wrapper's chrome in `frame`. `tabs` over children means a
+    container that switches between them; `tabs` with no children means one
+    chart that the switcher refilters, and the control belongs to that chart.
+    Either way the switcher is part of the design, and a card built as its
+    visible state alone looks correct -- nobody notices the tabs that are not
+    there. The old check read the word "tab" out of `interactions`, which also
+    matched the page's own tab strip and forced a container onto a nav region.
     """
-    tabbed = {
-        r.get("region_id")
+    switched = {
+        r.get("region_id"): bool(r.get("children"))
         for r in design_analysis.get("regions", [])
-        if any(
-            "tab" in str(interaction).lower()
-            for interaction in (r.get("interactions") or [])
-        )
+        if isinstance(r, dict) and r.get("frame") in {"tabs", "toggle"}
     }
     return [
-        f"{d.get('region_id')}: stage A saw a tab switcher here, but this "
-        "decision hosts nothing -- a tabbed card is a container with one child "
-        'per tab, unseen ones built as "Coming soon"'
+        f"{d.get('region_id')}: stage A saw a switcher over "
+        f"{'several sections' if switched[str(d.get('region_id'))] else 'one chart'} "
+        "here, and this decision keeps none of it -- a switcher over sections is "
+        "a container with one child each; over one chart it is that chart's own "
+        "control."
         for d in decisions
-        if d.get("region_id") in tabbed
+        if d.get("region_id") in switched
+        and switched[str(d.get("region_id"))]
         and d.get("decision") in DRAWS_DATA
         and not (d.get("children") or [])
         and d.get("plugin_archetype") != "container"
     ]
-
-
-def _unanswered_regions(binding_set: dict[str, Any]) -> set[str]:
-    """Regions stage B could not bind and the user did not explain either.
-
-    An `unavailable` binding always raises a blocking question. Once the user
-    answers it -- naming the options a hard-coded control shows, say -- the
-    region is buildable on made-up rows, and refusing to build it would throw
-    away the answer that was asked for.
-    """
-    answers = replies_of(binding_set.get("user_answers"))
-    unanswered = set()
-    for question in binding_set.get("questions", []):
-        region_id = question.get("region_id")
-        if region_id and not str(answers.get(question.get("id"), "")).strip():
-            unanswered.add(region_id)
-    return unanswered
 
 
 def replies_of(user_answers: Any) -> dict[str, Any]:
@@ -497,29 +442,24 @@ def validate(  # noqa: C901
     problems: list[str] = []
     entries = load_registry(registry_path)
     known_charts = chart_types(entries)
-    known_filters = set(filter_types(entries))
 
     if plan.get("status") not in {"ready", "needs_approval"}:
         problems.append(f"invalid status: {plan.get('status')!r}")
 
     decisions = plan.get("decisions", [])
     expected = {r["region_id"] for r in design_analysis.get("regions", [])}
-    covered = {_base_region(d.get("region_id")) for d in decisions}
+    covered = {str(d.get("region_id") or "") for d in decisions}
     for missing in sorted(expected - covered):
         problems.append(f"region has no decision: {missing}")
     for extra in sorted(covered - expected):
         problems.append(f"decision for unknown region: {extra}")
 
-    bound_states = {
-        b.get("region_id"): b.get("state") for b in binding_set.get("bindings", [])
-    }
-    unanswered = _unanswered_regions(binding_set)
     problems.extend(_answer_conflicts(decisions, design_analysis, binding_set))
     problems.extend(_text_as_plugin(decisions, design_analysis))
-    problems.extend(_containers_without_children(decisions, design_analysis))
+    problems.extend(_wrappers_without_children(decisions, design_analysis))
     problems.extend(_binding_coverage(decisions, design_analysis, binding_set))
     problems.extend(_evidence_missing(decisions))
-    problems.extend(_tabs_flattened(decisions, design_analysis))
+    problems.extend(_switcher_lost(decisions, design_analysis))
 
     refs = {d.get("ref") for d in decisions if d.get("ref")}
     seen_refs: set[str] = set()
@@ -541,7 +481,7 @@ def validate(  # noqa: C901
 
         if kind == "grid_text" and not decision.get("text"):
             problems.append(f"{region_id}: grid_text without the text to render")
-        if kind in {"configure", "wrap"}:
+        if kind == "configure":
             if not viz_type:
                 problems.append(f"{region_id}: {kind} without viz_type")
             elif viz_type not in known_charts:
@@ -590,43 +530,9 @@ def validate(  # noqa: C901
                     "the charts it holds, or set plugin_archetype to 'viz' "
                     "because this card is one chart about one subject."
                 )
-        if kind == "wrap":
-            children = decision.get("children") or []
-            if not children:
-                problems.append(f"{region_id}: wrap without children")
-            for child in children:
-                if child not in refs:
-                    problems.append(f"{region_id}: child ref {child!r} not defined")
-        if (
-            kind != "drop"
-            and bound_states.get(region_id) == "unavailable"
-            and region_id in unanswered
-        ):
-            problems.append(
-                f"{region_id}: binding is unavailable and the blocking question "
-                "about it went unanswered, so there is nothing to draw"
-            )
-
-    # A wrap parent must come after its children so the applier can build in order.
-    order = {d.get("ref"): i for i, d in enumerate(decisions) if d.get("ref")}
-    for decision in decisions:
-        if decision.get("decision") != "wrap":
-            continue
-        parent_index = order.get(decision.get("ref"), -1)
         for child in decision.get("children") or []:
-            if order.get(child, 10**6) > parent_index:
-                problems.append(
-                    f"{decision.get('region_id')}: child {child!r} is ordered "
-                    f"after its wrap parent"
-                )
-
-    for native in plan.get("native_filters", []):
-        filter_type = native.get("filterType")
-        if filter_type not in known_filters:
-            problems.append(
-                f"native filter {native.get('name')!r}: unknown filterType "
-                f"{filter_type!r} (known: {sorted(known_filters)})"
-            )
+            if child not in refs:
+                problems.append(f"{region_id}: child ref {child!r} not defined")
 
     if new_plugin_types and plan.get("status") != "needs_approval":
         problems.append(
