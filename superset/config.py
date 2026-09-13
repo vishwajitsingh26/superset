@@ -555,6 +555,23 @@ CURRENCIES = ["USD", "EUR", "GBP", "INR", "MXN", "JPY", "CNY"]
 # and input images -- under design-to-dashboard/traces/<session_id>/. It is a
 # prompt-tuning aid, off by default: the files hold whatever the design and the
 # database contain, and nothing prunes them.
+# Where a design-to-dashboard run is stored so it survives a restart.
+#
+# Sessions otherwise live in the worker's memory: a reload loses the run, and a
+# second tab cannot see it. Runs are written at stage boundaries into a schema
+# of their own, beside the one stage B materialises its fact tables into.
+#
+# `url` is an explicit SQLAlchemy URL and wins outright; leave it unset to
+# borrow the engine of the Superset database named by `database_id`, which is
+# normally the same one the fact tables go to. Setting `url` is how the run
+# history moves somewhere else without any code change.
+DESIGN_TO_DASHBOARD_PERSISTENCE: dict[str, Any] = {
+    "enabled": False,
+    "database_id": None,
+    "url": None,
+    "schema": "d2d_runs",
+}
+
 DESIGN_TO_DASHBOARD_LLM: dict[str, Any] = {
     # `kiro_cli` rather than `claude_cli`: it drives the Kiro CLI's v3 agent
     # engine, which honours `effort`, keeps `model` pinned, and streams readable

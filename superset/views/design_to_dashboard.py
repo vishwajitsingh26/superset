@@ -48,3 +48,16 @@ class DesignToDashboardView(BaseSupersetView):
     @has_access
     def list(self) -> FlaskResponse:
         return super().render_app_template()
+
+    @expose("/<session_id>/")
+    @has_access
+    def run(self, session_id: str) -> FlaskResponse:  # noqa: ARG002
+        """The same shell, addressed by run.
+
+        A run takes tens of minutes, so its id belongs in the URL: the link is
+        shareable and a reload lands back in the run rather than on an empty
+        page. The id is read by the frontend from the address bar; this route
+        exists so the deep link is served at all rather than 404ing before any
+        JavaScript runs.
+        """
+        return super().render_app_template()

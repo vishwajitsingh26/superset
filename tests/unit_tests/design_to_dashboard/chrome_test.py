@@ -395,3 +395,38 @@ def test_a_row_holding_a_text_node_keeps_its_height() -> None:
         "MARKDOWN-1": {"type": "MARKDOWN", "meta": {"height": 13}},
     }
     assert strip_header_allowance(position, {"c1"}) == []
+
+
+def test_a_section_a_wrapper_hosts_gets_no_rules_of_its_own() -> None:
+    """A hosted child is not a chart on the grid, so it has no holder.
+
+    Every rule written for one selects nothing. Its card is the wrapper's to
+    draw, which is what the stage F prompt now tells the wrapper to do.
+    """
+    design = _design(r04=CARD_ICON, r05=CARD_ICON)
+    plan = {
+        "decisions": [
+            {
+                "region_id": "r04",
+                "decision": "new_plugin",
+                "ref": "c4",
+                "children": ["c5"],
+            },
+            {"region_id": "r05", "decision": "new_plugin", "ref": "c5"},
+        ]
+    }
+    (entry,) = chrome.resolve(design, plan)
+    assert entry.region_id == "r04"
+    assert ".dashboard-chart-id-101" not in chrome.compile_css(
+        [entry], {"c4": 100, "c5": 101}
+    )
+
+
+def test_a_wrapper_with_no_children_is_unaffected() -> None:
+    design = _design(r08=CARD_PLAIN)
+    plan = {
+        "decisions": [
+            {"region_id": "r08", "decision": "configure", "ref": "c8", "children": []}
+        ]
+    }
+    assert len(chrome.resolve(design, plan)) == 1

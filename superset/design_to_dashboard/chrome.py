@@ -114,6 +114,16 @@ def _chrome_of(region: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _hosted_refs(plan: dict[str, Any]) -> set[str]:
+    """Refs a wrapper renders inside itself rather than beside itself."""
+    return {
+        str(child)
+        for decision in plan.get("decisions") or []
+        if isinstance(decision, dict)
+        for child in decision.get("children") or []
+    }
+
+
 def _surface_of(observed: dict[str, Any]) -> str:
     """Whether Superset's holder should paint a card here.
 
@@ -174,11 +184,18 @@ def resolve(
         for r in design_analysis.get("regions") or []
         if isinstance(r, dict)
     }
+    hosted = _hosted_refs(plan)
     resolved: list[RegionChrome] = []
     for decision in plan.get("decisions") or []:
         if not isinstance(decision, dict):
             continue
         if decision.get("decision") in NOT_ON_GRID:
+            continue
+        if decision.get("ref") in hosted:
+            # A section rendered inside a wrapper is not a chart on the grid,
+            # so it has no holder and no slice header. Every rule written for
+            # it would select nothing. Its card is the wrapper's job to draw,
+            # which is what the stage F prompt tells the wrapper to do.
             continue
         region_id = str(decision.get("region_id"))
         observed = _chrome_of(regions.get(region_id, {}))

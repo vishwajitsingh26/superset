@@ -35,11 +35,7 @@ from typing import Any
 
 from superset.design_to_dashboard.llm.base import LLMError, LLMProvider
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
-from superset.design_to_dashboard.registry import (
-    find as find_viz,
-    load as load_registry,
-    load_control_panel,
-)
+from superset.design_to_dashboard.registry import Registry
 from superset.utils import json
 
 logger = logging.getLogger(__name__)
@@ -108,12 +104,9 @@ def fallback_dataset(binding_set: dict[str, Any]) -> int | None:
     return None
 
 
-def load_panel(
-    viz_type: str, registry_path: str, repo_root: str | pathlib.Path
-) -> tuple[str, str]:
+def load_panel(viz_type: str, registry: Registry) -> tuple[str, str]:
     """Return ``(control_panel_path, source)`` for one viz type."""
-    entry = find_viz(load_registry(registry_path), viz_type)
-    return entry["control_panel"], load_control_panel(entry, repo_root)
+    return registry.control_panel(viz_type)
 
 
 def build_system_prompt(
@@ -476,8 +469,7 @@ def run_one(
     decision: dict[str, Any],
     design_system: dict[str, Any],
     prompts_dir: pathlib.Path,
-    registry_path: str,
-    repo_root: str | pathlib.Path,
+    registry: Registry,
     attempts: int = MAX_ATTEMPTS,
 ) -> ChartSpecResult:
     """Configure a single chart. Never raises - failures are reported.
@@ -495,7 +487,7 @@ def run_one(
         ref=ref, region_id=decision.get("region_id", "?"), viz_type=viz_type
     )
     try:
-        panel_path, panel = load_panel(viz_type, registry_path, repo_root)
+        panel_path, panel = load_panel(viz_type, registry)
     except Exception as ex:  # noqa: BLE001 - one worker must not kill the fan-out
         result.error = str(ex)
         return result
@@ -543,8 +535,7 @@ def run_all(
     binding_set: dict[str, Any],
     plan: dict[str, Any],
     prompts_dir: pathlib.Path,
-    registry_path: str,
-    repo_root: str | pathlib.Path,
+    registry: Registry,
     max_workers: int = MAX_WORKERS,
     on_chart: Any = None,
 ) -> list[ChartSpecResult]:
@@ -610,8 +601,7 @@ def run_all(
                 decision,
                 design_system,
                 prompts_dir,
-                registry_path,
-                repo_root,
+                registry,
             ): decision
             for decision in jobs
         }

@@ -24,10 +24,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Protocol
+from typing import Any, Protocol, TYPE_CHECKING
 
 from superset.utils import json
 from superset.utils.decorators import transaction
+
+if TYPE_CHECKING:
+    from superset.design_to_dashboard.registry import Registry
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +65,15 @@ class InProcessGateway:
 
     name = "in_process"
 
-    def __init__(self, timeout: int = 60) -> None:
+    def __init__(self, timeout: int = 60, registry: Registry | None = None) -> None:
         self.timeout = timeout
+        # The run's own registry, so a capability lookup answers from the
+        # chart types this run started with rather than a fresh scan.
+        self.registry = registry
 
     def call(self, tool: str, arguments: dict[str, Any]) -> Any:
+        if tool == "get_chart_capabilities":
+            return chart_capabilities(self.registry, arguments)
         if tool in LOCAL_TOOLS:
             return LOCAL_TOOLS[tool](arguments)
         return asyncio.run(self._call_async(tool, arguments))
@@ -241,6 +249,25 @@ def _verify_table(spec: dict[str, Any], dataset_id: int) -> dict[str, Any]:
         "row_count": int(rows or 0),
         "columns": columns,
     }
+
+
+def chart_capabilities(
+    registry: Registry | None, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """One stock chart type's capability card, for stage C's tool loop."""
+    from superset.design_to_dashboard.registry import RegistryError
+
+    if registry is None:
+        raise MCPError("get_chart_capabilities: this gateway has no registry")
+    request = arguments.get("request")
+    source = request if isinstance(request, dict) else arguments
+    viz_type = str(source.get("viz_type") or "").strip()
+    if not viz_type:
+        raise MCPError("get_chart_capabilities: 'viz_type' is required")
+    try:
+        return {"viz_type": viz_type, "card": registry.capability_card(viz_type)}
+    except RegistryError as ex:
+        raise MCPError(f"get_chart_capabilities: {ex}") from ex
 
 
 # Tools this pipeline serves itself, before anything reaches Superset's MCP

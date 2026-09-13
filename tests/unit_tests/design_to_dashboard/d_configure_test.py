@@ -339,6 +339,7 @@ def _run_all_lookups(
         raise RuntimeError("stop")
 
     import superset.design_to_dashboard.stages.d_configure as module
+    from superset.design_to_dashboard.registry import Registry
 
     original = module.run_one
     module.run_one = _capture
@@ -349,8 +350,7 @@ def _run_all_lookups(
             binding_set,
             plan,
             pathlib.Path("."),
-            "registry.json",
-            ".",
+            Registry(entries=[], repo_root=pathlib.Path(".")),
         )
     except Exception:  # noqa: BLE001, S110 - the workers are stubbed to stop
         pass

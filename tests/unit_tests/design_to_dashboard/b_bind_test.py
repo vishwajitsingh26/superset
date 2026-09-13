@@ -23,15 +23,26 @@ you are binding to, and did you check the SQL runs".
 
 from __future__ import annotations
 
+import pathlib
 from typing import Any
 
 import pytest
 
+from superset.design_to_dashboard.llm.base import images_opened, LLMResponse
+from superset.design_to_dashboard.stages import b_bind
 from superset.design_to_dashboard.stages.b_bind import (
-    build_user_prompt,
+    avoid_taken_names,
+    build_design_prompt,
+    build_design_system_prompt,
+    build_loop_prompt,
+    build_loop_system_prompt,
+    compact_databases,
     created_dataset_ids,
+    DesignedData,
     validate,
+    validate_spec,
 )
+from superset.utils import json
 
 SHARED = 23
 
@@ -231,7 +242,7 @@ def test_created_dataset_ids_covers_all_three_kinds(
 
 def test_every_region_reaches_the_stage(design: dict[str, Any]) -> None:
     """Wrappers used to be filtered out, which left them with no datasource."""
-    prompt = build_user_prompt(design)
+    prompt = build_design_prompt(design)
     for region_id in ("r01_coverage", "r02_aws_coverage", "r03_gcp_coverage"):
         assert region_id in prompt
 
@@ -240,6 +251,386 @@ def test_the_dashboard_name_reaches_the_stage(design: dict[str, Any]) -> None:
     """It names the fact tables, so it has to arrive. Non-ASCII is escaped by
     `json.dumps` on the way in and read back by the model, so the assertion is
     on the part that survives verbatim."""
-    prompt = build_user_prompt(design)
+    prompt = build_design_prompt(design)
     assert '"dashboard_title"' in prompt
     assert "Database Spend" in prompt
+
+
+# --- the design step and the build step -------------------------------------
+#
+# Stage B used to be one tool loop. The traces showed it never opened the design
+# image, designed every table twice, and re-sent stage A's descriptions on every
+# round. It is now one call that sees the picture and writes the whole spec, and
+# a loop that builds that spec without the picture.
+
+
+PROMPTS = (
+    pathlib.Path(__file__).resolve().parents[3] / "design-to-dashboard" / "prompts"
+)
+
+REGIONS = [
+    {
+        "region_id": "r01_header",
+        "n": 1,
+        "role": "header",
+        "observed": "a bold page title",
+        "chrome": {"surface": "bare"},
+    },
+    {
+        "region_id": "r02_filter",
+        "n": 2,
+        "role": "filter",
+        "controls": [
+            {
+                "kind": "select",
+                "options": ["All Regions"],
+                "icon": "a map-pin outline",
+                "position": "third field in the control band",
+            }
+        ],
+        "unusual_treatment": ["a pill with a chevron"],
+    },
+    {"region_id": "r03_card", "n": 3, "role": "kpi", "observed": "shows $10,495"},
+]
+DESIGN = {"global": {"title": "Spend"}, "regions": REGIONS}
+DATABASES = [{"id": 1, "database_name": "examples", "backend": "postgresql"}]
+# Never opened: the stub provider records the path and reads nothing.
+DESIGN_IMAGE = "/designs/page.png"
+
+
+def _spec(**overrides: Any) -> dict[str, Any]:
+    spec: dict[str, Any] = {
+        "status": "ok",
+        "dashboard_name": "spend",
+        "seen_in_design": ["the card prints a red 0.13% chip"],
+        "fact_tables": [
+            {
+                "name": "spend_by_day",
+                "columns": [
+                    {"name": "usage_date", "type": "DATE"},
+                    {"name": "cost", "type": "DOUBLE PRECISION"},
+                ],
+                "rows": [["2025-09-01", 10.5]],
+            },
+            {
+                "name": "shared_no_query",
+                "columns": [{"name": "placeholder", "type": "TEXT"}],
+                "rows": [["static"]],
+            },
+        ],
+        "views": [
+            {
+                "name": "spend_total",
+                "sql": "SELECT SUM(cost) AS spend FROM d2d.spend_by_day",
+            },
+            {
+                "name": "spend_options",
+                "sql": "SELECT DISTINCT usage_date FROM d2d.spend_by_day",
+            },
+        ],
+        "bindings": [
+            {"region_id": "r01_header", "source": "shared_no_query"},
+            {
+                "region_id": "r02_filter",
+                "source": "spend_options",
+                "dimensions": ["usage_date"],
+            },
+            {"region_id": "r03_card", "source": "spend_total", "measures": ["spend"]},
+        ],
+    }
+    spec.update(overrides)
+    return spec
+
+
+class _Provider:
+    """Answers every call with the same text, and records what it was sent."""
+
+    def __init__(
+        self, text: str, name: str = "stub", usage: dict[str, Any] | None = None
+    ) -> None:
+        self.name = name
+        self.text = text
+        self.usage = usage or {}
+        self.calls: list[dict[str, Any]] = []
+
+    def complete(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        image_paths: list[str] | None = None,
+        timeout: int | None = None,
+        on_thinking: Any = None,
+    ) -> LLMResponse:
+        self.calls.append(
+            {"system": system_prompt, "user": user_prompt, "image_paths": image_paths}
+        )
+        return LLMResponse(
+            text=self.text, cost_usd=0.5, usage=self.usage, provider=self.name
+        )
+
+
+class _Gateway:
+    name = "stub"
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def call(self, tool: str, arguments: dict[str, Any]) -> Any:
+        self.calls.append(tool)
+        return {
+            "databases": [
+                {
+                    "id": 1,
+                    "database_name": "examples",
+                    "backend": "postgresql",
+                    "changed_on": "2026-09-12",
+                }
+            ],
+            "count": 1,
+            "columns_available": ["uuid", "id"],
+        }
+
+
+# what the design step checks
+
+
+def test_a_well_formed_spec_has_no_problems() -> None:
+    assert validate_spec(_spec(), DESIGN) == []
+
+
+def test_a_spec_with_no_proof_of_looking_is_reported() -> None:
+    """A path-based provider cannot say whether the image was opened."""
+    problems = validate_spec(_spec(seen_in_design=[]), DESIGN)
+    assert any("no evidence the design image was read" in p for p in problems)
+
+
+def test_proof_copied_from_stage_a_is_not_proof() -> None:
+    """The old loop worked from stage A's text and never opened the picture."""
+    problems = validate_spec(_spec(seen_in_design=["shows $10,495"]), DESIGN)
+    assert any("word for word in stage A" in p for p in problems)
+
+
+def test_a_row_with_the_wrong_number_of_values_is_reported() -> None:
+    spec = _spec()
+    spec["fact_tables"][0]["rows"].append(["2025-09-02"])
+    assert any("do not have 2 values" in p for p in validate_spec(spec, DESIGN))
+
+
+def test_a_column_type_the_tool_rejects_is_reported() -> None:
+    spec = _spec()
+    spec["fact_tables"][0]["columns"][1]["type"] = "FLOAT"
+    assert any("'FLOAT'" in p for p in validate_spec(spec, DESIGN))
+
+
+def test_a_table_without_rows_is_reported() -> None:
+    """The build step creates what the spec lists and cannot invent rows."""
+    spec = _spec()
+    spec["fact_tables"][0]["rows"] = []
+    assert any("has no rows" in p for p in validate_spec(spec, DESIGN))
+
+
+def test_a_view_without_a_select_is_reported() -> None:
+    spec = _spec()
+    spec["views"][0]["sql"] = "DROP TABLE d2d.spend_by_day"
+    assert any("has no SELECT" in p for p in validate_spec(spec, DESIGN))
+
+
+def test_a_binding_to_something_the_spec_does_not_build_is_reported() -> None:
+    spec = _spec()
+    spec["bindings"][2]["source"] = "spend_nowhere"
+    assert any("is not a table or view" in p for p in validate_spec(spec, DESIGN))
+
+
+def test_a_region_that_draws_nothing_reads_the_shared_table() -> None:
+    spec = _spec()
+    spec["bindings"][0]["source"] = "spend_total"
+    assert any("draws no data" in p for p in validate_spec(spec, DESIGN))
+
+
+def test_a_region_the_spec_forgot_is_reported() -> None:
+    """The build step cannot see the design, so a gap here is a gap for good."""
+    spec = _spec()
+    spec["bindings"].pop()
+    assert "region not bound: r03_card" in validate_spec(spec, DESIGN)
+
+
+# keeping clear of datasets earlier dashboards own
+
+
+def test_a_taken_table_name_is_renamed_everywhere_it_is_read() -> None:
+    """A fact table with a taken name silently rewrites another dashboard's data."""
+    spec = _spec()
+    spec["bindings"].append({"region_id": "r09_raw", "source": "spend_by_day"})
+    notes = avoid_taken_names(spec, ["spend_by_day"], "ab12cd")
+
+    assert spec["fact_tables"][0]["name"] == "spend_by_day_ab12cd"
+    assert all("d2d.spend_by_day_ab12cd" in view["sql"] for view in spec["views"])
+    assert spec["bindings"][-1]["source"] == "spend_by_day_ab12cd"
+    assert len(notes) == 1
+
+
+def test_a_taken_view_name_is_renamed_and_its_binding_follows() -> None:
+    """A view with a taken name fails to save."""
+    spec = _spec()
+    avoid_taken_names(spec, ["spend_total"], "ab12cd")
+    assert spec["views"][0]["name"] == "spend_total_ab12cd"
+    assert spec["bindings"][2]["source"] == "spend_total_ab12cd"
+
+
+def test_the_shared_table_is_never_renamed() -> None:
+    """Every dashboard shares it on purpose."""
+    spec = _spec()
+    assert avoid_taken_names(spec, ["shared_no_query"], "ab12cd") == []
+    assert spec["fact_tables"][1]["name"] == "shared_no_query"
+
+
+def test_a_name_nobody_uses_is_left_alone() -> None:
+    spec = _spec()
+    assert avoid_taken_names(spec, ["something_else"], "ab12cd") == []
+    assert spec == _spec()
+
+
+def test_a_column_sharing_a_table_name_is_not_rewritten() -> None:
+    spec = _spec()
+    spec["views"][0]["sql"] = "SELECT spend_by_day FROM d2d.spend_by_day"
+    avoid_taken_names(spec, ["spend_by_day"], "ab12cd")
+    assert spec["views"][0]["sql"] == (
+        "SELECT spend_by_day FROM d2d.spend_by_day_ab12cd"
+    )
+
+
+def test_an_unqualified_table_after_from_or_join_is_rewritten() -> None:
+    spec = _spec()
+    spec["views"][0]["sql"] = (
+        "SELECT a.cost FROM spend_by_day a JOIN spend_by_day b ON a.cost = b.cost"
+    )
+    avoid_taken_names(spec, ["spend_by_day"], "ab12cd")
+    assert spec["views"][0]["sql"].count("spend_by_day_ab12cd") == 2
+
+
+def test_a_renamed_name_is_still_an_identifier_ddl_accepts() -> None:
+    long_name = "a" * 60
+    spec = _spec()
+    spec["fact_tables"][0]["name"] = long_name
+    avoid_taken_names(spec, [long_name], "ab12cd")
+    renamed = spec["fact_tables"][0]["name"]
+    assert len(renamed) <= b_bind.MAX_IDENTIFIER_LENGTH
+    assert b_bind._IDENTIFIER.fullmatch(renamed)
+
+
+def test_a_suffixed_name_that_is_also_taken_gets_a_counter() -> None:
+    spec = _spec()
+    avoid_taken_names(spec, ["spend_total", "spend_total_ab12cd"], "ab12cd")
+    assert spec["views"][0]["name"] == "spend_total_ab12cd2"
+
+
+# what each step is told
+
+
+def test_the_design_step_is_never_told_the_image_is_already_attached() -> None:
+    """That sentence is why the old loop never once opened the design."""
+    system = build_design_system_prompt(PROMPTS)
+    assert "already attached to this message" not in system
+    assert "open every one with `Read`" in system
+
+
+def test_the_build_loop_cannot_spend_a_round_on_the_database_list() -> None:
+    system = build_loop_system_prompt(PROMPTS)
+    assert "### list_databases" not in system
+    assert "### create_fact_table" in system
+
+
+def test_the_design_step_sees_the_names_it_may_not_use() -> None:
+    prompt = build_design_prompt(DESIGN, {"1": ["cloud_spend_trend"]})
+    assert "cloud_spend_trend" in prompt
+    assert "a bold page title" in prompt
+
+
+def test_the_build_loop_gets_the_spec_and_not_stage_as_descriptions() -> None:
+    """Stage A's reading was most of every round's prompt, re-sent each round."""
+    prompt = build_loop_prompt(DESIGN, _spec(), DATABASES, {"1": []})
+    assert "spend_by_day" in prompt
+    assert '"controls"' in prompt, "filter bindings need a region's controls"
+    assert "All Regions" in prompt, "a select's options are what its view offers"
+    for description in (
+        "a bold page title",
+        "shows $10,495",
+        "chrome",
+        "unusual",
+        "map-pin",
+        "control band",
+    ):
+        assert description not in prompt
+
+
+def test_the_database_listing_is_reduced_to_what_a_step_needs() -> None:
+    listing = _Gateway().call("list_databases", {})
+    listing["databases"].append({"database_name": "no id"})
+    assert compact_databases(listing) == DATABASES
+
+
+# whether an image was really opened
+
+
+@pytest.mark.parametrize(
+    "provider,usage,expected",
+    [
+        ("claude_agent_sdk", {"input_tokens": 2}, False),
+        ("claude_agent_sdk", {"input_tokens": 4}, True),
+        ("claude_agent_sdk", {}, None),
+        ("kiro_cli", {"input_tokens": 4}, None),
+    ],
+)
+def test_whether_an_image_was_opened_is_read_only_where_it_can_be(
+    provider: str, usage: dict[str, Any], expected: bool | None
+) -> None:
+    response = LLMResponse(text="{}", usage=usage, provider=provider)
+    assert images_opened(response) is expected
+
+
+# the steps end to end, with stubs
+
+
+def test_the_design_step_sees_the_image_and_keeps_clear_of_taken_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        b_bind, "taken_dataset_names", lambda ids: {"1": ["spend_total"]}
+    )
+    provider = _Provider(json.dumps(_spec()))
+    gateway = _Gateway()
+
+    designed = b_bind.design_step(
+        provider, gateway, DESIGN, PROMPTS, tag="ab12cd", image_paths=[DESIGN_IMAGE]
+    )
+
+    assert provider.calls[0]["image_paths"] == [DESIGN_IMAGE]
+    assert gateway.calls == ["list_databases"]
+    assert designed.databases == DATABASES
+    assert designed.spec["views"][0]["name"] == "spend_total_ab12cd"
+    assert designed.renamed
+    assert designed.problems == []
+    assert designed.cost_usd == 0.5
+
+
+def test_the_design_step_reports_an_image_it_never_opened(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(b_bind, "taken_dataset_names", lambda ids: {})
+    provider = _Provider(
+        json.dumps(_spec()), name="claude_agent_sdk", usage={"input_tokens": 2}
+    )
+    designed = b_bind.design_step(
+        provider, _Gateway(), DESIGN, PROMPTS, tag="ab12cd", image_paths=[DESIGN_IMAGE]
+    )
+    assert "never opened" in designed.problems[0]
+
+
+def test_the_build_step_never_sends_the_image(bindings: dict[str, Any]) -> None:
+    provider = _Provider(json.dumps({"final": bindings}))
+    designed = DesignedData(spec=_spec(), databases=DATABASES, taken={"1": []})
+
+    result = b_bind.build_step(provider, _Gateway(), DESIGN, designed, PROMPTS)
+
+    assert provider.calls[0]["image_paths"] is None
+    assert result.final["dashboard_name"] == "database_spend_multi_cloud"

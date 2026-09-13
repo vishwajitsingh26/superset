@@ -244,14 +244,27 @@ it exactly:
 - Reproduce the observed layout — where labels sit relative to values, what is
   above versus beside what.
 - Reproduce the observed number formatting, including magnitude suffixes.
-- **Never draw the card.** No border, no radius, no shadow, no background, no
-  outer padding. Superset already wraps your component in a chart holder, and
-  that holder is restyled from the contract's `card_chrome` for the whole
-  dashboard at once. Draw one yourself and the page shows two, nested. This
-  used to be the instruction and it could not be obeyed: a design's card is a
-  literal colour such as `1px solid #E2E8F0`, and the rules below reject a
-  literal colour in plugin source, so the only way to pass was to draw a card
-  that did not match. Your component fills the space it is given.
+- **Never draw a card around yourself.** No border, no radius, no shadow, no
+  background, no outer padding on your own root element. Superset already wraps
+  your component in a chart holder, and that holder is restyled from the
+  contract's `card_chrome` for the whole dashboard at once. Draw one yourself
+  and the page shows two, nested. This used to be the instruction and it could
+  not be obeyed: a design's card is a literal colour such as
+  `1px solid #E2E8F0`, and the rules below reject a literal colour in plugin
+  source, so the only way to pass was to draw a card that did not match. Your
+  component fills the space it is given.
+- **Do draw the cards of any children you host.** A container is the one
+  exception, and it is not optional. The sections inside you are not charts on
+  the grid, so Superset draws no holder around any of them — if you do not draw
+  their cards, nothing does, and three bordered tiles become three blocks of
+  text adrift on one flat panel. Give each child whose `chrome.surface` is
+  `card` its own fill, border and radius; give each one marked `bare` none.
+  Take those colours from **controls**, defaulted from the contract's
+  `card_chrome` and filled by the chart worker — never from a literal hex in
+  your source, which the rules below reject. That is the escape hatch those
+  rules name: the design's own colour arrives as data, not as a string you
+  typed. Your own outer chrome stays bare either way; only the children get
+  drawn.
 - Reproduce the contract's `typography`: the size and weight scale for the
   label, the value and any caption. **Take these from the contract, not from
   your crop**, even where your crop looks slightly different. Every plugin in

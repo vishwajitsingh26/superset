@@ -29,17 +29,19 @@ from typing import Any
 
 import pytest
 
+from superset.design_to_dashboard.registry import load, Registry
 from superset.design_to_dashboard.stages.c_resolve import validate
 from superset.design_to_dashboard.stages.f_scaffold import (
     build_user_prompt,
     resolve_children,
 )
 
-REGISTRY = str(
-    pathlib.Path(__file__).resolve().parents[3]
-    / "design-to-dashboard"
-    / "fixtures"
-    / "viz_registry.json"
+# The committed manifest keeps these tests independent of which plugins happen
+# to be on disk; runs build theirs from source.
+_ROOT = pathlib.Path(__file__).resolve().parents[3]
+REGISTRY = Registry.from_snapshot(
+    {"entries": load(_ROOT / "design-to-dashboard" / "fixtures" / "viz_registry.json")},
+    _ROOT,
 )
 SHARED = 23
 

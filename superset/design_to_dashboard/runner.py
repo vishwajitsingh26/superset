@@ -26,17 +26,20 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import pathlib
-import sys
 import threading
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from superset.design_to_dashboard import (
     chrome,
+    contact_sheet,
     crop,
     plugin_review,
     trace,
     visual_verify,
 )
+
+if TYPE_CHECKING:
+    from superset.design_to_dashboard.registry import Registry
 
 logger = logging.getLogger(__name__)
 
@@ -47,29 +50,31 @@ def _config() -> dict[str, Any]:
     return current_app.config.get("DESIGN_TO_DASHBOARD_LLM") or {}
 
 
-def _regenerate_registry(session: Any) -> None:
-    """Rebuild the viz-type manifest after a plugin lands on disk.
+def _build_registry(session: Any, announce: bool = True) -> Registry:
+    """Scan the source for every chart type, and save what was found.
 
-    Stage D validates params against the manifest and reads the control panel
-    from it, so a freshly written plugin is invisible until this runs.
+    Runs at the start of every run, so no stage reads a registry older than the
+    plugins on disk, and again after stage F: stage D reads a new plugin's
+    settings panel through the registry, so a plugin written moments ago is
+    invisible until this runs. It takes a fraction of a second, and runs in
+    process, so what it returns is exactly what the stages are given.
+
+    The snapshot is saved with the run, so a later look at the run sees the
+    registry it was decided against.
     """
-    import subprocess  # noqa: S404 - fixed argv, no shell
+    from superset.design_to_dashboard import registry as registry_module
 
-    script = REPO_ROOT / "design-to-dashboard" / "scripts" / "build_viz_registry.py"
-    completed = subprocess.run(  # noqa: S603
-        [sys.executable, str(script)],
-        capture_output=True,
-        text=True,
-        cwd=str(REPO_ROOT),
-        check=False,
-        shell=False,
-    )
-    if completed.returncode != 0:
-        raise RuntimeError(
-            f"could not regenerate the viz registry: "
-            f"{(completed.stderr or completed.stdout)[-400:]}"
+    built = registry_module.build(REPO_ROOT)
+    session.save_stage("registry", built.snapshot())
+    if built.dropped:
+        session.publish(
+            "registry_dropped",
+            label=f"Ignored {len(built.dropped)} chart type(s) with no files",
+            detail=", ".join(built.dropped),
         )
-    session.publish("registry_rebuilt", label="Chart registry updated")
+    if announce:
+        session.publish("registry_rebuilt", label="Chart registry updated")
+    return built
 
 
 class RunCancelledError(Exception):
@@ -375,7 +380,40 @@ def _typecheck_and_quarantine(  # noqa: C901
     return sum(s.cost_usd for s in scaffolds.values()) - before
 
 
-def _photograph_new_plugins(session: Any, plan: dict[str, Any]) -> None:
+# The verdict a dashboard has to earn before its new plugins are photographed.
+PHOTOGRAPH_VERDICT = "pass"
+
+
+def _photograph_if_approved(
+    session: Any,
+    plan: dict[str, Any],
+    verdict: str,
+    registry: Registry | None = None,
+) -> None:
+    """Photograph the plugins stage F built, but only for a dashboard that passed.
+
+    The photograph becomes that plugin's picture in every later run's contact
+    sheet, where stage C decides whether to reuse it. A plugin from a dashboard
+    that did not look like its design is exactly the one whose picture should
+    not be offered as a match.
+    """
+    built = [d for d in plan.get("decisions", []) if d.get("built_by_stage_f")]
+    if not built:
+        return
+    if verdict != PHOTOGRAPH_VERDICT:
+        session.publish(
+            "thumbnails_skipped",
+            label=f"New plugins not photographed: the dashboard was judged "
+            f"{verdict!r}, not {PHOTOGRAPH_VERDICT!r}",
+            verdict=verdict,
+        )
+        return
+    _photograph_new_plugins(session, plan, registry)
+
+
+def _photograph_new_plugins(
+    session: Any, plan: dict[str, Any], registry: Registry | None = None
+) -> None:
     """Replace each new plugin's placeholder with a picture of itself.
 
     A generated plugin ships no illustration, so `plugin_writer` copies in a
@@ -411,9 +449,11 @@ def _photograph_new_plugins(session: Any, plan: dict[str, Any]) -> None:
         )
         if not rendered:
             return
-        from superset.design_to_dashboard.registry import load as load_registry
+        if registry is None:
+            from superset.design_to_dashboard.registry import build
 
-        adopted = thumbnails.adopt(rendered, load_registry(str(REGISTRY)))
+            registry = build(REPO_ROOT)
+        adopted = thumbnails.adopt(rendered, registry.entries)
         session.publish(
             "thumbnails_captured",
             label=f"Photographed {len(adopted)} new plugin(s)",
@@ -503,12 +543,6 @@ def _retry(session: Any, label: str, attempts: int, call: Any) -> Any:
 PROMPTS = (
     pathlib.Path(__file__).resolve().parents[2] / "design-to-dashboard" / "prompts"
 )
-REGISTRY = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "design-to-dashboard"
-    / "fixtures"
-    / "viz_registry.json"
-)
 # Plugin generation is the longest stage: eight to ten minutes per plugin, and
 # each call is independent. Four at a time keeps a six-plugin design near the
 # cost of one rather than six, without opening more concurrent model calls than
@@ -522,15 +556,6 @@ C_MAX_REPLANS = 3
 PLAN_FEEDBACK_ROUNDS = 2
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-# One labelled image of every plugin's thumbnail. A plugin is a UI component, so
-# its thumbnail is the most direct evidence of whether it matches a design
-# section -- better than a text description, and one image rather than 46.
-THUMBNAIL_SHEET = (
-    pathlib.Path(__file__).resolve().parents[2]
-    / "design-to-dashboard"
-    / "fixtures"
-    / "plugin_thumbnails.png"
-)
 
 
 def _stage_a_summary(design_analysis: dict[str, Any], images: list[str]) -> str:
@@ -564,10 +589,6 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             from superset.design_to_dashboard.applier import apply_plan, ApplyError
             from superset.design_to_dashboard.llm.factory import get_llm_provider
             from superset.design_to_dashboard.mcp.gateway import InProcessGateway
-            from superset.design_to_dashboard.registry import (
-                chart_types,
-                load as load_registry,
-            )
             from superset.design_to_dashboard.stages import (
                 a_decompose,
                 b_bind,
@@ -626,6 +647,19 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
                 return sink
 
+            # The registry and the picture of every chart type are built from
+            # source for this run, so it compares against the plugins on disk
+            # rather than whatever a committed file last recorded. There is no
+            # fallback: a scan that finds no chart types means the checkout is
+            # broken, and a run against a guessed list would only hide that.
+            registry = _build_registry(session, announce=False)
+            gateway.registry = registry
+            plugin_sheet = contact_sheet.build(
+                registry.entries,
+                REPO_ROOT,
+                pathlib.Path(session.image_paths[0]).parent / "plugin_sheet.png",
+            )
+
             # ---- A: decompose ------------------------------------------------
             session.publish("stage_start", stage="A", label="Reading the design")
             # Parsing happens inside the retried call, not after it: an
@@ -641,11 +675,12 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     session.image_paths,
                     PROMPTS,
                     on_thinking=_thinking_for("A"),
-                    registry_path=str(REGISTRY),
+                    registry=registry,
                 ),
             )
             total_cost += stage_a_cost
             session.artifacts["design_analysis"] = design_analysis
+            session.save_stage("A", design_analysis)
 
             # Unrelated designs must not be welded into one dashboard. Stage A
             # can see that the images share no chrome; nothing downstream can,
@@ -667,7 +702,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # cost another eight-minute call without telling the model what was
             # wrong, so the run fails and the problems are reported instead.
             if problems := a_decompose.validate(
-                design_analysis, chart_types(load_registry(str(REGISTRY)))
+                design_analysis, registry.chart_types()
             ):
                 logger.error("stage A validation: %s", "; ".join(problems))
                 session.publish(
@@ -693,7 +728,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             )
 
             # ---- B: bind -----------------------------------------------------
-            session.publish("stage_start", stage="B", label="Finding your data")
+            session.publish("stage_start", stage="B", label="Designing your data")
 
             def _tool_progress(
                 tool: str, arguments: dict[str, Any], error: str | None = None
@@ -702,17 +737,63 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     "tool_call", tool=tool, arguments=arguments, error=error
                 )
 
-            binding = b_bind.run(
+            # Two steps. The design step is the only one that sees the picture,
+            # and it writes the whole data spec; the build step creates that
+            # spec without the picture or stage A's descriptions. The spec is
+            # saved in between, so a failed build never has to design again.
+            designed = b_bind.design_step(
                 provider_for("B"),
                 gateway,
                 design_analysis,
                 PROMPTS,
+                tag=f_scaffold.run_tag(session.id),
+                image_paths=session.image_paths,
+                on_thinking=_thinking_for("B"),
+            )
+            total_cost += designed.cost_usd
+            session.artifacts["data_spec"] = designed.spec
+            session.save_stage(
+                "B_design",
+                {
+                    "spec": designed.spec,
+                    "databases": designed.databases,
+                    "taken": designed.taken,
+                    "renamed": designed.renamed,
+                    "problems": designed.problems,
+                },
+            )
+            if designed.renamed:
+                session.publish(
+                    "names_adjusted",
+                    stage="B",
+                    label=f"Renamed {len(designed.renamed)} dataset(s) that "
+                    "earlier dashboards already use",
+                    detail="; ".join(designed.renamed),
+                )
+            if designed.problems:
+                logger.warning(
+                    "stage B design validation: %s", "; ".join(designed.problems)
+                )
+                session.publish(
+                    "validation_failed",
+                    stage="B",
+                    label=f"{len(designed.problems)} problem(s) with the data spec",
+                    detail="; ".join(designed.problems)[:1000],
+                    problems=designed.problems,
+                )
+
+            binding = b_bind.build_step(
+                provider_for("B"),
+                gateway,
+                design_analysis,
+                designed,
+                PROMPTS,
                 on_progress=_tool_progress,
                 on_thinking=_thinking_for("B"),
-                image_paths=session.image_paths,
             )
             total_cost += binding.cost_usd
             session.artifacts["binding_set"] = binding.final
+            session.save_stage("B", binding.final)
 
             # Warn rather than halt. Unlike stage A, whose ids nothing can
             # proceed without, a flawed binding still produces a dashboard --
@@ -798,12 +879,10 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         design_analysis,
                         payload,
                         PROMPTS,
-                        str(REGISTRY),
+                        registry,
                         on_progress=_tool_progress,
                         on_thinking=_thinking_for("C"),
-                        thumbnail_sheet=str(THUMBNAIL_SHEET)
-                        if THUMBNAIL_SHEET.exists()
-                        else None,
+                        thumbnail_sheet=str(plugin_sheet) if plugin_sheet else None,
                         image_paths=session.image_paths,
                         previous_plan=previous_plan,
                     ),
@@ -813,6 +892,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 )
                 total_cost += result.cost_usd
                 session.artifacts["plan"] = result.final
+                session.save_stage("C", result.final)
                 return result
 
             plan = _resolve()
@@ -876,7 +956,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # away the twenty minutes A and B already spent.
             for _attempt in range(C_MAX_REPLANS):
                 problems = c_resolve.validate(
-                    plan.final, design_analysis, binding_with_answers, str(REGISTRY)
+                    plan.final, design_analysis, binding_with_answers, registry
                 )
                 if not problems:
                     break
@@ -893,7 +973,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 # still wrong with it attached: a plan you can look at and
                 # reject beats a run that dies holding one.
                 still_wrong = c_resolve.validate(
-                    plan.final, design_analysis, binding_with_answers, str(REGISTRY)
+                    plan.final, design_analysis, binding_with_answers, registry
                 )
                 if still_wrong:
                     logger.warning(
@@ -1002,7 +1082,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     for b in binding.final.get("bindings", [])
                     if b.get("region_id")
                 }
-                known = chart_types(load_registry(str(REGISTRY)))
+                known = registry.chart_types()
                 built: list[str] = []
                 tag = f_scaffold.run_tag(session.id)
                 crops_dir = crop.session_crops_dir(session.id)
@@ -1086,11 +1166,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 def _region_for(region_id: str) -> dict[str, Any]:
                     """The region a plugin decision describes.
 
-                    A container's charts are resolved under `r07:1`,
-                    `r07:2` (`B_bind_data.md`), and stage A's list has no such
-                    ids -- so a plain lookup returned {} and the plugin for a
-                    child was generated with no description of what it draws
-                    and no image, from its decision alone.
+                    A container's charts are resolved under `r07:1` and
+                    `r07:2` by stage C's container decisions, and stage A's list
+                    has no such ids -- so a plain lookup returned {} and the
+                    plugin for a child was generated with no description of
+                    what it draws and no image, from its decision alone.
                     """
                     return regions.get(region_id) or regions.get(
                         region_id.split(":")[0], {}
@@ -1287,9 +1367,10 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         detail=str(linked.get("reason") or "")[:400],
                     )
 
-                # Regenerate the manifest so the new viz types are known to
-                # stage D's validation and to the layout stage.
-                _regenerate_registry(session)
+                # Rebuild so the new viz types are known to stage D, which
+                # reads their settings panels, and to the layout stage.
+                registry = _build_registry(session)
+                gateway.registry = registry
 
                 # Type-checking is not optional. Stage F's own checks are
                 # regex over generated text and cannot see an invented field
@@ -1339,6 +1420,15 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         ),
                     )
 
+                # Stage F rewrites the plan in place: a plugin that could not
+                # be generated turns its regions into drops. The plan stored
+                # under C was serialised before that, so it no longer describes
+                # what D and E are about to build from -- and a resume reading
+                # it would try to build plugins this run has already given up
+                # on. Both the outcome and the corrected plan are recorded.
+                session.save_stage(
+                    "F", {"built": built, "failed": failed_plugins, "plan": plan.final}
+                )
                 _reasoning = session.take_thinking()
                 session.publish(
                     "stage_complete",
@@ -1374,8 +1464,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 binding.final,
                 plan.final,
                 PROMPTS,
-                str(REGISTRY),
-                REPO_ROOT,
+                registry,
                 on_chart=_chart_done,
             )
             total_cost += sum(c.cost_usd for c in charts)
@@ -1392,6 +1481,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 for c in charts
             ]
             session.artifacts["charts"] = chart_specs
+            session.save_stage("D", chart_specs)
             _reasoning = session.take_thinking()
             session.publish(
                 "stage_complete",
@@ -1444,6 +1534,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             )
             total_cost += cost
             session.artifacts["layout"] = layout
+            session.save_stage("E", layout)
             headerless = {
                 entry.ref
                 for entry in chrome.resolve(design_analysis, plan.final, menus)
@@ -1503,8 +1594,6 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     label="What matching the design's chrome changed",
                     effects=applied.chrome_effects,
                 )
-
-            _photograph_new_plugins(session, plan.final)
 
             session.publish(
                 "stage_start", stage="verify", label="Checking the dashboard renders"
@@ -1573,6 +1662,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 screenshot=visual.screenshot_path,
                 cost=round(total_cost, 4),
             )
+            _photograph_if_approved(session, plan.final, visual.verdict, registry)
 
             session.status = "done"
             session.result = {
@@ -1620,3 +1710,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # cancelled -- a failed run is precisely the one worth reading.
             # Written last so the terminal event is part of the record.
             trace.write(session, REPO_ROOT)
+            # Same reasoning for storage: the final status and every event are
+            # what a reopened run is redrawn from, so this is the one save that
+            # must happen however the run ended.
+            session.save()

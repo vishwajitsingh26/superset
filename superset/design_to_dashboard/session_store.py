@@ -33,6 +33,29 @@ from typing import Any
 
 MAX_SESSIONS = 50
 
+# Statuses that mean the run is over, so there is nothing a worker still owes
+# it. Everything else describes a run in flight, which a restored session by
+# definition is not.
+TERMINAL_STATUSES = frozenset({"done", "failed", "cancelled"})
+
+# Events that change what a reopened run looks like, and so are worth a write.
+# Everything else -- tool calls, per-chart progress -- is detail the page does
+# not redraw from, and writing on each would put a round trip inside every
+# stage's inner loop.
+MILESTONE_EVENTS = frozenset(
+    {
+        "stage_start",
+        "stage_complete",
+        "awaiting_input",
+        "input_received",
+        "plugin_failed",
+        "chrome_effects",
+        "done",
+        "cancelled",
+        "error",
+    }
+)
+
 
 @dataclass
 class Session:
@@ -55,6 +78,9 @@ class Session:
     # be replayed on every reconnect.
     thinking: str = ""
     thinking_stage: str = ""
+    # Finished stage outputs, populated when a run is restored from storage.
+    # Empty for a live run, which holds the same values in `artifacts`.
+    stages: dict[str, Any] = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     # --- conversation gates -------------------------------------------------
@@ -78,6 +104,9 @@ class Session:
         self.pending = {"kind": kind, **payload}
         self.status = "waiting"
         self._replied.clear()
+        # A question is the longest a run ever sits still, so it is the moment
+        # most likely to meet a restart.
+        self.save()
         self.publish("awaiting_input", kind=kind, **payload)
         if not self._replied.wait(timeout=timeout):
             raise TimeoutError(f"no answer to {kind!r} within {timeout}s")
@@ -86,6 +115,11 @@ class Session:
         self.reply = None
         self.status = "running"
         self.publish("input_received", kind=kind, answer=answer)
+        # Saved on the way out as well as on the way in. Without this the
+        # stored row keeps the question that has just been answered until the
+        # next stage boundary, so a run busy building plugins reads back as
+        # still waiting for approval it already has.
+        self.save()
         return answer
 
     def answer(self, payload: dict[str, Any]) -> bool:
@@ -95,6 +129,28 @@ class Session:
         self.reply = payload
         self._replied.set()
         return True
+
+    def save(self) -> None:
+        """Write this run to storage, if storage is configured.
+
+        Called at stage boundaries and whenever the conversation gates, which
+        is the granularity a resume starts from. Deliberately not called per
+        event: a run publishes thousands, and a round trip each would show up
+        in the wall clock of every stage.
+        """
+        from superset.design_to_dashboard import persistence
+
+        if persistence.enabled():
+            persistence.save_run(self)
+
+    def save_stage(self, stage: str, payload: Any) -> None:
+        """Write one stage's output, and the run row along with it."""
+        from superset.design_to_dashboard import persistence
+
+        if not persistence.enabled():
+            return
+        persistence.save_stage(self.id, stage, payload)
+        persistence.save_run(self)
 
     def set_thinking(self, stage: str, text: str) -> None:
         with self.lock:
@@ -145,6 +201,17 @@ class Session:
                 listener.put_nowait(event)
             except queue.Full:  # pragma: no cover - a slow client is dropped
                 pass
+        if event_type in MILESTONE_EVENTS:
+            # The event list is the only thing a reopened run is redrawn from,
+            # and a stage boundary is too coarse for it. Stage F ran for twenty
+            # minutes and stage D for three; the whole time, storage still held
+            # the plugin review that came before them, so the run read as
+            # though it had gone backwards.
+            #
+            # Not every event, though: a run publishes thousands, and most are
+            # tool calls nobody redraws. These are the ones that change what
+            # the page shows.
+            self.save()
 
     def attach(self) -> queue.Queue[dict[str, Any]]:
         """Attach a listener, replaying everything that already happened.
@@ -185,8 +252,57 @@ def create(user_id: int) -> Session:
 def get(session_id: str, user_id: int | None = None) -> Session | None:
     session = _sessions.get(session_id)
     if session is None:
+        # Not in this process. It may still have been written down by a worker
+        # that has since restarted, which is the whole point of storing it.
+        session = _restore(session_id)
+    if session is None:
         return None
     # A session belongs to the user who created it.
     if user_id is not None and session.user_id != user_id:
         return None
+    return session
+
+
+def _restore(session_id: str) -> Session | None:
+    """Rebuild a session from storage, enough to redraw it.
+
+    What comes back is readable, not resumable: the worker that was running it
+    is gone, so a run caught mid-stage is reported as interrupted rather than
+    pretending to still be going. Its finished stages are intact, which is what
+    a resume needs.
+    """
+    from superset.design_to_dashboard import persistence
+
+    if not persistence.enabled():
+        return None
+    stored = persistence.load_run(session_id)
+    if stored is None:
+        return None
+    session = Session(id=stored["id"], user_id=stored["user_id"] or 0)
+    session.created_at = stored["created_at"] or time.time()
+    session.requirement = stored["requirement"]
+    session.image_paths = stored["image_paths"]
+    session.events = stored["events"]
+    session.artifacts = stored["artifacts"]
+    session.pending = stored["pending"]
+    session.result = stored["result"]
+    session.error = stored["error"]
+    session.stages = stored["stages"]
+    # A restored run has no worker behind it: the thread that was driving it
+    # died with the process. Only a run that had already finished keeps the
+    # status it was stored with -- anything else was mid-flight and is now
+    # interrupted, however it looked when it was written down.
+    #
+    # `waiting` is the case that matters. A run stored at a gate comes back
+    # still showing that gate, and answering it posts to nobody: the reply
+    # unblocks a thread that no longer exists, so the page sits there looking
+    # live and accepting clicks that do nothing. The question goes with the
+    # worker that asked it.
+    session.status = (
+        stored["status"] if stored["status"] in TERMINAL_STATUSES else "interrupted"
+    )
+    if session.status == "interrupted":
+        session.pending = None
+    with _store_lock:
+        _sessions[session.id] = session
     return session

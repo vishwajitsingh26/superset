@@ -41,10 +41,7 @@ from typing import Any
 from superset.design_to_dashboard import chrome
 from superset.design_to_dashboard.llm.base import LLMProvider
 from superset.design_to_dashboard.pipeline.tool_loop import extract_json
-from superset.design_to_dashboard.registry import (
-    load as load_registry,
-    render_summaries,
-)
+from superset.design_to_dashboard.registry import Registry
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +82,7 @@ NO_STOCK_CANDIDATE = {"wrapper"}
 
 
 def build_system_prompt(
-    prompts_dir: pathlib.Path, registry_path: str | None = None
+    prompts_dir: pathlib.Path, registry: Registry | None = None
 ) -> str:
     """Assemble the stage A system prompt: preamble, stage, and the registry.
 
@@ -98,12 +95,14 @@ def build_system_prompt(
     preamble = (prompts_dir / "shared" / "_preamble.md").read_text(encoding="utf-8")
     stage = (prompts_dir / "A_decompose_design.md").read_text(encoding="utf-8")
     parts = [preamble, stage]
-    if registry_path:
+    if registry:
+        # Names only. Stage C makes the decision and gets the descriptions;
+        # stage A needs just enough to spell a candidate correctly.
         parts.append(
             "## Registered viz types\n\n"
             "Consult this only for a leaf region's `stock_candidate`, and only "
             "after you have written what you see. A plugin that is *close* is "
-            "not a match.\n\n" + render_summaries(load_registry(registry_path))
+            "not a match.\n\n" + registry.stage_a_text()
         )
     return "\n\n---\n\n".join(parts)
 
@@ -458,7 +457,7 @@ def run(
     prompts_dir: pathlib.Path,
     on_thinking: Any = None,
     attempts: int = MAX_ATTEMPTS,
-    registry_path: str | None = None,
+    registry: Registry | None = None,
 ) -> tuple[dict[str, Any], float]:
     """Read the design. Returns ``(design_analysis, cost_usd)``.
 
@@ -471,13 +470,9 @@ def run(
     problems in hand. The caller still validates what it gets back and still
     fails the run if it is wrong -- this only spends one more call first.
     """
-    system_prompt = build_system_prompt(prompts_dir, registry_path)
+    system_prompt = build_system_prompt(prompts_dir, registry)
     user_prompt = build_user_prompt(requirement)
-    known = (
-        {str(entry.get("viz_type")) for entry in load_registry(registry_path)}
-        if registry_path
-        else None
-    )
+    known = registry.viz_types() if registry else None
     cost = 0.0
     analysis: dict[str, Any] = {}
 

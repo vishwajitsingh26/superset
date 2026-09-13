@@ -154,13 +154,28 @@ LIST_DATABASES: ToolSpec = {
     "arguments": {"request": {"page_size": "int - keep small"}},
 }
 
-STAGE_B_TOOLS: list[ToolSpec] = [
-    LIST_DATABASES,
+# Stage B's build loop only. The database list is fetched once in code and
+# handed to it, and its design call has no tools at all -- so a round spent
+# calling `list_databases` is a round spent on nothing, which every run used to
+# pay before it had designed a single table.
+STAGE_B_BUILD_TOOLS: list[ToolSpec] = [
     CREATE_FACT_TABLE,
     CREATE_VIRTUAL_DATASET,
     EXECUTE_SQL,
 ]
-STAGE_C_TOOLS: list[ToolSpec] = [LIST_CHARTS, GET_CHART_INFO]
+GET_CHART_CAPABILITIES: ToolSpec = {
+    "name": "get_chart_capabilities",
+    "description": (
+        "What one stock chart type can be set up to show, and the things no "
+        "setting makes it show. Its thumbnail is one configuration; this is "
+        "all of them. Call it before matching a region to a stock type that "
+        "has no card in your prompt, and before rejecting one for a detail "
+        "you think it cannot draw."
+    ),
+    "arguments": {"viz_type": "string - a stock viz_type from the registry"},
+}
+
+STAGE_C_TOOLS: list[ToolSpec] = [LIST_CHARTS, GET_CHART_INFO, GET_CHART_CAPABILITIES]
 
 
 def render_catalog(tools: list[ToolSpec]) -> str:

@@ -37,11 +37,7 @@ from superset.design_to_dashboard.pipeline.tool_loop import (
     run_tool_loop,
     ToolLoopResult,
 )
-from superset.design_to_dashboard.registry import (
-    chart_types,
-    load as load_registry,
-    render_summaries,
-)
+from superset.design_to_dashboard.registry import chart_types, Registry
 from superset.utils import json
 
 logger = logging.getLogger(__name__)
@@ -75,24 +71,43 @@ ARCHETYPES = {"viz", "container", "filter_widget", "table", "navigation"}
 NON_DATA_ROLES = {"wrapper", "nav", "header", "text", "decoration"}
 
 
-def build_system_prompt(prompts_dir: pathlib.Path, registry_path: str) -> str:
-    """Preamble + stage prompt + envelope + tool catalogue + viz summaries."""
+def build_system_prompt(
+    prompts_dir: pathlib.Path,
+    registry: Registry,
+    design_analysis: dict[str, Any] | None = None,
+) -> str:
+    """Preamble, stage, envelope, tools, viz summaries and capability cards.
+
+    The cards are for the stock types C is likely to weigh: each one stage A
+    named, and the types designs use most. A thumbnail shows one way a chart
+    was set up; a card says what every setting can make it show, and what none
+    can. Any other stock type's card is one tool call away.
+    """
     preamble = (prompts_dir / "shared" / "_preamble.md").read_text(encoding="utf-8")
     stage = (prompts_dir / "C_resolve.md").read_text(encoding="utf-8")
-    entries = load_registry(registry_path)
-    return "\n\n---\n\n".join(
-        [
-            preamble,
-            stage,
-            ENVELOPE_INSTRUCTIONS,
-            "## Tools available to you\n\n" + render_catalog(STAGE_C_TOOLS),
-            (
-                "## Registered viz types\n\n"
-                "These are the only viz types that exist. Anything else requires "
-                "a `new_plugin` decision.\n\n" + render_summaries(entries)
-            ),
-        ]
-    )
+    parts = [
+        preamble,
+        stage,
+        ENVELOPE_INSTRUCTIONS,
+        "## Tools available to you\n\n" + render_catalog(STAGE_C_TOOLS),
+        (
+            "## Registered viz types\n\n"
+            "These are the only viz types that exist. Anything else requires "
+            "a `new_plugin` decision.\n\n" + registry.stage_c_text()
+        ),
+    ]
+    if cards := registry.capability_cards(
+        registry.card_shortlist(design_analysis or {})
+    ):
+        parts.append(
+            "## Capability cards\n\n"
+            "What these stock types can be set up to show. Judge a match against "
+            "the settings, not the thumbnail: a detail the thumbnail lacks may be "
+            "one setting away. A detail under **Cannot show** is not reachable by "
+            "any setting, so a region that needs it is not a match for that type."
+            "\n\n" + cards
+        )
+    return "\n\n---\n\n".join(parts)
 
 
 def build_user_prompt(
@@ -179,7 +194,7 @@ def run(
     design_analysis: dict[str, Any],
     binding_set: dict[str, Any],
     prompts_dir: pathlib.Path,
-    registry_path: str,
+    registry: Registry,
     max_tool_calls: int = MAX_TOOL_CALLS,
     max_iterations: int = MAX_ITERATIONS,
     on_progress: object = None,
@@ -201,7 +216,7 @@ def run(
     result = run_tool_loop(
         provider=provider,
         gateway=gateway,
-        system_prompt=build_system_prompt(prompts_dir, registry_path),
+        system_prompt=build_system_prompt(prompts_dir, registry, design_analysis),
         user_prompt=build_user_prompt(design_analysis, binding_set, len(design)),
         max_tool_calls=max_tool_calls,
         max_iterations=max_iterations,
@@ -724,11 +739,11 @@ def validate(  # noqa: C901
     plan: dict[str, Any],
     design_analysis: dict[str, Any],
     binding_set: dict[str, Any],
-    registry_path: str,
+    registry: Registry,
 ) -> list[str]:
     """Structural checks before the plan is shown to a user or fanned out."""
     problems: list[str] = []
-    entries = load_registry(registry_path)
+    entries = registry.entries
     known_charts = chart_types(entries)
 
     if plan.get("status") not in {"ready", "needs_approval"}:

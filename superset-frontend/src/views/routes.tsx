@@ -344,6 +344,13 @@ if (isFeatureEnabled(FeatureFlag.DesignToDashboard)) {
     path: '/design-to-dashboard/',
     Component: DesignToDashboard,
   });
+  // The same page, addressed by run. A run takes tens of minutes, so its id
+  // belongs in the URL: the link is shareable, and a reload lands back in the
+  // run rather than on an empty page.
+  routes.push({
+    path: '/design-to-dashboard/:sessionId/',
+    Component: DesignToDashboard,
+  });
 }
 
 if (isFeatureEnabled(FeatureFlag.TaggingSystem)) {

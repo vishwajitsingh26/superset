@@ -130,6 +130,26 @@ export type PendingAsk = {
 };
 
 const ENDPOINT = '/api/v1/design_to_dashboard';
+const ROUTE = '/design-to-dashboard';
+
+/** The run id in the address bar, or null when this is a fresh page. */
+export function sessionIdFromUrl(): string | null {
+  const [, id] =
+    window.location.pathname.match(/design-to-dashboard\/([^/?#]+)/) ?? [];
+  return id || null;
+}
+
+/** Put the run in the address bar without adding a history entry.
+ *
+ * `replaceState` rather than `pushState`: a run is one page, so the back
+ * button should leave the feature rather than step through its own stages.
+ */
+function showInUrl(id: string | null): void {
+  const next = id ? `${ROUTE}/${id}/` : `${ROUTE}/`;
+  if (window.location.pathname !== next) {
+    window.history.replaceState(null, '', next);
+  }
+}
 
 export function useDesignToDashboard() {
   const [events, setEvents] = useState<StageEvent[]>([]);
@@ -159,6 +179,7 @@ export function useDesignToDashboard() {
     setError(null);
     setState('idle');
     setSessionId(null);
+    showInUrl(null);
   }, [stopPolling]);
 
   // Drives the "still working" timer so a long stage never looks frozen.
@@ -173,6 +194,101 @@ export function useDesignToDashboard() {
   }, [state]);
 
   useEffect(() => stopPolling, [stopPolling]);
+
+  // Attaching is separate from starting so a run can be picked up again:
+  // the same poll drives a run this tab began and one it is only watching,
+  // which is what makes a session id in the URL enough to continue from.
+  const attach = useCallback(
+    (id: string) => {
+      stopPolling();
+      cursorRef.current = 0;
+      setEvents([]);
+      setSessionId(id);
+      showInUrl(id);
+      if (!startedAtRef.current) startedAtRef.current = Date.now();
+      setState('running');
+      // Polling rather than EventSource: the webpack dev-server proxy rewrites
+      // response bodies, which buffers text/event-stream and leaves the request
+      // pending forever. Polling the session endpoint works through any proxy.
+      pollRef.current = window.setInterval(() => {
+        SupersetClient.get({
+          endpoint: `${ENDPOINT}/session/${id}/?since=${cursorRef.current}`,
+        })
+          .then(({ json }) => {
+            const payload = json as {
+              status: string;
+              pending?: PendingAsk | null;
+              events: StageEvent[];
+              cursor?: number;
+              thinking?: string;
+              kind?: string;
+              plan?: unknown[];
+              fidelity_notes?: unknown[];
+              thinking_stage?: string;
+              error?: string | null;
+            };
+            // Only events after the cursor arrive, so append rather than
+            // replace -- this is what lets the poll run fast enough for
+            // reasoning to read as live.
+            if (payload.events?.length) {
+              setEvents(previous => [...previous, ...payload.events]);
+            }
+            if (typeof payload.cursor === 'number') {
+              cursorRef.current = payload.cursor;
+            }
+            setThinking(payload.thinking ?? '');
+            setThinkingStage(payload.thinking_stage ?? '');
+            setPending(payload.pending ?? null);
+            if (payload.status === 'waiting') setState('waiting');
+            else if (payload.status === 'running') setState('running');
+            if (payload.status === 'done') {
+              setState('done');
+              stopPolling();
+            } else if (payload.status === 'failed') {
+              setError(payload.error ?? 'The run failed.');
+              setState('error');
+              stopPolling();
+            } else if (payload.status === 'needs_input') {
+              setState('done');
+              stopPolling();
+            } else if (
+              payload.status === 'interrupted' ||
+              payload.status === 'cancelled'
+            ) {
+              // The worker that was driving this run is gone, so polling it
+              // forever shows a page that looks live and answers nothing.
+              // Stop, say so, and leave the user able to start again.
+              setError(
+                payload.status === 'cancelled'
+                  ? 'This run was stopped.'
+                  : 'This run was interrupted when the server restarted. Its ' +
+                      'finished stages were saved, but it cannot be continued ' +
+                      'from here yet.',
+              );
+              setState('error');
+              stopPolling();
+            }
+          })
+          .catch(() => {
+            /* transient poll failure: keep going, the next tick may succeed */
+          });
+      }, 900);
+    },
+    [stopPolling],
+  );
+
+  // A run named in the address bar is picked up on load, which is what makes
+  // the link shareable and what lets a reload land back in the same run
+  // instead of an empty page. Runs once: `attach` then owns the id.
+  const attachedRef = useRef(false);
+  useEffect(() => {
+    if (attachedRef.current) return;
+    const existing = sessionIdFromUrl();
+    if (existing) {
+      attachedRef.current = true;
+      attach(existing);
+    }
+  }, [attach]);
 
   const start = useCallback(
     async (files: File[], requirement: string) => {
@@ -206,56 +322,7 @@ export function useDesignToDashboard() {
 
         setState('running');
         startedAtRef.current = Date.now();
-        // Polling rather than EventSource: the webpack dev-server proxy rewrites
-        // response bodies, which buffers text/event-stream and leaves the request
-        // pending forever. Polling the session endpoint works through any proxy.
-        pollRef.current = window.setInterval(() => {
-          SupersetClient.get({
-            endpoint: `${ENDPOINT}/session/${id}/?since=${cursorRef.current}`,
-          })
-            .then(({ json }) => {
-              const payload = json as {
-                status: string;
-                pending?: PendingAsk | null;
-                events: StageEvent[];
-                cursor?: number;
-                thinking?: string;
-                kind?: string;
-                plan?: unknown[];
-                fidelity_notes?: unknown[];
-                thinking_stage?: string;
-                error?: string | null;
-              };
-              // Only events after the cursor arrive, so append rather than
-              // replace -- this is what lets the poll run fast enough for
-              // reasoning to read as live.
-              if (payload.events?.length) {
-                setEvents(previous => [...previous, ...payload.events]);
-              }
-              if (typeof payload.cursor === 'number') {
-                cursorRef.current = payload.cursor;
-              }
-              setThinking(payload.thinking ?? '');
-              setThinkingStage(payload.thinking_stage ?? '');
-              setPending(payload.pending ?? null);
-              if (payload.status === 'waiting') setState('waiting');
-              else if (payload.status === 'running') setState('running');
-              if (payload.status === 'done') {
-                setState('done');
-                stopPolling();
-              } else if (payload.status === 'failed') {
-                setError(payload.error ?? 'The run failed.');
-                setState('error');
-                stopPolling();
-              } else if (payload.status === 'needs_input') {
-                setState('done');
-                stopPolling();
-              }
-            })
-            .catch(() => {
-              /* transient poll failure: keep going, the next tick may succeed */
-            });
-        }, 900);
+        attach(id);
       } catch (caught) {
         const detail =
           caught instanceof Error ? caught.message : 'Could not start the run.';
@@ -263,7 +330,7 @@ export function useDesignToDashboard() {
         setState('error');
       }
     },
-    [stopPolling],
+    [attach],
   );
 
   const reply = useCallback(
@@ -292,6 +359,7 @@ export function useDesignToDashboard() {
     thinking,
     thinkingStage,
     start,
+    resume: attach,
     reset,
   };
 }

@@ -14,19 +14,31 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-"""The viz-type manifest stages C and D read.
+"""The chart types this deployment has, and what each stage is told about them.
 
-Superset's chart registry lives in the frontend, and MCP's
-``get_chart_type_schema`` covers only seven abstract families, so the pipeline
-carries its own manifest. Regenerate with::
+Built from source at the start of every run by :func:`build`, frozen for the
+run, and rebuilt once after stage F writes new plugins. A snapshot is saved
+with the run so a retry or a resume works from the registry the run started
+with.
 
-    python design-to-dashboard/scripts/build_viz_registry.py
+Every stage used to read one committed JSON file, about eight times a run, and
+each got all of it. Now each asks for its own view:
+
+  * stage A names a likely chart type per region, so it gets names grouped by
+    category -- about a fifteenth of the text it used to receive;
+  * stage C decides, so it gets the summaries, the valid types and capability
+    cards for the chart types it is likely to weigh;
+  * stage D configures one chart, so it gets that chart's settings panel;
+  * stage F must not duplicate a chart type, so it gets the set that exists.
 """
 
 from __future__ import annotations
 
 import logging
 import pathlib
+import time
+from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Any
 
 from superset.utils import json
@@ -148,3 +160,172 @@ def chart_types(entries: list[dict[str, Any]]) -> set[str]:
         for e in entries
         if not e.get("is_filter") and e.get("control_panel")
     }
+
+
+# --- the per-run registry ----------------------------------------------------
+
+
+@dataclass
+class Registry:
+    """One run's chart types, and the view each stage reads."""
+
+    entries: list[dict[str, Any]]
+    repo_root: pathlib.Path
+    built_at: float = 0.0
+    dropped: list[str] = field(default_factory=list)
+    warnings: dict[str, list[str]] = field(default_factory=dict)
+
+    # persistence
+
+    def snapshot(self) -> dict[str, Any]:
+        """What a retry or a resume needs to use this exact registry again."""
+        return {
+            "built_at": self.built_at,
+            "entries": self.entries,
+            "dropped": self.dropped,
+            "warnings": self.warnings,
+        }
+
+    @classmethod
+    def from_snapshot(
+        cls, snapshot: dict[str, Any], repo_root: pathlib.Path
+    ) -> Registry:
+        entries = snapshot.get("entries") or []
+        if not entries:
+            raise RegistryError("registry snapshot has no entries")
+        return cls(
+            entries=list(entries),
+            repo_root=repo_root,
+            built_at=float(snapshot.get("built_at") or 0.0),
+            dropped=list(snapshot.get("dropped") or []),
+            warnings=dict(snapshot.get("warnings") or {}),
+        )
+
+    # lookups every stage shares
+
+    def viz_types(self) -> set[str]:
+        return {str(entry["viz_type"]) for entry in self.entries}
+
+    def chart_types(self) -> set[str]:
+        return chart_types(self.entries)
+
+    def filter_types(self) -> list[str]:
+        return filter_types(self.entries)
+
+    def find(self, viz_type: str) -> dict[str, Any]:
+        return find(self.entries, viz_type)
+
+    # stage A
+
+    def stage_a_text(self) -> str:
+        """Chart type names grouped by category, for naming a likely candidate.
+
+        No descriptions or tags. Stage A names one type per region at most and
+        stage C makes the real decision; the full summaries were most of stage
+        A's registry text and the source of the bias its prompt warns about --
+        knowing chart names before describing the picture.
+        """
+        groups: dict[str, list[str]] = defaultdict(list)
+        for entry in self.entries:
+            if entry.get("is_filter"):
+                continue
+            group = "Custom" if entry.get("custom") else entry.get("category")
+            groups[str(group or "Other")].append(str(entry["viz_type"]))
+        return "\n".join(
+            f"{group}: {', '.join(sorted(names))}"
+            for group, names in sorted(groups.items())
+        )
+
+    # stage C
+
+    def stage_c_text(self) -> str:
+        return render_summaries(self.entries)
+
+    def capability_card(self, viz_type: str) -> str:
+        """One stock chart type's card. Custom plugins get none."""
+        from superset.design_to_dashboard import capabilities
+
+        entry = self.find(viz_type)
+        if entry.get("custom"):
+            raise RegistryError(f"{viz_type!r} is a custom plugin and has no card")
+        panel = None
+        if entry.get("control_panel"):
+            try:
+                panel = load_control_panel(entry, self.repo_root)
+            except RegistryError:
+                panel = None
+        return capabilities.card(entry, panel)
+
+    def card_shortlist(self, design_analysis: dict[str, Any]) -> list[str]:
+        """The stock chart types stage C is likely to weigh.
+
+        Every stock type stage A named as a candidate, plus the types with
+        hand-verified lines, which are the ones designs use most. Anything else
+        stage C can look up with its capability tool.
+        """
+        from superset.design_to_dashboard import capabilities
+
+        stock = {
+            str(entry["viz_type"])
+            for entry in self.entries
+            if not entry.get("custom") and not entry.get("is_filter")
+        }
+        named = {
+            str(region.get("stock_candidate"))
+            for region in design_analysis.get("regions") or []
+            if isinstance(region, dict) and region.get("stock_candidate")
+        }
+        return sorted((named | capabilities.carded()) & stock)
+
+    def capability_cards(self, viz_types: list[str]) -> str:
+        cards = []
+        for viz_type in viz_types:
+            try:
+                cards.append(self.capability_card(viz_type))
+            except RegistryError:
+                continue
+        return "\n\n".join(cards)
+
+    # stage D
+
+    def control_panel(self, viz_type: str) -> tuple[str, str]:
+        """``(path, source)`` of one chart type's settings panel."""
+        entry = self.find(viz_type)
+        return str(entry["control_panel"]), load_control_panel(entry, self.repo_root)
+
+
+def _exists(repo_root: pathlib.Path, relative: Any) -> bool:
+    return bool(relative) and (repo_root / str(relative)).exists()
+
+
+def build(repo_root: pathlib.Path) -> Registry:
+    """Scan the source, drop what is no longer on disk, and freeze the result.
+
+    A custom plugin whose source file is gone is dropped rather than offered.
+    The committed file this replaces still listed one, and the stage that
+    loaded its settings panel failed on the missing file. Stock chart types
+    ship with Superset, so a missing file there is logged, not dropped.
+    """
+    from superset.design_to_dashboard import registry_source
+
+    payload = registry_source.scan()
+    entries: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for entry in payload.get("viz_types") or []:
+        source = entry.get("source")
+        on_disk = source == "METADATA_OVERRIDES" or _exists(repo_root, source)
+        if entry.get("custom") and not on_disk:
+            dropped.append(str(entry.get("viz_type")))
+            continue
+        entries.append(entry)
+    if dropped:
+        logger.warning("registry dropped chart types with no files: %s", dropped)
+    if not entries:
+        raise RegistryError("the source scan found no chart types")
+    return Registry(
+        entries=entries,
+        repo_root=repo_root,
+        built_at=time.time(),
+        dropped=dropped,
+        warnings=dict(payload.get("warnings") or {}),
+    )

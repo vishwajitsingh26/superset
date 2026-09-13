@@ -63,3 +63,31 @@ class LLMProvider(Protocol):
         timeout: int | None = None,
         on_thinking: Any = None,
     ) -> LLMResponse: ...
+
+
+# The Agent SDK bills two uncached input tokens for every model turn, so a call
+# that ran more than one turn opened something with a tool. For a call whose
+# only tool is `Read`, that something is an attached image.
+AGENT_SDK_PROVIDER = "claude_agent_sdk"
+AGENT_SDK_INPUT_TOKENS_PER_TURN = 2
+
+
+def images_opened(response: LLMResponse) -> bool | None:
+    """Whether a call that was given image paths actually opened them.
+
+    Path-based providers hand the model a file path, not a picture, and the
+    model decides whether to open it. Stage B's tool loop was told any image
+    was "already attached" and never once opened the design, so the rule that
+    the picture wins over stage A's text never ran -- and nothing noticed,
+    because a call that skips the image still returns a plausible answer.
+
+    Returns None when the provider gives no way to tell. This reads the Agent
+    SDK's turn count, which is an inference from billing rather than a record
+    of the tool call; pair it with a check on the answer itself.
+    """
+    if response.provider != AGENT_SDK_PROVIDER:
+        return None
+    input_tokens = response.usage.get("input_tokens")
+    if not isinstance(input_tokens, int):
+        return None
+    return input_tokens // AGENT_SDK_INPUT_TOKENS_PER_TURN > 1
