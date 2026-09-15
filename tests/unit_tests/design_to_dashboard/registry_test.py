@@ -174,12 +174,36 @@ def test_a_card_carries_verified_cannot_lines(tmp_path: pathlib.Path) -> None:
     assert "Total: <value>" in card
 
 
-def test_a_custom_plugin_has_no_card(tmp_path: pathlib.Path) -> None:
-    with pytest.raises(RegistryError):
-        _registry(tmp_path).capability_card("custom_kpi")
+def test_a_custom_plugin_without_a_panel_gets_a_bare_card(
+    tmp_path: pathlib.Path,
+) -> None:
+    """No exception, and nothing invented: just the header, since there is no
+    control panel to draw Settings from and no hand-verified Cannot-show line
+    for a plugin nobody has written one for."""
+    card = _registry(tmp_path).capability_card("custom_kpi")
+    assert card.startswith("### `custom_kpi`")
+    assert "Settings:" not in card
+    assert "Cannot show:" not in card
 
 
-def test_the_shortlist_is_stage_as_candidates_plus_carded_stock_types(
+def test_a_custom_plugin_with_a_panel_gets_its_real_settings(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The point of the fix: a custom plugin's card is drawn from its own
+    control panel exactly like a stock type's, so stage C sees what the
+    plugin's controls are actually labelled rather than a description the
+    same model that reuses it gets to write."""
+    reg = _registry(tmp_path)
+    reg.entries.append(
+        _entry("custom_metric_tile", custom=True, control_panel="Pie/controlPanel.tsx")
+    )
+    card = reg.capability_card("custom_metric_tile")
+    assert "Settings:" in card
+    assert "Donut" in card
+    assert "Cannot show:" not in card
+
+
+def test_the_shortlist_adds_every_custom_plugin_to_the_carded_stock_ones(
     tmp_path: pathlib.Path,
 ) -> None:
     reg = _registry(tmp_path)
@@ -190,7 +214,7 @@ def test_the_shortlist_is_stage_as_candidates_plus_carded_stock_types(
             {"stock_candidate": "not_registered"},
         ]
     }
-    assert reg.card_shortlist(design) == ["pie", "table"]
+    assert reg.card_shortlist(design) == ["custom_kpi", "pie", "table"]
 
 
 def test_every_hand_written_line_names_a_real_chart_type() -> None:
@@ -209,7 +233,11 @@ def test_the_capability_tool_answers_from_the_runs_registry(
     assert "Cannot show:" in result["card"]
     nested = chart_capabilities(reg, {"request": {"viz_type": "pie"}})
     assert nested == result
+    # A custom plugin answers too, now that its card is drawn the same way a
+    # stock type's is: stage C can look one up before deciding to reuse it.
+    custom = chart_capabilities(reg, {"viz_type": "custom_kpi"})
+    assert custom["card"].startswith("### `custom_kpi`")
     with pytest.raises(MCPError):
-        chart_capabilities(reg, {"viz_type": "custom_kpi"})
+        chart_capabilities(reg, {"viz_type": "not_registered"})
     with pytest.raises(MCPError):
         chart_capabilities(None, {"viz_type": "pie"})

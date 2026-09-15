@@ -67,7 +67,7 @@ class ClaudeCliProvider:
         self,
         model: str = "claude-opus-5",
         timeout: int = DEFAULT_TIMEOUT,
-        max_turns: int = 6,
+        max_turns: int | None = 6,
         binary: str = "claude",
     ) -> None:
         self.model = model
@@ -108,10 +108,15 @@ class ClaudeCliProvider:
         # Turn budget matters twice over: each image costs a Read tool-use turn,
         # and even a text-only call can end on `stop_reason: tool_use` if the
         # model reaches for a tool. A budget of 1 turns that into a hard failure
-        # with an opaque exit 1, so the floor is never 1.
-        max_turns = max(self.max_turns, 6)
-        if image_paths:
-            max_turns = max(max_turns, len(image_paths) + 4)
+        # with an opaque exit 1, so the floor is never 1. `None` means
+        # observation mode -- no `--max-turns` at all, so the CLI's own
+        # default (unbounded) applies instead of a floor that would silently
+        # reintroduce a cap.
+        max_turns: int | None = self.max_turns
+        if max_turns is not None:
+            max_turns = max(max_turns, 6)
+            if image_paths:
+                max_turns = max(max_turns, len(image_paths) + 4)
 
         # Streaming mode is used only when someone is listening for reasoning:
         # it costs an extra parse pass and a reader thread, and the plain json
@@ -125,11 +130,11 @@ class ClaudeCliProvider:
             "stream-json" if streaming else "json",
             "--model",
             self.model,
-            "--max-turns",
-            str(max_turns),
             "--system-prompt-file",
             system_prompt_path,
         ]
+        if max_turns is not None:
+            argv.extend(["--max-turns", str(max_turns)])
 
         if image_paths:
             # The model reads images off disk, so it needs the Read tool and

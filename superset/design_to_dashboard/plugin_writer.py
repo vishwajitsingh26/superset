@@ -66,6 +66,7 @@ def write(  # noqa: C901
     repo_root: str | pathlib.Path,
     plugin: plugin_skeleton.PluginIdentity | None = None,
     decision: dict[str, Any] | None = None,
+    assets: dict[str, bytes] | None = None,
 ) -> WriteResult:
     """Write the skeleton and the generated files, and register the plugin.
 
@@ -74,6 +75,10 @@ def write(  # noqa: C901
     rather than from the scaffold: those six names have to agree exactly, and
     nothing downstream compares them, so a model that spells one differently
     produces a plugin that installs, compiles and never appears.
+
+    ``assets`` are binary files read back by `read` before a rewrite. The
+    `src/` replacement removes them with the source, so they are put back
+    unless the scaffold carries a file at the same path.
     """
     root = pathlib.Path(repo_root).resolve()
     viz_type = plugin.viz_type if plugin else scaffold["viz_type"]
@@ -112,16 +117,16 @@ def write(  # noqa: C901
             result.notes.append("replaced the previous attempt's src/")
 
     for relative, contents in files.items():
-        target = (root / relative).resolve()
-        # Never write outside the plugin directory. `os.path.commonpath`
-        # rather than a string prefix: `plugin-chart-card-x` is a prefix of
-        # `plugin-chart-card-xy`, so a sibling directory escaped the check.
-        plugin_dir = (root / directory).resolve()
-        if os.path.commonpath([str(target), str(plugin_dir)]) != str(plugin_dir):
-            raise PluginWriteError(f"refusing to write outside {directory}: {relative}")
+        target = _inside(root, directory, relative)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(contents, encoding="utf-8")
         result.files_written.append(relative)
+    for relative, data in (assets or {}).items():
+        if relative in files:
+            continue
+        target = _inside(root, directory, relative)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
 
     # plugin/index.ts imports a thumbnail; without the file the build fails.
     # The placeholder lives in this feature's own tree rather than being
@@ -187,6 +192,69 @@ def write(  # noqa: C901
         result.registered,
     )
     return result
+
+
+def _inside(root: pathlib.Path, directory: str, relative: str) -> pathlib.Path:
+    """The resolved target of `relative`, refusing anything outside the plugin.
+
+    `os.path.commonpath` rather than a string prefix: `plugin-chart-card-x`
+    is a prefix of `plugin-chart-card-xy`, so a sibling directory escaped a
+    prefix check.
+    """
+    target = (root / relative).resolve()
+    plugin_dir = (root / directory).resolve()
+    if os.path.commonpath([str(target), str(plugin_dir)]) != str(plugin_dir):
+        raise PluginWriteError(f"refusing to write outside {directory}: {relative}")
+    return target
+
+
+# Directories a package can hold that are not its source: installed
+# dependencies and build output. Read back as source, a repair would be shown
+# a bundle and asked to patch it.
+NOT_SOURCE = frozenset({"node_modules", "lib", "esm", "dist"})
+
+
+@dataclass
+class PluginFiles:
+    """One plugin as it is on disk, keyed by repo-relative path."""
+
+    sources: dict[str, str] = field(default_factory=dict)
+    assets: dict[str, bytes] = field(default_factory=dict)
+
+
+def read(directory: str, repo_root: str | pathlib.Path) -> PluginFiles:
+    """Every file under a plugin's directory: text as source, the rest as bytes.
+
+    What the compiler checked is what is on disk, not the scaffold held in
+    memory -- a deterministic fix or an earlier repair may have changed it
+    since -- so a repair starts from here.
+    """
+    root = pathlib.Path(repo_root).resolve()
+    base = root / directory
+    files = PluginFiles()
+    if not base.is_dir():
+        return files
+    for current, subdirs, names in os.walk(base):
+        # Pruned at the package root only. Below it a `lib/` or `dist/` is a
+        # folder the author chose, and one left unread would be deleted by the
+        # `src/` replacement of the write that follows a repair.
+        if pathlib.Path(current) == base:
+            subdirs[:] = [
+                d for d in subdirs if d not in NOT_SOURCE and not d.startswith(".")
+            ]
+        subdirs.sort()
+        for name in sorted(names):
+            path = pathlib.Path(current) / name
+            relative = f"{directory}/{path.relative_to(base).as_posix()}"
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue
+            try:
+                files.sources[relative] = data.decode("utf-8")
+            except UnicodeDecodeError:
+                files.assets[relative] = data
+    return files
 
 
 def _insert_into_setup(source: str, register_line: str) -> str:

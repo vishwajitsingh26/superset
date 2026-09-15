@@ -1,0 +1,44 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+import {
+  buildQueryContext,
+  ensureIsArray,
+  QueryFormColumn,
+} from '../adapters/supersetAdapter';
+import { presentMetrics } from '../adapters/optionalMetrics';
+import { CustomRegionMapFormData } from '../types';
+
+const DEFAULT_ROW_LIMIT = 25;
+
+export default function buildQuery(formData: CustomRegionMapFormData) {
+  const columns = ensureIsArray<QueryFormColumn>(formData.groupby);
+  const metrics = presentMetrics([formData.metric]);
+  // `formData.row_limit` is `string | number`; the query object needs `number`.
+  const rowLimit = Number(formData.row_limit) || DEFAULT_ROW_LIMIT;
+
+  return buildQueryContext(formData, baseQueryObject => [
+    {
+      ...baseQueryObject,
+      groupby: columns,
+      metrics,
+      orderby: metrics.length ? [[metrics[0], false]] : [],
+      row_limit: rowLimit,
+    },
+  ]);
+}

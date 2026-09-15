@@ -250,6 +250,64 @@ def test_no_crop_when_there_is_no_image(tmp_path: pathlib.Path) -> None:
     assert all(e["crop"] is None for e in review["entries"])
 
 
+def _reuse_plan(decision_extra: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "decisions": [
+            {
+                "region_id": "r08_reused",
+                "ref": "c8",
+                "decision": "reuse",
+                "existing_chart_id": 42,
+                **decision_extra,
+            }
+        ]
+    }
+
+
+def test_confirmed_reuse_evidence_is_preferred_over_the_paraphrase(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The real `get_chart_info` result is what a reviewer can check the
+    reuse against; C's own sentence is only shown where nothing confirmed
+    it."""
+    plan = _reuse_plan(
+        {
+            "reuse_evidence": "looked close enough on the thumbnail",
+            "reuse_confirmed_evidence": {
+                "name": "Monthly AWS spend",
+                "viz_type": "echarts_timeseries_bar",
+                "dataset": "cloud_spend",
+                "metrics": ["SUM(cost)"],
+                "columns": ["provider"],
+            },
+        }
+    )
+    review = plugin_review.build({"regions": []}, {"bindings": []}, plan, [], tmp_path)
+    (entry,) = review["entries"]
+    assert "Monthly AWS spend" in entry["reuse_evidence"]
+    assert "echarts_timeseries_bar" in entry["reuse_evidence"]
+    assert "cloud_spend" in entry["reuse_evidence"]
+    assert "thumbnail" not in entry["reuse_evidence"]
+
+
+def test_unconfirmed_reuse_falls_back_to_c_s_own_account(
+    tmp_path: pathlib.Path,
+) -> None:
+    """No `get_chart_info` lookup was attached -- still worth showing, just
+    not independently verified."""
+    plan = _reuse_plan({"reuse_evidence": "matches the design's KPI card"})
+    review = plugin_review.build({"regions": []}, {"bindings": []}, plan, [], tmp_path)
+    (entry,) = review["entries"]
+    assert entry["reuse_evidence"] == "matches the design's KPI card"
+
+
+def test_a_non_reuse_entry_carries_no_reuse_evidence_field(
+    tmp_path: pathlib.Path,
+) -> None:
+    review = _review(tmp_path)
+    assert all(e["reuse_evidence"] == "" for e in review["entries"])
+
+
 def test_a_note_the_pipeline_cannot_act_on_is_not_reported_as_accepted(
     tmp_path: pathlib.Path,
 ) -> None:

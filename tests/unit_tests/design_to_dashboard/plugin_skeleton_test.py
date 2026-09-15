@@ -30,6 +30,7 @@ import pytest
 
 from superset.design_to_dashboard import plugin_skeleton
 from superset.design_to_dashboard.stages.f_scaffold import _broken_rules
+from superset.utils import json
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 
@@ -125,6 +126,7 @@ def test_the_skeleton_writes_the_files_that_name_the_plugin() -> None:
         f"{leaf}/src/index.ts",
         f"{leaf}/src/plugin/index.ts",
         f"{leaf}/src/adapters/supersetAdapter.ts",
+        f"{leaf}/src/adapters/optionalMetrics.ts",
     }
 
 
@@ -156,6 +158,39 @@ def test_behaviours_follow_the_archetype() -> None:
             path
         ]
     )
+
+
+def test_navigation_no_longer_claims_nativefilter() -> None:
+    """A navigation plugin posts to the parent app; it never calls
+    `setDataMask`, so declaring `NativeFilter` would list it in the filter
+    picker as a filter type that silently does nothing once added."""
+    plugin = plugin_skeleton.identity("custom_breadcrumb", "t")
+    path = f"{plugin.directory}/src/plugin/index.ts"
+    source = plugin_skeleton.render(
+        plugin, {"plugin_archetype": "navigation"}, REPO_ROOT
+    )[path]
+    assert "Behavior.NativeFilter" not in source
+    assert "Behavior.InteractiveChart" in source
+
+
+def test_a_map_plugin_s_package_json_already_lists_datamaps() -> None:
+    """`datamaps` is not a new dependency this generation introduces --
+    Superset's own stock `legacy-plugin-chart-world-map` already depends on
+    it. A `map` plugin's generated `package.json` names it deterministically,
+    so the model never has to declare or reason about it."""
+    plugin = plugin_skeleton.identity("custom_spend_map", "t")
+    rendered = plugin_skeleton.render(plugin, {"plugin_archetype": "map"}, REPO_ROOT)
+    package_json = json.loads(rendered[f"{plugin.directory}/package.json"])
+    assert package_json["dependencies"] == {"datamaps": "^0.5.10"}
+
+
+def test_a_non_map_plugin_gets_no_dependencies_block() -> None:
+    """The `dependencies` field is additive, not always-present -- a plain
+    `viz` plugin's package.json is unchanged from before `map` existed."""
+    plugin = plugin_skeleton.identity("custom_card", "t")
+    rendered = plugin_skeleton.render(plugin, {"plugin_archetype": "viz"}, REPO_ROOT)
+    package_json = json.loads(rendered[f"{plugin.directory}/package.json"])
+    assert "dependencies" not in package_json
 
 
 def test_stage_c_can_name_the_behaviours_itself() -> None:
@@ -254,3 +289,28 @@ def test_the_adapter_may_be_replaced_but_the_naming_files_may_not() -> None:
     assert f"{plugin.directory}/package.json" in owned
     assert f"{plugin.directory}/src/plugin/index.ts" in owned
     assert f"{plugin.directory}/src/adapters/supersetAdapter.ts" not in owned
+
+
+def test_every_plugin_gets_null_safe_metric_helpers() -> None:
+    """`getMetricLabel(null)` threw inside a generated tile and the error
+    overlay covered the dashboard. The helpers go through the adapter, so they
+    need only symbols the adapter is seeded with."""
+    plugin = plugin_skeleton.identity("custom_card", "t")
+    files = plugin_skeleton.render(plugin, {}, REPO_ROOT)
+    helpers = files[f"{plugin.directory}/{plugin_skeleton.OPTIONAL_METRICS_PATH}"]
+    adapter = files[f"{plugin.directory}/src/adapters/supersetAdapter.ts"]
+    for name in plugin_skeleton.OPTIONAL_METRIC_HELPERS:
+        assert f"export function {name}(" in helpers, name
+    assert "from '@superset-ui" not in helpers
+    assert "from './supersetAdapter'" in helpers
+    for symbol in ("getMetricLabel", "DataRecord", "QueryFormMetric"):
+        assert f"  {symbol},\n" in adapter, symbol
+    assert "hasMetric(metric) ? getMetricLabel(metric) : null" in helpers
+
+
+def test_the_metric_helpers_cannot_be_replaced() -> None:
+    """Owned, not seeded: a generated adapter or utils file cannot drop what
+    the prompt tells every plugin to call."""
+    plugin = plugin_skeleton.identity("custom_card", "t")
+    owned = plugin_skeleton.owned_paths(plugin, REPO_ROOT)
+    assert f"{plugin.directory}/{plugin_skeleton.OPTIONAL_METRICS_PATH}" in owned

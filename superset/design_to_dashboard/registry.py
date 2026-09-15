@@ -242,12 +242,20 @@ class Registry:
         return render_summaries(self.entries)
 
     def capability_card(self, viz_type: str) -> str:
-        """One stock chart type's card. Custom plugins get none."""
+        """One chart type's card, stock or custom.
+
+        A custom plugin's card carries no hand-verified `Cannot show` lines --
+        nobody has looked at its code to write one -- but its Settings line is
+        drawn from its own control panel exactly as a stock type's is, and that
+        panel's labels and descriptions are ground truth stage C otherwise had
+        none of. A plugin built to show 'Coverage metric (Percentage of usage
+        covered by reservations/commitments)' says so in that line; the
+        prose-only description reaching stage C otherwise has been rewritten by
+        the model that names it and can claim anything.
+        """
         from superset.design_to_dashboard import capabilities
 
         entry = self.find(viz_type)
-        if entry.get("custom"):
-            raise RegistryError(f"{viz_type!r} is a custom plugin and has no card")
         panel = None
         if entry.get("control_panel"):
             try:
@@ -257,11 +265,14 @@ class Registry:
         return capabilities.card(entry, panel)
 
     def card_shortlist(self, design_analysis: dict[str, Any]) -> list[str]:
-        """The stock chart types stage C is likely to weigh.
+        """The chart types stage C is likely to weigh.
 
         Every stock type stage A named as a candidate, plus the types with
-        hand-verified lines, which are the ones designs use most. Anything else
-        stage C can look up with its capability tool.
+        hand-verified lines, which are the ones designs use most -- anything
+        else stage C can look up with its capability tool. Every custom
+        plugin is always included: there are few of them next to the stock
+        catalogue, and each one is a candidate for `configure` on some region
+        every run, not just the ones stage A happens to name.
         """
         from superset.design_to_dashboard import capabilities
 
@@ -270,12 +281,15 @@ class Registry:
             for entry in self.entries
             if not entry.get("custom") and not entry.get("is_filter")
         }
+        custom = {
+            str(entry["viz_type"]) for entry in self.entries if entry.get("custom")
+        }
         named = {
             str(region.get("stock_candidate"))
             for region in design_analysis.get("regions") or []
             if isinstance(region, dict) and region.get("stock_candidate")
         }
-        return sorted((named | capabilities.carded()) & stock)
+        return sorted((named | capabilities.carded()) & stock | custom)
 
     def capability_cards(self, viz_types: list[str]) -> str:
         cards = []

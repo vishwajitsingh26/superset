@@ -29,6 +29,7 @@ import logging
 import pathlib
 from typing import Any
 
+from superset.design_to_dashboard import chrome
 from superset.design_to_dashboard.llm.base import LLMProvider
 from superset.design_to_dashboard.mcp.catalog import render_catalog, STAGE_C_TOOLS
 from superset.design_to_dashboard.mcp.gateway import MCPGateway
@@ -37,7 +38,7 @@ from superset.design_to_dashboard.pipeline.tool_loop import (
     run_tool_loop,
     ToolLoopResult,
 )
-from superset.design_to_dashboard.registry import chart_types, Registry
+from superset.design_to_dashboard.registry import chart_types, Registry, RegistryError
 from superset.utils import json
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ DECISIONS = {
 }
 # What kind of component a `new_plugin` is. A plugin is a React component we
 # own, so this is not limited to "a chart shape Superset lacks".
-ARCHETYPES = {"viz", "container", "filter_widget", "table", "navigation"}
+ARCHETYPES = {"viz", "container", "filter_widget", "table", "navigation", "map"}
 NON_DATA_ROLES = {"wrapper", "nav", "header", "text", "decoration"}
 
 
@@ -78,10 +79,12 @@ def build_system_prompt(
 ) -> str:
     """Preamble, stage, envelope, tools, viz summaries and capability cards.
 
-    The cards are for the stock types C is likely to weigh: each one stage A
-    named, and the types designs use most. A thumbnail shows one way a chart
-    was set up; a card says what every setting can make it show, and what none
-    can. Any other stock type's card is one tool call away.
+    The cards are for the types C is likely to weigh: every stock type stage A
+    named, the stock types designs use most, and every custom plugin already
+    in the registry -- a reuse candidate on some region every run, not only
+    where A happened to name one. A thumbnail shows one way a chart was set
+    up; a card says what every setting can make it show, and what none can.
+    Any other stock type's card is one tool call away.
     """
     preamble = (prompts_dir / "shared" / "_preamble.md").read_text(encoding="utf-8")
     stage = (prompts_dir / "C_resolve.md").read_text(encoding="utf-8")
@@ -101,10 +104,16 @@ def build_system_prompt(
     ):
         parts.append(
             "## Capability cards\n\n"
-            "What these stock types can be set up to show. Judge a match against "
-            "the settings, not the thumbnail: a detail the thumbnail lacks may be "
-            "one setting away. A detail under **Cannot show** is not reachable by "
-            "any setting, so a region that needs it is not a match for that type."
+            "What these types can be set up to show, stock and custom alike. "
+            "Judge a match against the settings, not the thumbnail or a custom "
+            "plugin's own description: a detail the thumbnail lacks may be one "
+            "setting away. A detail under **Cannot show** is not reachable by "
+            "any setting, so a region that needs it is not a match for that "
+            "type -- a stock card's Cannot-show list is hand-verified; a "
+            "custom plugin's card has none, because nobody has looked at its "
+            "code to write one, so its Settings line is what there is to go "
+            "on: a control the region needs and the card's Settings never "
+            "name is not there either."
             "\n\n" + cards
         )
     return "\n\n---\n\n".join(parts)
@@ -230,6 +239,16 @@ def run(
         result.final = merge_patch(previous_plan, result.final)
     result.final.setdefault("tool_calls", result.tool_calls)
     result.final["counts"] = tally(result.final.get("decisions", []))
+    annotate_comparisons(result.final.get("decisions", []), registry)
+    # This attempt's own tool calls, merged with whatever earlier attempts
+    # already found -- the same transcript `runner.py` threads into
+    # `validate()` for `_reuse_unconfirmed_by_search`, computed here too so a
+    # `reuse` decision carries its confirming evidence from the moment the
+    # plan exists, not only once the orchestrator gets around to checking it.
+    searched = chart_searches(
+        result.transcript, binding_set.get("charts_you_already_searched")
+    )
+    annotate_reuse_evidence(result.final.get("decisions", []), searched)
     counts = result.final["counts"]
     logger.info(
         "stage C complete: status=%s decisions=%d new_plugins=%s",
@@ -295,16 +314,35 @@ def merge_patch(previous: dict[str, Any], reply: dict[str, Any]) -> dict[str, An
     return only what it changed; everything it leaves out is taken from the plan
     it was correcting, and the result is validated in full exactly as before.
 
-    Decisions merge by `region_id` in the previous plan's order, because the
-    contract downstream is that a container's children come before it. Any other
-    field the reply carries replaces its predecessor whole: `plan_for_review`
-    and `design_system` are documents, not sets of parts, and merging them
-    field-wise would silently mix two versions.
+    Decisions merge by `region_id`, and `plan_for_review` steps merge by
+    `step`, both in the previous plan's order -- because both are lists of
+    discrete, already-numbered parts, not one document that a fix rewrites
+    end to end. A patch answering one question sent back one step, meaning to
+    explain what changed; replacing the whole list with it silently dropped
+    the other thirteen the user had already been shown, and they never came
+    back. `design_system` has no such natural key -- a colour or a corner
+    radius is not a numbered part of it -- so it stays a whole-document
+    replace: any other field the reply carries replaces its predecessor
+    whole.
+
+    A field left out of the reply is not the same as one sent back `null`, but
+    a model asked to omit what it did not change has sent `null` instead --
+    for `design_system`, for `plan_for_review` -- and each has reached a later
+    stage, or the user, as nothing at all. Both read the same here: carry the
+    previous value forward either way. A patch that genuinely means to clear a
+    field has no reason to when the alternative is simply not sending it.
     """
     if reply.get("revision") != "patch" or not previous:
         return reply
 
-    merged = {**previous, **{k: v for k, v in reply.items() if k != "decisions"}}
+    merged = {
+        **previous,
+        **{
+            k: v
+            for k, v in reply.items()
+            if k not in ("decisions", "plan_for_review") and v is not None
+        },
+    }
     by_region: dict[str, dict[str, Any]] = {
         str(d.get("region_id")): d
         for d in previous.get("decisions") or []
@@ -318,12 +356,88 @@ def merge_patch(previous: dict[str, Any], reply: dict[str, Any]) -> dict[str, An
         by_region[str(decision.get("region_id"))] = decision
         changed += 1
     merged["decisions"] = list(by_region.values())
+
+    by_step: dict[Any, dict[str, Any]] = {
+        step.get("step"): step
+        for step in previous.get("plan_for_review") or []
+        if isinstance(step, dict)
+    }
+    for step in reply.get("plan_for_review") or []:
+        if isinstance(step, dict):
+            by_step[step.get("step")] = step
+    if by_step:
+        merged["plan_for_review"] = sorted(
+            by_step.values(), key=lambda s: (s.get("step") is None, s.get("step"))
+        )
     logger.info(
         "stage C returned a patch: %d decision(s) changed, %d carried over",
         changed,
         max(carried - changed, 0),
     )
     return merged
+
+
+# What kind of chart a decision actually produces. Named plainly, for the
+# trace, rather than left as the pair (`decision`, `viz_type`) a reader would
+# otherwise have to cross-reference against the registry by hand:
+#   - "stock": a registered Superset viz type, not built by any run.
+#   - "custom_reuse": a custom plugin an earlier run already built, reused
+#     rather than paid for again.
+#   - "custom_new": a plugin this run is about to build; no card exists yet.
+#   - "existing_chart": a saved chart instance, not just a viz type, reused
+#     whole -- `reuse`'s own `existing_chart_id` already names it.
+CHART_KIND_STOCK = "stock"
+CHART_KIND_CUSTOM_REUSE = "custom_reuse"
+CHART_KIND_CUSTOM_NEW = "custom_new"
+CHART_KIND_EXISTING_CHART = "existing_chart"
+
+
+def chart_kind(decision: dict[str, Any], registry: Registry) -> str | None:
+    """Which of the four kinds of chart this decision produces, or None.
+
+    `None` for a decision with no chart at all (`grid_text`, `drop`). Derived
+    from the registry rather than taken from the decision: a model can call
+    anything a match, but whether `viz_type` shipped with Superset or was
+    built by an earlier run is a fact on disk, not a claim to trust.
+    """
+    kind = decision.get("decision")
+    if kind == "reuse":
+        return CHART_KIND_EXISTING_CHART
+    if kind == "new_plugin":
+        return CHART_KIND_CUSTOM_NEW
+    if kind == "configure":
+        try:
+            entry = registry.find(str(decision.get("viz_type") or ""))
+        except RegistryError:
+            return None
+        return CHART_KIND_CUSTOM_REUSE if entry.get("custom") else CHART_KIND_STOCK
+    return None
+
+
+def annotate_comparisons(decisions: list[dict[str, Any]], registry: Registry) -> None:
+    """Attach, in place, what kind of chart each decision produced and the
+    capability card actually available to compare it against.
+
+    Mechanical, not asked of the model, for the same reason `tally` is: a
+    decision's `thumbnail_evidence` is the model's own account of what it
+    compared; this is the account a trace reader can check that account
+    against -- the exact card text this run's registry held for the
+    `viz_type` it settled on. A `new_plugin` decision gets a kind and no
+    card: none exists until stage F builds one.
+    """
+    for decision in decisions:
+        kind = chart_kind(decision, registry)
+        if kind is None:
+            continue
+        decision["chart_kind"] = kind
+        if kind not in (CHART_KIND_STOCK, CHART_KIND_CUSTOM_REUSE):
+            continue
+        try:
+            decision["capability_card_compared"] = registry.capability_card(
+                str(decision.get("viz_type") or "")
+            )
+        except RegistryError:
+            decision["capability_card_compared"] = None
 
 
 def tally(decisions: list[dict[str, Any]]) -> dict[str, int]:
@@ -381,7 +495,7 @@ def _answer_conflicts(
 
 # Roles that carry no data. A plugin for one of these is ten minutes of
 # generation, a package in the repo and a frontend rebuild, to render text a
-# MARKDOWN node already draws.
+# HEADER node or custom_text already draws.
 TEXT_ROLES = {"header", "text"}
 
 
@@ -392,10 +506,10 @@ def _text_as_plugin(
 
     A wrapper is exempt, and the exemption is the whole point: a header row
     that also holds a currency toggle and a date picker is a frame around
-    separate sections, not a line of prose, and a MARKDOWN node cannot draw a
-    control. Without this, that region is caught by this rule *and* by
-    `_wrappers_without_children` -- one demanding no plugin, the other a
-    container plugin -- and no plan could satisfy both.
+    separate sections, not a line of prose, and neither a `HEADER` node nor
+    `custom_text` can draw a control. Without this, that region is caught by
+    this rule *and* by `_wrappers_without_children` -- one demanding no
+    plugin, the other a container plugin -- and no plan could satisfy both.
     """
     roles = {
         r.get("region_id"): r.get("role") for r in design_analysis.get("regions", [])
@@ -540,6 +654,20 @@ _SPLIT_WORDS = (
 )
 
 
+def same_as_groups(design_analysis: dict[str, Any]) -> dict[str, list[str]]:
+    """Public alias of `_same_as_groups`.
+
+    Stage D keys its own cross-chart consistency pass off exactly the
+    grouping this stage already computes for `_component_groups_split` and
+    `_shared_plugin_shapes` -- rederiving `same_as` membership a second time
+    would be the same traversal maintained in two places, and the two would
+    drift the moment one of them changed. `_same_as_groups` stays the name
+    used within this module; this is only the seam another stage imports
+    through.
+    """
+    return _same_as_groups(design_analysis)
+
+
 def _same_as_groups(design_analysis: dict[str, Any]) -> dict[str, list[str]]:
     """Stage A's repeated components, as leader -> every region_id in it."""
     by_number: dict[int, dict[str, Any]] = {}
@@ -558,7 +686,9 @@ def _same_as_groups(design_analysis: dict[str, Any]) -> dict[str, list[str]]:
 
 
 def _component_groups_split(
-    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+    decisions: list[dict[str, Any]],
+    design_analysis: dict[str, Any],
+    binding_set: dict[str, Any] | None = None,
 ) -> list[str]:
     """A component stage A saw drawn several times, resolved to several plugins.
 
@@ -569,8 +699,13 @@ def _component_groups_split(
 
     Splitting is a real answer when one copy needs behaviour the others do not.
     It just has to be said, because the cost lands ten minutes later in a stage
-    that cannot see why.
+    that cannot see why -- unless the bindings already say it. Copies reading
+    a different number of measures are different components whatever they look
+    like, and `_shared_plugin_shapes` demands that split, so it needs no words.
+    Only that split: copies reading the same number are still held to one
+    viz_type among themselves, or to a reason.
     """
+    measures = _measure_counts(binding_set or {})
     viz_by_region = {
         str(d.get("region_id")): d.get("viz_type")
         for d in decisions
@@ -583,27 +718,257 @@ def _component_groups_split(
 
     problems: list[str] = []
     for head, members in sorted(_same_as_groups(design_analysis).items()):
-        chosen = {viz_by_region[m] for m in members if m in viz_by_region}
-        if len(chosen) < 2:
-            continue
-        if all(
-            any(word in reason_by_region.get(m, "") for word in _SPLIT_WORDS)
-            for m in members
-            if m in viz_by_region
+        drawn = [m for m in members if m in viz_by_region]
+        counts = {measures[m] for m in drawn if m in measures}
+        # An unbound copy belongs with the others when they agree on a count;
+        # against several counts there is no telling which it is.
+        default = next(iter(counts)) if len(counts) == 1 else None
+        by_count: dict[int | None, list[str]] = {}
+        for member in drawn:
+            by_count.setdefault(measures.get(member, default), []).append(member)
+        for count, bucket in sorted(
+            by_count.items(), key=lambda item: (item[0] is None, item[0] or 0)
         ):
+            chosen = {viz_by_region[m] for m in bucket}
+            if len(chosen) < 2:
+                continue
+            if all(
+                any(word in reason_by_region.get(m, "") for word in _SPLIT_WORDS)
+                for m in bucket
+            ):
+                continue
+            which = (
+                "they"
+                if len(by_count) == 1
+                else f"{', '.join(sorted(bucket))}, reading {count} measure(s) each,"
+            )
+            problems.append(
+                f"{head}: stage A read {len(members)} regions as the same "
+                f"component ({', '.join(sorted(members))}) but {which} resolve to "
+                f"{len(chosen)} viz types "
+                f"({', '.join(sorted(str(c) for c in chosen))}). "
+                "Give them one viz_type, or say in every rationale what makes "
+                "them different components -- each extra name is another "
+                "plugin built."
+            )
+    return problems
+
+
+def _measure_counts(binding_set: dict[str, Any]) -> dict[str, int]:
+    """How many measures each bound region reads, by region_id."""
+    return {
+        str(binding.get("region_id")): len(binding.get("measures") or [])
+        for binding in binding_set.get("bindings") or []
+        if isinstance(binding, dict) and binding.get("region_id")
+    }
+
+
+def _shared_plugin_shapes(
+    decisions: list[dict[str, Any]], binding_set: dict[str, Any]
+) -> list[str]:
+    """One new plugin shared by regions that read different numbers of measures.
+
+    A shared plugin is written from one member's region and binding, so its
+    metric controls are that member's measures. A sibling with fewer is left
+    holding an empty metric control the plugin reads anyway -- a thrown error
+    in one chart is an overlay across the whole dashboard -- and one with more
+    has nowhere to put the rest. Text, colour and labels are props; the number
+    of values a component reads is its shape.
+    """
+    measures = _measure_counts(binding_set)
+    members: dict[str, list[str]] = {}
+    for decision in decisions:
+        viz_type = decision.get("viz_type")
+        region_id = str(decision.get("region_id") or "")
+        if decision.get("decision") != "new_plugin" or not viz_type:
             continue
+        if region_id in measures:
+            members.setdefault(str(viz_type), []).append(region_id)
+
+    problems: list[str] = []
+    for viz_type, region_ids in sorted(members.items()):
+        by_count: dict[int, list[str]] = {}
+        for region_id in region_ids:
+            by_count.setdefault(measures[region_id], []).append(region_id)
+        if len(by_count) < 2:
+            continue
+        shapes = "; ".join(
+            f"{count} measure(s): {', '.join(sorted(ids))}"
+            for count, ids in sorted(by_count.items())
+        )
         problems.append(
-            f"{head}: stage A read {len(members)} regions as the same component "
-            f"({', '.join(sorted(members))}) but they resolve to "
-            f"{len(chosen)} viz types ({', '.join(sorted(str(c) for c in chosen))}). "
-            "Give them one viz_type, or say in every rationale what makes them "
-            "different components -- each extra name is another plugin built."
+            f"{viz_type}: one plugin for regions whose bindings read different "
+            f"numbers of measures ({shapes}). The plugin is written from one of "
+            "them, so the others get metric controls that do not fit their "
+            "data -- an empty one crashes the page. Give each measure count its "
+            "own `custom_<name>` viz_type, and say in each rationale that the "
+            "regions read different data. This applies to a `same_as` group "
+            "too."
         )
     return problems
 
 
+def structural_shape(
+    decision: dict[str, Any], region: dict[str, Any]
+) -> tuple[Any, ...]:
+    """What a plugin actually has to be built to hold, for one group member.
+
+    `_shared_plugin_shapes` catches two members of a shared `new_plugin` group
+    reading a different number of measures; that is a data-shape mismatch. This
+    is the structure-shape counterpart, for the axes measure counts say nothing
+    about: how many children a container hosts, which controls sit on its own
+    header, whether it draws its own card or sits bare, and how many axes it
+    formats. A plugin generated from one member's shape is a fixed React
+    component -- it cannot grow a fourth child slot, a control it was never
+    given, or a card border around a sibling that should be bare -- so two
+    members whose shape disagrees on any of these are not the same component,
+    whatever `viz_type` stage C gave them both.
+
+    Returned as a tuple so equal shapes compare equal and unequal ones sort
+    into distinct buckets; `split_incompatible_groups` is the only caller that
+    needs to know why two tuples differ, so the fields are kept in the fixed
+    order documented there rather than named.
+    """
+    # The count, not the refs themselves: two container copies never share a
+    # ref -- each hosts its own charts -- so comparing the refs directly would
+    # flag every real container group as a mismatch. What decides whether one
+    # plugin can host both is how many slots it needs, not which charts fill them.
+    children = len(decision.get("children") or [])
+    controls = tuple(
+        sorted(
+            str(control.get("kind"))
+            for control in region.get("controls") or []
+            if isinstance(control, dict) and control.get("kind")
+        )
+    )
+    surface = str((region.get("chrome") or {}).get("surface") or "card")
+    axis_shape = tuple(
+        sorted(
+            (str(fmt.get("axis")), str(fmt.get("kind")))
+            for fmt in region.get("axis_formats") or []
+            if isinstance(fmt, dict)
+        )
+    )
+    return (children, controls, surface, axis_shape)
+
+
+# One label per position in `structural_shape`'s tuple, in the same order, so
+# a mismatch can be explained in words instead of as two opaque tuples.
+_SHAPE_AXES = ("children", "controls", "chrome.surface", "axis_formats")
+
+
+def _shape_diff_reason(primary: tuple[Any, ...], other: tuple[Any, ...]) -> str:
+    """Which of `structural_shape`'s axes actually differ, in one sentence."""
+    diffs = [
+        f"{name} {primary[i]!r} vs {other[i]!r}"
+        for i, name in enumerate(_SHAPE_AXES)
+        if primary[i] != other[i]
+    ]
+    return "; ".join(diffs) or "shape differs"
+
+
+def split_incompatible_groups(
+    by_type: dict[str, list[dict[str, Any]]],
+    regions: dict[str, dict[str, Any]],
+) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    """Pull the members of a shared-`viz_type` group that do not actually match.
+
+    The orchestrator groups `new_plugin` decisions by `viz_type` alone and
+    sends only the group's first member to stage F; every other member is
+    trusted to be renderable by the plugin built for that one. Nothing checked
+    that trust before this -- a container built to host three named children
+    was reused across regions needing four, a table's columns, and a bare
+    sibling with no card at all, and when the plugin could not actually be all
+    of those things at once, the whole group -- eleven sections in one real
+    run -- was dropped together rather than the one member that did not fit.
+
+    The fix is cheaper before generation than after: a member whose shape
+    disagrees with the group's first (the one a plugin is actually built from)
+    is renamed onto its own `viz_type` here, before stage F ever runs, so it
+    gets a plugin built for its own shape instead of quietly gambling on one
+    built for someone else's. Members that share a shape, including a shape
+    that disagrees with the first member's, are kept together -- a group of
+    six where three need a bare sibling costs one extra plugin, not three.
+
+    This is a hard split, not a warning the model can talk its way out of with
+    a rationale: `_shared_plugin_shapes` treats a differing measure count the
+    same way, unconditionally, because whether two components have the same
+    shape is a fact about what a plugin can render, not a judgement call.
+    """
+
+    def region_for(region_id: str) -> dict[str, Any]:
+        return regions.get(region_id) or regions.get(region_id.split(":")[0], {})
+
+    split: dict[str, list[dict[str, Any]]] = {}
+    warnings: list[dict[str, Any]] = []
+    for viz_type, group in by_type.items():
+        if len(group) < 2:
+            split[viz_type] = group
+            continue
+
+        buckets: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        order: list[tuple[Any, ...]] = []
+        for decision in group:
+            shape = structural_shape(
+                decision, region_for(str(decision.get("region_id") or ""))
+            )
+            if shape not in buckets:
+                buckets[shape] = []
+                order.append(shape)
+            buckets[shape].append(decision)
+
+        if len(buckets) == 1:
+            split[viz_type] = group
+            continue
+
+        # The plugin stage F is actually about to build comes from `group[0]`,
+        # so its shape is the one `viz_type` keeps meaning; every other bucket
+        # is a shape that plugin was never built for.
+        primary_shape = structural_shape(
+            group[0], region_for(str(group[0].get("region_id") or ""))
+        )
+        for index, shape in enumerate(order):
+            bucket = buckets[shape]
+            if shape == primary_shape:
+                split[viz_type] = bucket
+                continue
+            new_viz_type = f"{viz_type}_shape{index}"
+            for decision in bucket:
+                decision["viz_type"] = new_viz_type
+            split[new_viz_type] = bucket
+            warnings.append(
+                {
+                    "viz_type": viz_type,
+                    "new_viz_type": new_viz_type,
+                    "region_ids": [str(d.get("region_id")) for d in bucket],
+                    "reason": _shape_diff_reason(primary_shape, shape),
+                }
+            )
+    return split, warnings
+
+
+def _plugin_choice_answers(binding_set: dict[str, Any]) -> dict[str, str]:
+    """`region_id -> plugin_choice`, for the regions the gate actually asked.
+
+    The gate's stock-vs-custom question is answered per region, not for the
+    whole design, and only reaches stage C by way of stage B's bindings
+    (`GATE_PASSTHROUGH_FIELDS` in `b_bind.py`). Most regions carry no answer
+    here -- either the user never reached that question, or `stock_candidate`
+    was null and the gate never raised it -- so this is deliberately a lookup
+    of the regions where re-deriving stock-versus-custom would be relitigating
+    a decision the user already made, not the default case.
+    """
+    return {
+        str(b.get("region_id")): b["plugin_choice"]
+        for b in binding_set.get("bindings") or []
+        if isinstance(b, dict) and b.get("region_id") and b.get("plugin_choice")
+    }
+
+
 def _candidate_overturned_without_naming_it(
-    decisions: list[dict[str, Any]], design_analysis: dict[str, Any]
+    decisions: list[dict[str, Any]],
+    design_analysis: dict[str, Any],
+    plugin_choices: dict[str, str] | None = None,
 ) -> list[str]:
     """Rejecting A's registry candidate without saying what was wrong with it.
 
@@ -612,7 +977,13 @@ def _candidate_overturned_without_naming_it(
     plain text. Naming the candidate does not prove the thumbnail was opened,
     but it makes the claim falsifiable and forces the one comparison that
     matters -- against the plugin stage A actually found.
+
+    A region with a `plugin_choice` answer is exempt: there is no candidate
+    being "overturned" there, because the user's own answer to exactly this
+    question *is* the decision, not a verdict stage C reached and has to
+    justify against A's guess.
     """
+    plugin_choices = plugin_choices or {}
     candidates = {
         str(r.get("region_id")): r.get("stock_candidate")
         for r in design_analysis.get("regions", [])
@@ -625,6 +996,7 @@ def _candidate_overturned_without_naming_it(
         "Say what its thumbnail does that the design does not."
         for d in decisions
         if str(d.get("region_id")) in candidates
+        and str(d.get("region_id")) not in plugin_choices
         and d.get("decision") in DRAWS_DATA
         and d.get("viz_type") != candidates[str(d.get("region_id"))]
         and str(candidates[str(d.get("region_id"))])
@@ -632,7 +1004,215 @@ def _candidate_overturned_without_naming_it(
     ]
 
 
-def _evidence_missing(decisions: list[dict[str, Any]]) -> list[str]:
+# Nouns that name a visual feature specific enough that a plugin either has
+# it or does not -- unlike "number" or "text", which every chart has some
+# form of. Drawn from `unusual_treatment`, stage A's own list of what a
+# region does that a charting library does not normally do, and checked
+# against the reused plugin's own capability card rather than trusted from
+# the reusing decision's prose, which is free to claim anything.
+_CAPABILITY_WORDS = (
+    "sparkline",
+    "icon",
+    "badge",
+    "gradient",
+    "gauge",
+    "donut",
+    "chip",
+    "avatar",
+    "logo",
+    "trendline",
+    "trend line",
+    "glyph",
+    "progress bar",
+    "heatmap",
+)
+
+
+def _reused_capability_mismatch(
+    decisions: list[dict[str, Any]],
+    design_analysis: dict[str, Any],
+    registry: Registry,
+) -> list[str]:
+    """A custom plugin reused for a feature its own card never mentions.
+
+    `configure` on a `custom_` viz type reuses a plugin some earlier run
+    built for a different region; nothing about this run's decision changed
+    what that plugin's component can actually draw. Stage C's own rationale
+    was found, once, to claim an icon badge and a sparkline for a plugin
+    whose real controls are a coverage percentage and an on-demand dollar
+    figure -- capabilities neither its control panel nor its component ever
+    had, invented because nothing checked the claim against the plugin
+    itself. This does.
+    """
+    treatments = {
+        str(r.get("region_id")): [str(t) for t in r.get("unusual_treatment") or []]
+        for r in design_analysis.get("regions") or []
+        if isinstance(r, dict)
+    }
+    problems: list[str] = []
+    for decision in decisions:
+        if decision.get("decision") != "configure":
+            continue
+        viz_type = str(decision.get("viz_type") or "")
+        if not viz_type.startswith("custom_"):
+            continue
+        region_id = str(decision.get("region_id") or "")
+        needed = [
+            (treatment, word)
+            for treatment in treatments.get(region_id, [])
+            for word in _CAPABILITY_WORDS
+            if word in treatment.lower()
+        ]
+        if not needed:
+            continue
+        try:
+            card = registry.capability_card(viz_type).lower()
+        except RegistryError:
+            continue
+        for treatment, word in needed:
+            if word not in card:
+                problems.append(
+                    f"{region_id}: unusual_treatment says {treatment!r}, but "
+                    f"{viz_type}'s own capability card never mentions "
+                    f"{word!r} -- reusing it will not draw this. Check what "
+                    "get_chart_capabilities actually says this plugin's "
+                    "controls do, or build a new plugin for this region."
+                )
+    return problems
+
+
+def _chart_info_by_id(
+    chart_searches: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, Any]]:
+    """Every `get_chart_info` result in this run's transcript, by chart id.
+
+    Keyed on both the identifier the model asked for and the id the response
+    actually carried -- a chart can be looked up by UUID and confirmed by
+    integer id, and `existing_chart_id` on a `reuse` decision is free to be
+    either. An errored call confirms nothing: it is a lookup that failed, not
+    evidence a chart exists, so it contributes no key.
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    for entry in chart_searches or []:
+        if entry.get("tool") != "get_chart_info" or entry.get("error"):
+            continue
+        result = entry.get("result")
+        if not isinstance(result, dict) or result.get("error"):
+            continue
+        arguments = entry.get("arguments") or {}
+        for value in (
+            arguments.get("identifier"),
+            result.get("id"),
+            result.get("uuid"),
+        ):
+            if value is not None:
+                by_id[str(value)] = result
+    return by_id
+
+
+def _confirmed_chart_ids(chart_searches: list[dict[str, Any]] | None) -> set[str]:
+    """Chart ids a real `get_chart_info` call in this run actually confirmed."""
+    return set(_chart_info_by_id(chart_searches))
+
+
+# The `get_chart_info` fields that let a human independently judge a `reuse`
+# match without re-running the lookup themselves: the chart's identity and
+# name, and what it actually reads. `form_data` names its measures and
+# dimensions differently by viz type (`metrics`/`metric`,
+# `groupby`/`columns`/`all_columns`), so every plausible key is tried and the
+# first non-empty one kept.
+_REUSE_METRIC_KEYS = ("metrics", "metric")
+_REUSE_COLUMN_KEYS = ("groupby", "columns", "all_columns")
+
+
+def _reuse_evidence_summary(result: dict[str, Any]) -> dict[str, Any]:
+    """The compact, structured slice of a `get_chart_info` result worth
+    showing a human deciding whether a `reuse` is really a match."""
+    form_data = result.get("form_data")
+    form_data = form_data if isinstance(form_data, dict) else {}
+
+    def first(keys: tuple[str, ...]) -> Any:
+        for key in keys:
+            if value := form_data.get(key):
+                return value
+        return None
+
+    summary = {
+        "name": result.get("slice_name"),
+        "viz_type": result.get("viz_type"),
+        "dataset": result.get("datasource_name"),
+        "metrics": first(_REUSE_METRIC_KEYS),
+        "columns": first(_REUSE_COLUMN_KEYS),
+    }
+    return {k: v for k, v in summary.items() if v not in (None, "", [])}
+
+
+def annotate_reuse_evidence(
+    decisions: list[dict[str, Any]], chart_searches: list[dict[str, Any]] | None
+) -> None:
+    """Attach, in place, the real `get_chart_info` result behind a `reuse`.
+
+    `reuse_evidence` is C's own sentence about why a candidate matches; the
+    plan a user approves otherwise shows them only that paraphrase, never the
+    lookup it paraphrases. Where the confirmed transcript (`chart_searches`,
+    the same one `_reuse_unconfirmed_by_search` checks against) holds the
+    actual result for this decision's `existing_chart_id`, a compact
+    structured summary of it -- name, viz_type, dataset, the metrics and
+    columns it reads -- is attached alongside, so the evidence a human would
+    need to independently judge the match is there to read, not just C's
+    account of it. Purely additive: a decision with no matching search keeps
+    only its own `reuse_evidence`, exactly as before.
+    """
+    by_id = _chart_info_by_id(chart_searches)
+    if not by_id:
+        return
+    for decision in decisions:
+        if decision.get("decision") != "reuse":
+            continue
+        chart_id = decision.get("existing_chart_id")
+        if chart_id is None:
+            continue
+        if result := by_id.get(str(chart_id)):
+            decision["reuse_confirmed_evidence"] = _reuse_evidence_summary(result)
+
+
+def _reuse_unconfirmed_by_search(
+    decisions: list[dict[str, Any]],
+    chart_searches: list[dict[str, Any]] | None,
+) -> list[str]:
+    """A `reuse` decision whose chart id no real tool call ever confirmed.
+
+    `existing_chart_id` and `reuse_evidence` were previously only checked for
+    being non-empty strings -- a model can write either one for a chart it
+    never actually looked up. This cross-checks the id against the run's own
+    `get_chart_info` transcript (`chart_searches`, threaded in from
+    `runner.py`), the same "mechanical fact, not a guess" posture
+    `_reused_capability_mismatch` already takes for a reused custom plugin's
+    claimed capabilities.
+
+    `chart_searches` is optional and, when absent, this check is skipped
+    entirely rather than failing every caller that predates it -- most
+    existing tests build a plan and a `reuse` decision with no transcript at
+    all, and there is nothing to check a claim against without one.
+    """
+    if not chart_searches:
+        return []
+    confirmed = _confirmed_chart_ids(chart_searches)
+    return [
+        f"{d.get('region_id')}: reuse names chart {d['existing_chart_id']!r}, but "
+        "no get_chart_info call in this run's search transcript ever confirmed "
+        "that id -- look it up before reusing it, or reuse a chart you already "
+        "confirmed"
+        for d in decisions
+        if d.get("decision") == "reuse"
+        and d.get("existing_chart_id") is not None
+        and str(d["existing_chart_id"]) not in confirmed
+    ]
+
+
+def _evidence_missing(
+    decisions: list[dict[str, Any]], plugin_choices: dict[str, str] | None = None
+) -> list[str]:
     """Verdicts recorded without the comparison that produced them.
 
     The prompt asks for `thumbnail_evidence` on every section and nothing read
@@ -640,13 +1220,52 @@ def _evidence_missing(decisions: list[dict[str, Any]]) -> list[str]:
     support. It is the one field that distinguishes a considered stock-versus-
     custom verdict from a guess, and a guess here costs a ten-minute plugin
     build or a chart that does not look like the design.
+
+    A region carrying a `plugin_choice` answer is exempt: there is nothing to
+    prove was looked at, because stock-versus-custom was not stage C's call to
+    make there in the first place -- the user already decided, and this field
+    exists to show the model's own comparison work, not the user's.
     """
+    plugin_choices = plugin_choices or {}
     return [
         f"{d.get('region_id')}: {d.get('decision')} without thumbnail_evidence -- "
         "say which plugin thumbnails you compared and what you saw"
         for d in decisions
         if d.get("decision") in {"reuse", "configure", "new_plugin"}
+        and str(d.get("region_id")) not in plugin_choices
         and not str(d.get("thumbnail_evidence") or "").strip()
+    ]
+
+
+def stock_fidelity_unasked(
+    decisions: list[dict[str, Any]], needs: list[dict[str, Any]]
+) -> list[str]:
+    """A `configure` decision that names its own fidelity gap and never asks
+    about it.
+
+    `fidelity_loss` is free text a plan can write and never act on -- the
+    stock-versus-custom trade-off it describes is exactly the choice `needs`
+    exists to put in front of the user, so a region with a known gap and no
+    matching question is a decision made silently on the user's behalf.
+    Asking is mechanical here, the same way `_evidence_missing` checks that a
+    verdict was compared rather than trusting that it was: every `configure`
+    decision that names a gap gets a `needs` entry for that `region_id`, no
+    exceptions left to judgement about which gaps are "worth" asking about.
+    """
+    asked = {
+        str(n.get("region_id"))
+        for n in needs
+        if isinstance(n, dict) and n.get("region_id")
+    }
+    return [
+        f"{d.get('region_id')}: configure with a fidelity_loss "
+        f"({d['fidelity_loss']!r}) but no matching needs question -- ask "
+        "whether the user accepts this gap or wants a custom plugin built to "
+        "close it, the same way any other stock-versus-custom trade-off is asked"
+        for d in decisions
+        if d.get("decision") == "configure"
+        and str(d.get("fidelity_loss") or "").strip()
+        and str(d.get("region_id")) not in asked
     ]
 
 
@@ -687,6 +1306,19 @@ def _switcher_lost(
 # asked for these so every parallel worker obeys one value; when it omits
 # them, A's observation is better than nothing at all.
 OBSERVED_CONTRACT_KEYS = ("card_chrome", "typography", "palette", "theme")
+# The contract keys held to concrete values, with the shape stage C is shown
+# when it leaves one out that stage A saw.
+CONCRETE_CONTRACT_EXAMPLES = {
+    "card_chrome": (
+        '{"border": "<n>px solid #RRGGBB", "radius": "<n>px", '
+        '"shadow": "none", "padding": "<n>px"}'
+    ),
+    "typography": '{"value": "<size>px/<weight>", "label": "<size>px/<weight>"}',
+}
+
+
+def _absent_value(value: Any) -> bool:
+    return value is None or value in ("", {}, [])
 
 
 def design_system(
@@ -704,13 +1336,18 @@ def design_system(
     contract; stage C was never asked to put them there. Asking is the fix --
     this is the guard that keeps a silent omission from costing the run, since
     nothing downstream can tell an absent radius from a deliberate one.
+
+    The card and the type scale handed on are the concrete ones only: a
+    range or a description reaches workers whenever C runs out of re-plans
+    with one still in place, or leaves a key out and stage A's prose is
+    backfilled, and each worker then picks its own reading of it.
     """
     contract = dict(plan.get("design_system") or {})
     observed = design_analysis.get("global") or {}
     for key in OBSERVED_CONTRACT_KEYS:
         if not contract.get(key) and observed.get(key):
             contract[key] = observed[key]
-    return contract
+    return chrome.concrete_contract(contract)
 
 
 def replies_of(user_answers: Any) -> dict[str, Any]:
@@ -740,8 +1377,16 @@ def validate(  # noqa: C901
     design_analysis: dict[str, Any],
     binding_set: dict[str, Any],
     registry: Registry,
+    chart_searches: list[dict[str, Any]] | None = None,
 ) -> list[str]:
-    """Structural checks before the plan is shown to a user or fanned out."""
+    """Structural checks before the plan is shown to a user or fanned out.
+
+    `chart_searches` is optional: it is `chart_searches()`'s merged transcript
+    of every `get_chart_info` call this run has made, and its only use here is
+    `_reuse_unconfirmed_by_search`. A caller that has no transcript to hand --
+    every existing unit test, and any future one that only cares about the
+    other checks -- gets the same result as before.
+    """
     problems: list[str] = []
     entries = registry.entries
     known_charts = chart_types(entries)
@@ -757,17 +1402,26 @@ def validate(  # noqa: C901
     for extra in sorted(covered - expected):
         problems.append(f"decision for unknown region: {extra}")
 
+    plugin_choices = _plugin_choice_answers(binding_set)
     problems.extend(_answer_conflicts(decisions, design_analysis, binding_set))
     problems.extend(_text_as_plugin(decisions, design_analysis))
     problems.extend(_wrappers_without_children(decisions, design_analysis))
     problems.extend(_binding_coverage(decisions, design_analysis, binding_set))
-    problems.extend(_evidence_missing(decisions))
-    problems.extend(_component_groups_split(decisions, design_analysis))
-    problems.extend(_candidate_overturned_without_naming_it(decisions, design_analysis))
+    problems.extend(_evidence_missing(decisions, plugin_choices))
+    problems.extend(_component_groups_split(decisions, design_analysis, binding_set))
+    problems.extend(_shared_plugin_shapes(decisions, binding_set))
+    problems.extend(
+        _candidate_overturned_without_naming_it(
+            decisions, design_analysis, plugin_choices
+        )
+    )
     problems.extend(_switcher_lost(decisions, design_analysis))
+    problems.extend(_reused_capability_mismatch(decisions, design_analysis, registry))
+    problems.extend(_reuse_unconfirmed_by_search(decisions, chart_searches))
 
     refs = {d.get("ref") for d in decisions if d.get("ref")}
     seen_refs: set[str] = set()
+    seen_region_ids: set[str] = set()
     new_plugin_types: set[str] = set()
 
     for decision in decisions:
@@ -783,9 +1437,33 @@ def validate(  # noqa: C901
             if ref in seen_refs:
                 problems.append(f"{region_id}: duplicate ref {ref!r}")
             seen_refs.add(ref)
+        if region_id:
+            # A region is one decision. Two decisions naming the same
+            # region_id merge by that key wherever a patch is applied
+            # (`merge_patch` keys on it precisely so a correction to one
+            # region does not require resending the rest) -- so the second
+            # one silently replaces the first there, one region at a time,
+            # a decision lost on every single merge without ever failing
+            # loudly. A control band the design draws as one region stays
+            # one region here too: list each control inside that one
+            # decision, never split it into several sharing its region_id.
+            if region_id in seen_region_ids:
+                problems.append(f"{region_id}: two decisions for the same region")
+            seen_region_ids.add(region_id)
 
         if kind == "grid_text" and not decision.get("text"):
             problems.append(f"{region_id}: grid_text without the text to render")
+        if kind == "grid_text" and "\n" in str(decision.get("text") or "").strip():
+            # A grid_text decision becomes a single-line HEADER node.
+            # Superset's own MARKDOWN node holds more, but always inside a
+            # scrolling container no design draws -- so a heading with a
+            # subtitle, or any text needing more than one line, is
+            # configure: custom_text instead, never grid_text.
+            problems.append(
+                f"{region_id}: grid_text carries more than one line -- use "
+                "configure: custom_text for a heading with a subtitle or any "
+                "text needing more than one line, not grid_text"
+            )
         if kind == "configure":
             if not viz_type:
                 problems.append(f"{region_id}: {kind} without viz_type")
@@ -868,7 +1546,28 @@ def validate(  # noqa: C901
                 f"which case applies rather than calling it impossible."
             )
 
-    if not plan.get("design_system"):
+    contract = plan.get("design_system")
+    if not contract:
         problems.append("no design_system contract emitted")
+    else:
+        # The contract reaches the dashboard stylesheet and every plugin
+        # author; a range or a description there is a value each reads
+        # differently and a browser drops. The raw contract, not the
+        # `design_system` backfill: stage A describes the card in prose, and C
+        # is not asked to fix A's reading.
+        problems.extend(chrome.contract_css_problems(contract))
+        # Leaving a key out would dodge that check and hand every worker A's
+        # unvalidated reading instead, which is where the ranges came from.
+        observed = design_analysis.get("global") or {}
+        for key, example in CONCRETE_CONTRACT_EXAMPLES.items():
+            if _absent_value(contract.get(key)) and not _absent_value(
+                observed.get(key)
+            ):
+                problems.append(
+                    f"design_system.{key} is missing, but stage A observed one "
+                    f"({str(observed[key])[:80]!r}). Plugin authors run in "
+                    "parallel and take it from the contract alone: give the "
+                    f"concrete values the design draws, e.g. {example}."
+                )
 
     return problems

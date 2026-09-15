@@ -200,3 +200,92 @@ def test_a_page_with_no_control_discloses_nothing() -> None:
 )
 def test_the_answer_is_read_for_intent(answer: Any, expected: str) -> None:
     assert filter_scope.scope_from_answer(answer) == expected
+
+
+# --- a chart kept out of scope must not still be pinned to one range --------
+
+
+def _temporal(comparator: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "clause": "WHERE",
+            "subject": "usage_month",
+            "operator": "TEMPORAL_RANGE",
+            "comparator": comparator,
+        }
+    ]
+
+
+def test_a_placeholder_comparator_is_not_a_conflict() -> None:
+    """ "No filter" is the placeholder D writes when nothing pins the chart;
+    it is what lets the chart draw its own full history."""
+    specs = [
+        _spec("r02_filter", "c2"),
+        _spec(
+            "r08_bars",
+            "c8",
+            x_axis="usage_month",
+            adhoc_filters=_temporal("No filter"),
+        ),
+    ]
+    assert filter_scope.range_conflicts(PLAN, specs, design_analysis=DESIGN) == []
+
+
+def test_a_trend_chart_pinned_to_one_range_is_flagged() -> None:
+    """The bug this guards: excluded from the page filter's scope so it keeps
+    its full history, but its own TEMPORAL_RANGE filter already narrows it to
+    one month -- the same single point the exclusion exists to prevent."""
+    specs = [
+        _spec("r02_filter", "c2"),
+        _spec(
+            "r08_bars",
+            "c8",
+            x_axis="usage_month",
+            adhoc_filters=_temporal("2025-04-01 : 2025-05-01"),
+        ),
+    ]
+    problems = filter_scope.range_conflicts(PLAN, specs, design_analysis=DESIGN)
+    assert len(problems) == 1
+    assert "r08_bars" in problems[0] or "Bars" in problems[0]
+    assert "2025-04-01 : 2025-05-01" in problems[0]
+
+
+def test_a_chart_with_no_temporal_filter_is_not_checked() -> None:
+    specs = [_spec("r02_filter", "c2"), _spec("r08_bars", "c8", x_axis="usage_month")]
+    assert filter_scope.range_conflicts(PLAN, specs, design_analysis=DESIGN) == []
+
+
+def test_filtering_everything_has_nothing_to_reconcile() -> None:
+    """`SCOPE_ALL` puts every chart back in the page filter's reach; a chart's
+    own range no longer matters, since the page filter overwrites it anyway."""
+    specs = [
+        _spec("r02_filter", "c2"),
+        _spec(
+            "r08_bars",
+            "c8",
+            x_axis="usage_month",
+            adhoc_filters=_temporal("2025-04-01 : 2025-05-01"),
+        ),
+    ]
+    assert (
+        filter_scope.range_conflicts(
+            PLAN, specs, scope=filter_scope.SCOPE_ALL, design_analysis=DESIGN
+        )
+        == []
+    )
+
+
+def test_a_card_pinned_to_a_range_is_not_checked() -> None:
+    """A KPI card is not held to this: it is a generated plugin free to issue
+    a second, wider query, unlike a stock chart with one range and one
+    query."""
+    specs = [
+        _spec("r02_filter", "c2"),
+        _spec(
+            "r04_card",
+            "c4",
+            x_axis="usage_month",
+            adhoc_filters=_temporal("2025-04-01 : 2025-05-01"),
+        ),
+    ]
+    assert filter_scope.range_conflicts(PLAN, specs, design_analysis=DESIGN) == []

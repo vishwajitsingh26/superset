@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 import pathlib
 import queue
@@ -52,6 +53,16 @@ class DesignToDashboardRestApi(BaseApi):
     openapi_spec_tag = "Design to Dashboard"
     class_permission_name = "DesignToDashboard"
     allow_browser_login = True
+    # FAB grants each exposed method its own permission, named after the
+    # method, the first time an operator runs `superset init` after it is
+    # added -- and only that command grants a new permission to a role, not
+    # an ordinary restart. `crop_image` was added after this deployment's
+    # last `superset init`, so its own `can_crop_image` permission existed on
+    # nobody's role and every request 403'd, including the session's owner.
+    # Reusing `get_session`'s permission -- another owner-gated read on this
+    # same resource -- means a method added here needs no separate grant, on
+    # this deployment or the next one that forgets to re-run `superset init`.
+    method_permission_name = {"crop_image": "get_session", "get_asset": "get_session"}
 
     @expose("/session/", methods=("POST",))
     @protect()
@@ -212,6 +223,33 @@ class DesignToDashboardRestApi(BaseApi):
         return Response(
             path.read_bytes(),
             mimetype="image/png",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
+
+    @expose("/session/<session_id>/asset/<int:index>/", methods=("GET",))
+    @protect()
+    @safe
+    def get_asset(self, session_id: str, index: int) -> FlaskResponse:
+        """The design image at this index, exactly as uploaded.
+
+        Both panes on the frontend draw a design thumbnail from this, and
+        neither has anything else to draw one from after a reload: the local
+        blob URL a chosen `File` was previewed from dies with the tab, and
+        the browser holds no memory of what was uploaded, only this session
+        does. Served rather than replayed through the event log, for the same
+        reason as `crop_image` -- an upload can be several megabytes, and
+        every reconnecting client would otherwise cross that wire again.
+        """
+        session = session_store.get(session_id, user_id=g.user.id)
+        if session is None or not 0 <= index < len(session.image_paths):
+            return self.response_404()
+        path = pathlib.Path(session.image_paths[index])
+        if not path.is_file():
+            return self.response_404()
+        mimetype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        return Response(
+            path.read_bytes(),
+            mimetype=mimetype,
             headers={"Cache-Control": "private, max-age=3600"},
         )
 

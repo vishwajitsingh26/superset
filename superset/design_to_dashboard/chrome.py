@@ -38,9 +38,13 @@ content and nothing else.
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # What stage A may say about the surface a region sits on. The question put to
 # it is a counterfactual rather than a taxonomy -- "if Superset drew its
@@ -115,11 +119,17 @@ def _chrome_of(region: dict[str, Any]) -> dict[str, Any]:
 
 
 def _hosted_refs(plan: dict[str, Any]) -> set[str]:
-    """Refs a wrapper renders inside itself rather than beside itself."""
+    """Refs a wrapper renders inside itself rather than beside itself.
+
+    A dropped wrapper hosts nothing. The runner drops a container whose plugin
+    failed to build and leaves its `children` in place, so those sections are
+    back on the grid as charts of their own -- each with a holder that needs
+    the design's card like any other.
+    """
     return {
         str(child)
         for decision in plan.get("decisions") or []
-        if isinstance(decision, dict)
+        if isinstance(decision, dict) and decision.get("decision") not in NOT_ON_GRID
         for child in decision.get("children") or []
     }
 
@@ -216,37 +226,544 @@ def resolve(
     return resolved
 
 
-# A contract value reaches the stylesheet verbatim, so it is checked first.
-# Stage C writes these, but stage C is a model, and one stray brace would take
-# the rest of the dashboard's styling down with it.
-_SAFE_CSS_VALUE = re.compile(r"^[#\w\s,.()%/-]{1,120}$")
+# A contract value reaches the stylesheet verbatim, so it is checked first --
+# against what the property accepts, not against a set of harmless characters.
+# Stage C is a model: one stray brace would take the rest of the dashboard's
+# styling down with it, and a description (`subtle drop shadow`, `16-20px`) is
+# harmless to write but is not CSS, so the browser drops the declaration and
+# the card quietly loses the treatment the contract promised every plugin.
+_MAX_CSS_VALUE = 120
+
+_NUMBER = r"(?:\d+(?:\.\d+)?|\.\d+)"
+_UNITS = "px|rem|em|pt|pc|cm|mm|in|vh|vw|vmin|vmax|ch|ex"
+_LENGTH = re.compile(rf"(?:0+(?:\.0+)?|{_NUMBER}(?:{_UNITS}))", re.IGNORECASE)
+_PERCENT = re.compile(rf"{_NUMBER}%")
+_HEX = re.compile(r"#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
+_COLOR_FUNCTION = re.compile(r"(rgba?|hsla?)\((.*)\)", re.IGNORECASE)
+_COLOR_NUMBER = re.compile(rf"[+-]?{_NUMBER}")
+_COLOR_PERCENT = re.compile(rf"[+-]?{_NUMBER}%")
+_HUE = re.compile(rf"[+-]?{_NUMBER}(?:deg|grad|rad|turn)?", re.IGNORECASE)
+_FONT_WEIGHT = re.compile(r"[1-9]\d{0,2}|1000|normal|bold|bolder|lighter")
+
+# A span of numbers where CSS takes one: `16-20px`, `12px – 14px`, `8 to 12px`.
+# A bare hyphen needs no space on either side, so a negative shadow offset
+# (`0 -1px`) is not mistaken for one.
+_RANGE = re.compile(r"\d[a-z%]*(?:-|\s+-\s+|\s*[–—]\s*|\s+to\s+)~?\.?\d", re.IGNORECASE)
+
+_NAMED_COLORS = frozenset(
+    """
+    aliceblue antiquewhite aqua aquamarine azure beige bisque black
+    blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse
+    chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan
+    darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta
+    darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen
+    darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink
+    deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen
+    fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey
+    honeydew hotpink indianred indigo ivory khaki lavender lavenderblush
+    lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow
+    lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen
+    lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime
+    limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid
+    mediumpurple mediumseagreen mediumslateblue mediumspringgreen
+    mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin
+    navajowhite navy oldlace olive olivedrab orange orangered orchid
+    palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff
+    peru pink plum powderblue purple rebeccapurple red rosybrown royalblue
+    saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue
+    slateblue slategray slategrey snow springgreen steelblue tan teal thistle
+    tomato turquoise violet wheat white whitesmoke yellow yellowgreen
+    transparent currentcolor
+    """.split()
+)
+
+_BORDER_STYLES = frozenset(
+    "none hidden dotted dashed solid double groove ridge inset outset".split()
+)
+_BORDER_WIDTHS = frozenset({"thin", "medium", "thick"})
 
 
-def _safe(value: Any) -> str | None:
-    """A contract value that can be written into a declaration, or None."""
+def _split_top_level(text: str, separator: str) -> list[str] | None:
+    """`text` split on `separator` outside parentheses, or None if unbalanced.
+
+    `rgba(0, 0, 0, 0.1)` is one token of a shadow, not four.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in text:
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        if depth == 0 and (char.isspace() if separator == " " else char == separator):
+            parts.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    if depth:
+        return None
+    parts.append("".join(current).strip())
+    return parts
+
+
+def _tokens(text: str) -> list[str]:
+    parts = _split_top_level(text, " ")
+    return [part for part in parts if part] if parts is not None else []
+
+
+def _is_length(token: str, *, signed: bool = False, percent: bool = True) -> bool:
+    if signed and token.startswith(("-", "+")):
+        token = token[1:]
+    return bool(_LENGTH.fullmatch(token) or (percent and _PERCENT.fullmatch(token)))
+
+
+def _is_channel(token: str) -> bool:
+    return bool(_COLOR_NUMBER.fullmatch(token) or _COLOR_PERCENT.fullmatch(token))
+
+
+def _is_color(token: str) -> bool:
+    """A named colour, a hex, or `rgb()`/`hsl()` in one of CSS's two syntaxes.
+
+    Counting arguments is not enough: `rgba(0 0 0 0.1)` has four numbers and
+    no browser accepts it, because the space-separated form puts its alpha
+    after a `/`. Either commas throughout with an optional fourth value, or
+    spaces with an optional `/ alpha`; an angle only on an `hsl` hue.
+    """
+    if token.lower() in _NAMED_COLORS or _HEX.fullmatch(token):
+        return True
+    match = _COLOR_FUNCTION.fullmatch(token)
+    if not match:
+        return False
+    hsl = match.group(1).lower().startswith("hsl")
+    body = match.group(2).strip()
+    if "," in body:
+        if "/" in body:
+            return False
+        args = [arg.strip() for arg in body.split(",")]
+        if len(args) not in (3, 4):
+            return False
+        channels, alpha = args[:3], args[3:]
+        if hsl:
+            valid = bool(_HUE.fullmatch(channels[0])) and all(
+                _COLOR_PERCENT.fullmatch(c) for c in channels[1:]
+            )
+        else:
+            valid = all(_COLOR_NUMBER.fullmatch(c) for c in channels) or all(
+                _COLOR_PERCENT.fullmatch(c) for c in channels
+            )
+    else:
+        main, slash, rest = body.partition("/")
+        channels, alpha = main.split(), rest.split()
+        if len(channels) != 3 or (slash and len(alpha) != 1):
+            return False
+        valid = (
+            bool(_HUE.fullmatch(channels[0])) if hsl else _is_channel(channels[0])
+        ) and all(_is_channel(c) for c in channels[1:])
+    return valid and all(_is_channel(a) for a in alpha)
+
+
+def _is_border(value: str) -> bool:
+    """`<width> || <style> || <colour>`: each at most once, in any order."""
+    tokens = _tokens(value)
+    if not 1 <= len(tokens) <= 3:
+        return False
+    seen: set[str] = set()
+    for token in tokens:
+        if token.lower() in _BORDER_STYLES:
+            kind = "style"
+        elif token.lower() in _BORDER_WIDTHS or _is_length(token, percent=False):
+            kind = "width"
+        elif _is_color(token):
+            kind = "color"
+        else:
+            return False
+        if kind in seen:
+            return False
+        seen.add(kind)
+    return True
+
+
+def _is_box(value: str) -> bool:
+    """One to four non-negative lengths, as `padding` takes them."""
+    tokens = _tokens(value)
+    return 1 <= len(tokens) <= 4 and all(_is_length(token) for token in tokens)
+
+
+def _is_radius(value: str) -> bool:
+    """One to four radii, optionally `/` and one to four more."""
+    corners = value.split("/")
+    return len(corners) <= 2 and all(_is_box(corner) for corner in corners)
+
+
+def _is_shadow_layer(layer: str) -> bool:
+    tokens = _tokens(layer)
+    at = [
+        i
+        for i, token in enumerate(tokens)
+        if _is_length(token, signed=True, percent=False)
+    ]
+    # Offsets, blur and spread are one run: a colour between them is invalid.
+    if not 2 <= len(at) <= 4 or at != list(range(at[0], at[0] + len(at))):
+        return False
+    if len(at) >= 3 and tokens[at[2]].startswith("-"):
+        return False
+    rest = [token for i, token in enumerate(tokens) if i not in at]
+    insets = [token for token in rest if token.lower() == "inset"]
+    colors = [token for token in rest if _is_color(token)]
+    return len(insets) <= 1 and len(colors) <= 1 and len(insets + colors) == len(rest)
+
+
+def _is_shadow(value: str) -> bool:
+    if value.lower() == "none":
+        return True
+    layers = _split_top_level(value, ",")
+    return layers is not None and all(_is_shadow_layer(layer) for layer in layers)
+
+
+# Weights a type scale is written in besides CSS's own keywords. Typography
+# is read by plugin authors, never compiled, so a name they all read alike is
+# as concrete as a number.
+_WEIGHT_NAMES = frozenset(
+    """
+    thin hairline extralight ultralight light regular book medium semibold
+    demibold extrabold ultrabold heavy black
+    """.split()
+)
+_TYPE_HEAD = re.compile(r"([^\s,/]+)\s*/\s*([^\s,]+)")
+
+
+def _names_one_value(value: str) -> bool:
+    """No range, approximation or alternative: one reading for every author."""
+    return not (
+        _RANGE.search(value)
+        or "~" in value
+        or re.search(r"\bor\b", value, re.IGNORECASE)
+    )
+
+
+def _is_type_style(value: str) -> bool:
+    """`<size>/<weight>` first -- the contract's type.
+
+    What follows (a colour, `uppercase`, letter-spacing) is guidance and is
+    kept, held only to naming one value: the check exists so parallel plugin
+    authors agree, not to make the entry a CSS declaration it never becomes.
+    """
+    head = _TYPE_HEAD.match(value.strip())
+    if not head:
+        return False
+    size, weight = head.groups()
+    return (
+        _is_length(size, percent=False)
+        and bool(
+            _FONT_WEIGHT.fullmatch(weight.lower()) or weight.lower() in _WEIGHT_NAMES
+        )
+        and _names_one_value(value)
+    )
+
+
+_GRAMMARS: dict[str, Callable[[str], bool]] = {
+    "border": _is_border,
+    "border-radius": _is_radius,
+    "box-shadow": _is_shadow,
+    "padding": _is_box,
+    "background-color": _is_color,
+    "color": _is_color,
+}
+
+# How each property is written, for a problem stage C can act on. Placeholders
+# rather than sample values: a model handed `8px` as an example has been known
+# to copy it in place of measuring.
+_EXAMPLES = {
+    "border": '"<n>px solid #RRGGBB" or "none"',
+    "border-radius": '"<n>px"',
+    "box-shadow": '"<x>px <y>px <blur>px rgba(r, g, b, a)" or "none"',
+    "padding": '"<n>px" or "<vertical>px <horizontal>px"',
+    "background-color": '"#RRGGBB"',
+    "color": '"#RRGGBB"',
+    "type": '"<size>px/<weight>", optionally followed by ", #RRGGBB, uppercase"',
+}
+
+# The contract's card keys, and the property each styles on Superset's holder.
+CARD_CHROME_PROPERTIES = (
+    ("border", "border"),
+    ("radius", "border-radius"),
+    ("shadow", "box-shadow"),
+    ("padding", "padding"),
+    ("background", "background-color"),
+)
+
+
+def _clean(value: str) -> str:
+    return " ".join(value.strip().rstrip(";").split())
+
+
+def css_value(prop: str, value: Any) -> str | None:
+    """`value` as it can be declared for `prop`, or None when it is not CSS.
+
+    Nothing is repaired. A range has no one value to pick without looking at
+    the design again, and a midpoint chosen here would be a guess carrying the
+    contract's authority, so a value this cannot accept is left out and named.
+    """
     if not isinstance(value, str):
         return None
-    text = value.strip().rstrip(";").strip()
-    return text if text and _SAFE_CSS_VALUE.fullmatch(text) else None
+    text = _clean(value)
+    grammar = _GRAMMARS.get(prop)
+    if not text or len(text) > _MAX_CSS_VALUE or grammar is None:
+        return None
+    return text if grammar(text) else None
 
 
-def _card_rules(card_chrome: dict[str, Any]) -> list[str]:
-    """The design's card, as declarations for Superset's holder."""
+def _absent(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _card_rules(
+    card_chrome: dict[str, Any],
+) -> tuple[list[str], list[tuple[str, Any]]]:
+    """The design's card as declarations for the holder, and what was left out."""
     declarations: list[str] = []
-    for key, prop in (
-        ("border", "border"),
-        ("radius", "border-radius"),
-        ("shadow", "box-shadow"),
-        ("padding", "padding"),
-        ("background", "background-color"),
+    rejected: list[tuple[str, Any]] = []
+    for key, prop in CARD_CHROME_PROPERTIES:
+        value = card_chrome.get(key)
+        if _absent(value):
+            continue
+        if text := css_value(prop, value):
+            declarations.append(f"  {prop}: {text};")
+        else:
+            rejected.append((key, value))
+    return declarations, rejected
+
+
+def _left_out(field_name: str, value: Any) -> str:
+    """A comment standing where a declaration the contract spoiled would be.
+
+    The value goes to the log, never into the comment: it is exactly the text
+    that failed validation, and inside a comment it could close it.
+    """
+    logger.warning(
+        "%s is not a CSS value; left out of the dashboard CSS: %r", field_name, value
+    )
+    return f"/* {field_name} was not a CSS value and was left out. */"
+
+
+def _problem(field_name: str, value: Any, what: str, example: str) -> str:
+    if not isinstance(value, str):
+        return (
+            f"{field_name} must be a string holding {what}, e.g. {example}; "
+            f"got {type(value).__name__} {value!r}."
+        )
+    shown = value if len(value) <= 80 else value[:77] + "..."
+    if _RANGE.search(value):
+        return (
+            f"{field_name} is {shown!r}, a range. CSS takes one value and every "
+            f"plugin author reads this one: give the value the design draws, "
+            f"e.g. {example}."
+        )
+    return (
+        f"{field_name} is {shown!r}, which is not {what}, so a browser drops "
+        f"it. Write the concrete value the design draws, e.g. {example}."
+    )
+
+
+def _card_problems(card: Any) -> list[str]:
+    if _absent(card):
+        return []
+    if not isinstance(card, dict):
+        keys = ", ".join(key for key, _ in CARD_CHROME_PROPERTIES)
+        return [
+            "design_system.card_chrome must be an object of CSS values keyed "
+            f"{keys}, not {type(card).__name__}: the dashboard stylesheet is "
+            "written from it."
+        ]
+    problems: list[str] = []
+    for key, prop in CARD_CHROME_PROPERTIES:
+        value = card.get(key)
+        if not _absent(value) and css_value(prop, value) is None:
+            problems.append(
+                _problem(
+                    f"design_system.card_chrome.{key}",
+                    value,
+                    f"a CSS {prop} value",
+                    _EXAMPLES[prop],
+                )
+            )
+    # Held to the same test `_concrete_card` withholds on: a value rejected
+    # there and accepted here reaches no plugin author, and C is never told.
+    described = set(card) - {key for key, _ in CARD_CHROME_PROPERTIES}
+    for key in sorted(described):
+        value = card[key]
+        if not isinstance(value, str) or _names_one_value(value):
+            continue
+        if _RANGE.search(value):
+            problems.append(
+                f"design_system.card_chrome.{key} is {value!r}, which gives a "
+                "range. Name the one size the design draws."
+            )
+        else:
+            problems.append(
+                f"design_system.card_chrome.{key} is {value!r}, which offers "
+                "more than one reading (an approximation with `~`, or an "
+                "alternative with `or`). Every plugin author reads it in "
+                "parallel and each would pick its own: name the one treatment "
+                "the design draws, or leave the alternative out."
+            )
+    return problems
+
+
+def _typography_problems(typography: Any) -> list[str]:
+    if _absent(typography):
+        return []
+    if not isinstance(typography, dict):
+        return [
+            "design_system.typography must be an object mapping each text role "
+            f"to {_EXAMPLES['type']}, not {type(typography).__name__}."
+        ]
+    return [
+        _type_problem(f"design_system.typography.{role}", value)
+        for role, value in typography.items()
+        if not (isinstance(value, str) and _is_type_style(_clean(value)))
+    ]
+
+
+def _type_problem(field_name: str, value: Any) -> str:
+    """Why a type style is sent back. Never compiled, so no browser drops it:
+    the fault is that parallel plugin authors would each read it differently."""
+    example = _EXAMPLES["type"]
+    if not isinstance(value, str):
+        return (
+            f"{field_name} must be a string holding {example}; got "
+            f"{type(value).__name__} {value!r}."
+        )
+    shown = value if len(value) <= 80 else value[:77] + "..."
+    if _RANGE.search(value):
+        return (
+            f"{field_name} is {shown!r}, a range. Every plugin author reads this "
+            f"one value, in parallel: give the size and weight the design draws, "
+            f"e.g. {example}."
+        )
+    return (
+        f"{field_name} is {shown!r}, which does not start with one size/weight "
+        f"pair or offers more than one reading. Every plugin author reads this "
+        f"value, in parallel, and each would pick its own: start it with the "
+        f"size and weight the design draws, e.g. {example}."
+    )
+
+
+def contract_css_problems(design_system: Any) -> list[str]:
+    """What in stage C's contract is not concrete CSS, worded for C to fix.
+
+    Checked when C emits the contract, not only when the stylesheet compiles:
+    by then the plan has fanned out to plugin authors who each read `16-20px`
+    and pick their own end of it, and `compile_css` can only leave it out.
+    Covers the card, which reaches a declaration, and the type scale, which
+    workers apply by hand and so diverge on in the same way. Keys the prompt
+    lets C describe in words (the card's `header`) are held only to naming
+    one value where CSS would take one.
+    """
+    if not isinstance(design_system, dict):
+        return []
+    return _card_problems(design_system.get("card_chrome")) + _typography_problems(
+        design_system.get("typography")
+    )
+
+
+def _concrete_card(card: Any, withheld: list[str]) -> dict[str, Any]:
+    """The card values that are one concrete value; the rest named in `withheld`."""
+    if not isinstance(card, dict):
+        withheld.append("card_chrome")
+        return {}
+    properties = dict(CARD_CHROME_PROPERTIES)
+    kept: dict[str, Any] = {}
+    for key, value in card.items():
+        if key in properties:
+            keep = _absent(value) or css_value(properties[key], value) is not None
+        else:
+            keep = not isinstance(value, str) or _names_one_value(value)
+        if keep:
+            kept[key] = value
+        else:
+            withheld.append(f"card_chrome.{key}")
+    return kept
+
+
+def _concrete_type(typography: Any, withheld: list[str]) -> dict[str, Any]:
+    """The type styles that are one concrete value; the rest named in `withheld`."""
+    if not isinstance(typography, dict):
+        withheld.append("typography")
+        return {}
+    kept: dict[str, Any] = {}
+    for role, value in typography.items():
+        if isinstance(value, str) and _is_type_style(_clean(value)):
+            kept[role] = value
+        else:
+            withheld.append(f"typography.{role}")
+    return kept
+
+
+def concrete_contract(design_system: Any) -> dict[str, Any]:
+    """The contract with every value `contract_css_problems` rejects left out.
+
+    What plugin authors are handed. The check on stage C's own contract can
+    run out of re-plans, and a key C omits is backfilled from stage A, which
+    describes rather than measures -- either way a range reaches every worker
+    and each picks its own end of it. A value left out is the smaller fault:
+    it asks each worker nothing it could answer differently.
+    """
+    if not isinstance(design_system, dict):
+        return {}
+    contract = dict(design_system)
+    withheld: list[str] = []
+    for key, concrete in (
+        ("card_chrome", _concrete_card),
+        ("typography", _concrete_type),
     ):
-        if safe := _safe(card_chrome.get(key)):
-            declarations.append(f"  {prop}: {safe};")
-    return declarations
+        if _absent(contract.get(key)):
+            continue
+        if kept := concrete(contract[key], withheld):
+            contract[key] = kept
+        else:
+            contract.pop(key)
+    if withheld:
+        logger.warning(
+            "design_system values that are not one concrete value were withheld "
+            "from plugin authors: %s",
+            ", ".join(withheld),
+        )
+    return contract
 
 
 def _selector(entry: RegionChrome, chart_id: int) -> str:
     return f".dashboard-chart-id-{chart_id}"
+
+
+def _page_blocks(contract: dict[str, Any], page_background: Any) -> list[str]:
+    """The page ground and the holder's card: the rules every chart shares."""
+    blocks: list[str] = []
+    if not _absent(page_background):
+        if background := css_value("background-color", page_background):
+            blocks.append(
+                f".dashboard-content {{\n  background-color: {background};\n}}"
+            )
+        else:
+            blocks.append(_left_out("global.page_background", page_background))
+
+    card_chrome = contract.get("card_chrome")
+    if isinstance(card_chrome, dict):
+        rules, rejected = _card_rules(card_chrome)
+        blocks.extend(
+            _left_out(f"design_system.card_chrome.{key}", value)
+            for key, value in rejected
+        )
+        if rules:
+            joined = "\n".join(rules)
+            blocks.append(
+                "/* The holder is the design's card, so no plugin draws a second "
+                "one. */\n.dashboard-component-chart-holder {\n" + joined + "\n}"
+            )
+    return blocks
 
 
 def compile_css(
@@ -266,16 +783,7 @@ def compile_css(
         "/* Generated from the design. Edit the design, not this. */",
     ]
 
-    if background := _safe(page_background):
-        blocks.append(f".dashboard-content {{\n  background-color: {background};\n}}")
-
-    card_chrome = contract.get("card_chrome")
-    if isinstance(card_chrome, dict) and (rules := _card_rules(card_chrome)):
-        joined = "\n".join(rules)
-        blocks.append(
-            "/* The holder is the design's card, so no plugin draws a second "
-            "one. */\n.dashboard-component-chart-holder {\n" + joined + "\n}"
-        )
+    blocks.extend(_page_blocks(contract, page_background))
 
     for entry in entries:
         if not entry.ref or entry.ref not in ref_to_id:

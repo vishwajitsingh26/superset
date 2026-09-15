@@ -19,7 +19,7 @@
 import { useMemo, useState } from 'react';
 import { t } from '@apache-superset/core/translation';
 import { styled } from '@apache-superset/core/theme';
-import { PendingAsk } from './useDesignToDashboard';
+import { GateRegionNode, PendingAsk } from './useDesignToDashboard';
 
 const Block = styled.div`
   ${({ theme }) => `
@@ -174,6 +174,75 @@ const Tag = styled.span<{ tone?: 'new' | 'muted' }>`
   `}
 `;
 
+const Tree = styled.ul`
+  ${({ theme }) => `
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.sizeUnit * 3}px;
+  `}
+`;
+
+const RegionBox = styled.li<{ depth: number }>`
+  ${({ theme, depth }) => `
+    margin-left: ${depth * theme.sizeUnit * 5}px;
+    padding: ${theme.sizeUnit * 2}px ${theme.sizeUnit * 3}px;
+    border-left: 2px solid ${
+      depth === 0 ? theme.colorPrimaryBorder : theme.colorBorderSecondary
+    };
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.sizeUnit}px;
+  `}
+`;
+
+const RegionTitle = styled.div`
+  ${({ theme }) => `
+    color: ${theme.colorText};
+    font-weight: ${theme.fontWeightStrong};
+  `}
+`;
+
+const RoleTag = styled.span`
+  ${({ theme }) => `
+    font-size: ${theme.fontSizeSM}px;
+    color: ${theme.colorTextTertiary};
+    font-weight: ${theme.fontWeightNormal};
+    margin-left: ${theme.sizeUnit}px;
+  `}
+`;
+
+const Detail = styled.div`
+  ${({ theme }) => `
+    font-size: ${theme.fontSizeSM}px;
+    color: ${theme.colorTextSecondary};
+  `}
+`;
+
+const PluginRow = styled.div`
+  ${({ theme }) => `
+    display: flex;
+    align-items: center;
+    gap: ${theme.sizeUnit * 2}px;
+    flex-wrap: wrap;
+    margin-top: ${theme.sizeUnit}px;
+  `}
+`;
+
+const RegionQuestion = styled.div`
+  ${({ theme }) => `
+    margin-top: ${theme.sizeUnit}px;
+    padding: ${theme.sizeUnit * 2}px;
+    background-color: ${theme.colorFillQuaternary};
+    border-radius: ${theme.borderRadius}px;
+    display: flex;
+    flex-direction: column;
+    gap: ${theme.sizeUnit}px;
+  `}
+`;
+
 type Props = {
   pending: PendingAsk;
   onReply: (answer: Record<string, unknown>) => void;
@@ -190,6 +259,118 @@ export default function AskPanel({ pending, onReply }: Props) {
   const [feedback, setFeedback] = useState('');
   // Per-plugin notes for the stage F review, keyed by entry.
   const [notes, setNotes] = useState<Record<string, string>>({});
+  // The stage A/B gate: deliberately empty, not pre-filled from stage A's own
+  // `recommendation` -- the whole point of asking is that the user's answer
+  // decides, not stage A's guess, so nothing here is silently accepted by
+  // being left alone. Keyed by `region_id`.
+  const [pluginChoices, setPluginChoices] = useState<Record<string, string>>(
+    {},
+  );
+  const [gateAnswers, setGateAnswers] = useState<Record<string, string>>({});
+
+  if (pending.kind === 'region_review') {
+    const roots = pending.regions ?? [];
+    const gateQuestions = pending.questions ?? [];
+    const questionsById = new Map(gateQuestions.map(q => [q.id, q]));
+
+    // Every leaf that was given a choice to make must have one -- a region
+    // with no `plugin_choice` (a wrapper) is not counted, and nothing here
+    // is pre-selected, so an unvisited leaf reads as unanswered rather than
+    // as having quietly accepted stage A's recommendation.
+    const leavesNeedingChoice: string[] = [];
+    const collect = (nodes: GateRegionNode[]) => {
+      nodes.forEach(node => {
+        if (node.plugin_choice) leavesNeedingChoice.push(node.region_id);
+        if (node.children?.length) collect(node.children);
+      });
+    };
+    collect(roots);
+    const unchosen = leavesNeedingChoice.filter(id => !pluginChoices[id]);
+
+    const renderNode = (node: GateRegionNode, depth: number): JSX.Element => (
+      <RegionBox key={node.region_id} depth={depth}>
+        <RegionTitle>
+          {node.title ?? node.region_id}
+          <RoleTag>{node.role}</RoleTag>
+        </RegionTitle>
+        {node.composition && <Detail>{node.composition}</Detail>}
+        {node.behavior && <Detail>{node.behavior}</Detail>}
+        {node.plugin_choice && (
+          <PluginRow>
+            {node.plugin_choice.options.map(option => (
+              <Choice
+                key={option}
+                type="button"
+                selected={pluginChoices[node.region_id] === option}
+                onClick={() =>
+                  setPluginChoices(prev => ({
+                    ...prev,
+                    [node.region_id]: option,
+                  }))
+                }
+              >
+                {option}
+              </Choice>
+            ))}
+            <Why>{node.plugin_choice.note}</Why>
+          </PluginRow>
+        )}
+        {(node.question_ids ?? []).map(id => {
+          const question = questionsById.get(id);
+          if (!question) return null;
+          return (
+            <RegionQuestion key={id}>
+              <Ask>{question.text ?? question.question}</Ask>
+              <FreeText
+                value={gateAnswers[id] ?? ''}
+                placeholder={t('Your answer (optional)')}
+                onChange={e =>
+                  setGateAnswers(prev => ({ ...prev, [id]: e.target.value }))
+                }
+              />
+            </RegionQuestion>
+          );
+        })}
+        {node.children?.length ? (
+          <Tree>
+            {node.children.map(child => renderNode(child, depth + 1))}
+          </Tree>
+        ) : null}
+      </RegionBox>
+    );
+
+    return (
+      <Block data-test="d2d-region-review">
+        {pending.dashboard_title && (
+          <Ask>
+            {t('Dashboard')}: {pending.dashboard_title}
+          </Ask>
+        )}
+        <Tree>{roots.map(node => renderNode(node, 0))}</Tree>
+        <Actions>
+          <Primary
+            type="button"
+            disabled={unchosen.length > 0}
+            onClick={() =>
+              onReply({ plugin_choices: pluginChoices, answers: gateAnswers })
+            }
+          >
+            {t('Confirm and continue')}
+          </Primary>
+          <StepLine tone={unchosen.length > 0 ? 'warn' : undefined}>
+            {unchosen.length > 0
+              ? t(
+                  '%s region(s) still need a stock/custom choice -- nothing is picked for you.',
+                  String(unchosen.length),
+                )
+              : t(
+                  'Every region has a choice. Answers are optional; leave any blank to keep the current reading.',
+                )}
+          </StepLine>
+        </Actions>
+      </Block>
+    );
+  }
 
   if (pending.kind === 'datasets') {
     const datasets = pending.datasets ?? [];
@@ -279,6 +460,11 @@ export default function AskPanel({ pending, onReply }: Props) {
               <StepLine tone={entry.draws_data ? undefined : 'warn'}>
                 {t('Data')}: {entry.dataset}
               </StepLine>
+              {entry.reuse_evidence && (
+                <StepLine>
+                  {t('Confirmed')}: {entry.reuse_evidence}
+                </StepLine>
+              )}
               {entry.fidelity_loss && (
                 <StepLine tone="warn">
                   {t('Will differ')}: {entry.fidelity_loss}

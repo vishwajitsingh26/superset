@@ -40,7 +40,7 @@ If no image is attached, work from the boxes alone.
 }
 ```
 
-Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`, `HEADER`, `DIVIDER`.
+Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `HEADER`, `DIVIDER`. `MARKDOWN` is a real Superset node type and is deliberately not in this list — see below.
 
 ## Rules
 
@@ -55,7 +55,16 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
   `content_box.w`, scale by 12, round to an integer ≥ 1. Measure `x` from
   `content_box.x`, not from 0. Dividing by `global.canvas.w` counts a nav rail
   the dashboard does not have and makes every card a column or two too narrow.
-- **Every `ROW`'s child widths must sum to ≤ 12.** After rounding, if a row overflows, shrink the widest child until it fits and record the adjustment. If it underflows by 1–2, widen the widest child to fill the row.
+- **Every `ROW`'s child widths must sum to ≤ 12.** After rounding, if a row overflows, shrink the widest child until it fits and record the adjustment. If it underflows by 1–2, widen the widest child to fill the row **and record the adjustment** — a check runs after you that fails the layout for a row left 1–2 columns short with no `adjustments` entry naming it, because an unrecorded underflow of that size has turned out to mean unfinished arithmetic, not a deliberate gap, every time it has been checked against the actual page. If the gap is genuinely the design's own intent, say so in `adjustments` rather than leaving it silent.
+- **A `filter`-role card has a column floor of 3, whatever its measured bbox
+  says.** Its content is fixed text — a label, a date range — not something
+  stage D will shrink to fit, so a design drawn narrow (a date-range pill at
+  0.145 of the page rounds to 2 columns) still needs room for that text or it
+  truncates. This floor is enforced mechanically after you place the grid, not
+  left to you to remember; widening a `filter` card that already meets it, or
+  widening any other role on the same theory, is not something the check does
+  and not something you should do either — only a `filter`'s content is fixed
+  enough to predict a floor for.
 - **`height` is in units of `GRID_BASE_UNIT` (8px), and is proportional.** Compute it, do not pick it from memory:
 
   `height = round(bbox.h / content_box.h × total_units) + 5`
@@ -69,7 +78,20 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
   is Superset's chart header — roughly 40px of chrome the design does not
   draw, taken out of the card's content area. Omit it and the content is
   clipped: a KPI card sized at the design's own ratio has no room left for
-  its number.
+  its number. Where the chrome pass hides that header instead, the reserved
+  space is given back mechanically after you place the grid — you do not need
+  to omit the `+ 5` yourself for a headerless card.
+
+  The `+ 5` header allowance assumes the header row is where Superset draws
+  a card's overflow menu. A region that draws its own action (a `link`, most
+  often "View all →") hides that menu no matter what — the design already
+  drew a control there, and Superset's menu would be a second one beside it —
+  which leaves the action with no header to sit in even when the header
+  itself is still drawn. That action still has to render somewhere, and the
+  only place left is the card's own body, one chrome row taller than its
+  bbox ratio says. This, too, is given back mechanically, not something you
+  need to add by hand — it is the reverse of a *headerless* card's
+  allowance, not a substitute for it: the two never apply to the same card.
 - **A row's children all get the same height.** Superset lays a row out as one
   band, so three KPI tiles are one height, not three roundings of the same
   number. Use the tallest.
@@ -79,7 +101,7 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
 - **Every node needs a correct `parents` array** listing its full ancestor chain from `ROOT_ID`. Superset's drag-and-drop breaks without it.
 - **`uuid` is a fresh uuid4 per CHART node.**
 - **Skip `decoration` regions** and any decision of `drop`.
-- **Never lay out a wrapper's children.** When a decision has a `children` array (a `new_plugin` with `plugin_archetype: "container"`), the parent gets **one** CHART node and the children get **none** — they are rendered inside the parent, by the parent. Giving a child its own grid node draws it twice: once in the wrapper and once loose on the dashboard.
+- **Never lay out a wrapper's children.** A placement's `children` lists the refs that parent draws inside itself (a `new_plugin` with `plugin_archetype: "container"`): the parent gets **one** CHART node and every ref in its `children` gets **none**. Giving a child its own grid node draws it twice: once in the wrapper and once loose on the dashboard. Every placement not listed under another placement's `children` gets its own grid node — including a chart whose section on the page has no placement, because the frame that would have drawn it was dropped. Place those charts where their regions sit.
 - **A `filter_widget` plugin gets a grid node like any other chart.** It is a chart that happens to filter, so it sits in the layout exactly where the design draws it.
 - **Set `sliceNameOverride` to the label the design shows.** A chart's
   `slice_name` is long on purpose so it is findable among hundreds
@@ -87,7 +109,21 @@ Node types: `ROOT`, `GRID`, `ROW`, `COLUMN`, `CHART`, `TABS`, `TAB`, `MARKDOWN`,
   `Global Sales`. `sliceNameOverride` changes the header on this dashboard
   only and leaves the chart's real name alone. Where the design draws **no**
   header on the card, set it to `""`.
-- **`header` / `text` regions** become `MARKDOWN` nodes with the visible text, or `HEADER` nodes for section titles. A `grid_text` decision is exactly this: place it where its bbox says, using its `text`. It occupies a cell but is not a chart, so it gets no `ref` in `meta`.
+- **A `grid_text` decision becomes a `HEADER` node**, placed where its bbox
+  says, its `text` copied into `meta.text`. It occupies a cell but is not a
+  chart, so it gets no `ref` in `meta`.
+  **A `grid_text` decision is always one line by the time it reaches you.**
+  A `HEADER` node's `meta.text` holds exactly that one line -- there is no
+  other native node this pipeline builds text on. Do not reach for
+  `MARKDOWN`: it is a real Superset node type, but its own rendering always
+  wraps content in a scrolling container no design draws, so it is not one
+  of the node types available to you at all. A `grid_text` decision whose
+  `text` carries more than one line — a title with a subtitle, written as
+  `"**Title**\n\nSubtitle."` — is stage C's mistake, not yours to work
+  around: it should have been `configure: custom_text` instead, which has
+  its own `Text` and `Sub-text` controls built for exactly this shape. Place
+  the `HEADER` node with just the first line and move on; the missing plan
+  gets caught and sent back to stage C, not patched here.
 
 ## Output
 

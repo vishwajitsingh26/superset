@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-date-range-filter-6f7565",
+  "version": "0.1.0",
+  "description": "Date-range controls are always a filter_widget bound to the range_start/range_end view, so the calendar is bounded to the data’s real min/max date rather than…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

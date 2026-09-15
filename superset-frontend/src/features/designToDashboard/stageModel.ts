@@ -33,6 +33,7 @@ export type Stage = {
 /** The pipeline's fixed shape, so pending steps are visible from the start. */
 const STAGES: { key: string; title: string }[] = [
   { key: 'A', title: 'Read the design' },
+  { key: 'A_gate', title: 'Review the reading with you' },
   { key: 'B', title: 'Find matching data' },
   { key: 'clarify', title: 'Check for anything unclear' },
   { key: 'C', title: 'Choose chart types' },
@@ -96,6 +97,7 @@ export function buildConversation(
         break;
       }
       case 'plugin_built':
+      case 'plugin_group_split':
       case 'frontend_restarted':
       case 'frontend_restart_needed':
       case 'registry_rebuilt': {

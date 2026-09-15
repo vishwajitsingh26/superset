@@ -33,11 +33,18 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from superset.design_to_dashboard import chrome, filter_scope
-from superset.design_to_dashboard.stages.e_layout import ensure_uuids, REF_PREFIX
+from superset.design_to_dashboard.stages.e_layout import (
+    ensure_uuids,
+    hosted_refs,
+    REF_PREFIX,
+)
 from superset.utils import json
+
+if TYPE_CHECKING:
+    from superset.design_to_dashboard.registry import Registry
 
 logger = logging.getLogger(__name__)
 
@@ -126,8 +133,164 @@ def strip_invalid_grains(payload: Any, numeric: set[str]) -> Any:
     return payload
 
 
+def is_custom_viz_type(viz_type: str | None) -> bool:
+    """Whether a viz type is a plugin this fork generated rather than a stock one.
+
+    The same rule the registry scan applies, so the applier and the verifier
+    never disagree with the registry about which charts are custom.
+    """
+    return bool(viz_type) and (
+        str(viz_type).startswith("custom_") or viz_type == "container_chart"
+    )
+
+
+@dataclass(frozen=True)
+class QueryControls:
+    """The controls a custom plugin's ``buildQuery`` reads its query from."""
+
+    metrics: tuple[str, ...] = ()
+    columns: tuple[str, ...] = ()
+
+
+# Shared controls by what they hold. A generated plugin spreads one of these
+# into a control of its own name (`metricCoverage: {...sharedControls.metric}`),
+# so the spread, not the name, says what the control's value is.
+_METRIC_SHARED_CONTROLS = frozenset(
+    {
+        "metric",
+        "metrics",
+        "metric_2",
+        "secondary_metric",
+        "percent_metrics",
+        "size",
+        "x",
+        "y",
+    }
+)
+_DIMENSION_SHARED_CONTROLS = frozenset(
+    {"groupby", "columns", "all_columns", "series", "entity", "x_axis"}
+)
+_METRIC_CONTROL_TYPES = frozenset({"MetricsControl", "DndMetricSelect"})
+_DIMENSION_CONTROL_TYPES = frozenset({"DndColumnSelect", "DndColumnSelectControl"})
+# A shared control listed by name in a row (`['metrics']`). One-letter names are
+# left out: `'x'` and `'y'` are just as often a select's choice values.
+_BARE_ROW_CONTROLS = (_METRIC_SHARED_CONTROLS | _DIMENSION_SHARED_CONTROLS) - {
+    "x",
+    "y",
+    "size",
+}
+_NAMED_CONTROL = re.compile(r"\bname:\s*['\"]([A-Za-z_]\w*)['\"]")
+_SHARED_SPREAD = re.compile(
+    r"sharedControls(?:\.([A-Za-z_]\w*)|\[\s*['\"]([A-Za-z_]\w*)['\"]\s*\])"
+)
+_CONTROL_TYPE = re.compile(r"\btype:\s*['\"]([A-Za-z_]\w*)['\"]")
+_BARE_ROW_ITEM = re.compile(r"(?<=[\[,])\s*['\"]([A-Za-z_]\w*)['\"]\s*(?=[,\]])")
+
+
+def query_controls(source: str) -> QueryControls:  # noqa: C901
+    """Which of a control panel's controls hold metrics and which dimensions.
+
+    Read from the panel's source text: each named control is classified by the
+    shared control it spreads, or failing that by its control ``type``, and a
+    shared control listed by bare name keeps its own meaning. Anything else --
+    a label, a colour, a link -- is display configuration and never queried.
+    """
+    metrics: list[str] = []
+    columns: list[str] = []
+
+    def add(name: str, kind: str | None) -> None:
+        target = metrics if kind == "metric" else columns if kind == "column" else None
+        if target is not None and name not in metrics and name not in columns:
+            target.append(name)
+
+    named = list(_NAMED_CONTROL.finditer(source))
+    for index, match in enumerate(named):
+        # The control's own config runs until the next control is named.
+        end = named[index + 1].start() if index + 1 < len(named) else len(source)
+        body = source[match.end() : end]
+        spread = _SHARED_SPREAD.search(body)
+        control_type = _CONTROL_TYPE.search(body)
+        # Whichever comes first is the control's own: a later one belongs to
+        # a row or a nested object that follows it.
+        kind: str | None = None
+        if spread and (not control_type or spread.start() < control_type.start()):
+            shared = spread.group(1) or spread.group(2)
+            if shared in _METRIC_SHARED_CONTROLS:
+                kind = "metric"
+            elif shared in _DIMENSION_SHARED_CONTROLS:
+                kind = "column"
+        elif control_type:
+            if control_type.group(1) in _METRIC_CONTROL_TYPES:
+                kind = "metric"
+            elif control_type.group(1) in _DIMENSION_CONTROL_TYPES:
+                kind = "column"
+        add(match.group(1), kind)
+
+    for match in _BARE_ROW_ITEM.finditer(source):
+        name = match.group(1)
+        if name in _BARE_ROW_CONTROLS:
+            add(name, "metric" if name in _METRIC_SHARED_CONTROLS else "column")
+    return QueryControls(metrics=tuple(metrics), columns=tuple(columns))
+
+
+def _is_adhoc_metric(value: Any) -> bool:
+    """An adhoc metric object, told apart from an adhoc filter by its shape."""
+    if not isinstance(value, dict) or "clause" in value or "operator" in value:
+        return False
+    if value.get("expressionType") == "SIMPLE":
+        return bool(value.get("aggregate")) and bool(value.get("column"))
+    return value.get("expressionType") == "SQL" and bool(value.get("sqlExpression"))
+
+
+def _control_values(params: dict[str, Any], names: tuple[str, ...]) -> list[Any]:
+    """The non-empty values held by the named controls, flattened."""
+    values: list[Any] = []
+    for name in names:
+        value = params.get(name)
+        for item in value if isinstance(value, list) else [value]:
+            # An unset optional control is `None` or `""`; the plugin's own
+            # `buildQuery` filters those out, and a query carrying one fails.
+            if item not in (None, "", [], {}):
+                values.append(item)
+    return values
+
+
+def _custom_query_fields(
+    params: dict[str, Any], controls: QueryControls | None
+) -> tuple[list[Any], list[Any]]:
+    """Metrics and columns a custom plugin's own controls hold.
+
+    With the control panel, exactly the controls it types as metrics and
+    dimensions. Without it, only values whose shape is unmistakably a metric --
+    an adhoc metric object -- because a bare string could as well be a label.
+    """
+    if controls is not None:
+        return (
+            _control_values(params, controls.metrics),
+            _control_values(params, controls.columns),
+        )
+    metrics = [
+        item
+        for key, value in params.items()
+        if key not in _GENERIC_QUERY_KEYS
+        for item in (value if isinstance(value, list) else [value])
+        if _is_adhoc_metric(item)
+    ]
+    return metrics, []
+
+
+# The form-data keys the generic derivation already reads.
+_GENERIC_QUERY_KEYS = frozenset(
+    {"metrics", "metric", "groupby", "columns", "all_columns", "x_axis"}
+)
+
+
 def build_query_context(  # noqa: C901
-    params: dict[str, Any], datasource_id: int, datasource_type: str = "table"
+    params: dict[str, Any],
+    datasource_id: int,
+    datasource_type: str = "table",
+    viz_type: str | None = None,
+    controls: QueryControls | None = None,
 ) -> dict[str, Any]:
     """Derive a query context from a chart's form data.
 
@@ -138,13 +301,24 @@ def build_query_context(  # noqa: C901
     any API consumer.
 
     This derives the common shape — metrics, grouping columns, filters, limit,
-    ordering — which covers the viz types this pipeline emits. Stage D may also
-    supply its own; that takes precedence.
+    ordering — which covers the stock viz types this pipeline emits. Stage D may
+    also supply its own; that takes precedence.
+
+    A custom plugin keeps its query in controls of its own naming
+    (`metricCoverage`), which the generic keys never see, and its ``buildQuery``
+    is TypeScript that cannot run here. So its metrics and dimensions are read
+    from the controls its panel types as such (``controls``, parsed by
+    `query_controls`). Where that finds nothing, the plugin draws no data --
+    the convention stage F follows is to emit no query object at all -- and the
+    context carries no queries: one empty query object only fails every
+    consumer with "Empty query?". The result approximates the plugin's query
+    for API consumers; it is not the plugin's query, which is why the verifier
+    judges custom plugins by rendering them rather than through this context.
     """
     metrics = params.get("metrics")
     if metrics is None and params.get("metric") is not None:
         metrics = [params["metric"]]
-    metrics = metrics or []
+    metrics = list(metrics or [])
 
     columns: list[Any] = []
     for key in ("groupby", "columns", "all_columns"):
@@ -154,6 +328,12 @@ def build_query_context(  # noqa: C901
     x_axis = params.get("x_axis")
     if x_axis and x_axis not in columns:
         columns.insert(0, x_axis)
+
+    custom = is_custom_viz_type(viz_type)
+    if custom:
+        extra_metrics, extra_columns = _custom_query_fields(params, controls)
+        metrics.extend(m for m in extra_metrics if m not in metrics)
+        columns.extend(c for c in extra_columns if c not in columns)
     # Never carry a grain onto the axis column: on an integer "year" column it
     # emits DATE_TRUNC against a number and the chart fails to render.
     columns = [
@@ -214,7 +394,7 @@ def build_query_context(  # noqa: C901
     return {
         "datasource": {"id": datasource_id, "type": datasource_type},
         "force": False,
-        "queries": [query],
+        "queries": [] if custom and not metrics and not ordered_columns else [query],
         "form_data": params,
         "result_format": "json",
         "result_type": "full",
@@ -224,14 +404,33 @@ def build_query_context(  # noqa: C901
 def _order_charts(
     specs: list[dict[str, Any]], plan: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """Children before the wrapper that references them."""
-    children: set[str] = {
-        child
-        for decision in plan.get("decisions", [])
-        if decision.get("decision") == "wrap"
-        for child in decision.get("children") or []
-    }
+    """Children before the parent that references them.
+
+    Read through `hosted_refs` rather than off `wrap` decisions: a generated
+    container is re-marked `configure` once its plugin is built, so its children
+    were created after it and its `__REF__`s had no id to resolve to. A dropped
+    parent hosts nothing, so its charts wait behind nothing.
+    """
+    children = hosted_refs(plan)
     return sorted(specs, key=lambda spec: 0 if spec.get("ref") in children else 1)
+
+
+def _unhosted_ids(
+    chart_ids: list[int], ref_to_id: dict[str, int], plan: dict[str, Any]
+) -> list[int]:
+    """Chart ids that are dashboard members in their own right.
+
+    A chart hosted inside a wrapper is rendered through Superset's own
+    container, by id -- it is not a dashboard member in its own right, the
+    same distinction `_order_charts` already draws via `hosted_refs` above.
+    Left in `dashboard.slices` unfiltered, it is *also* an unpositioned
+    member with no entry in `position_json`, and Superset appends every
+    unpositioned member to the foot of the page at default size -- so a
+    real, correctly-hosted chart shows up a second time as an orphan card
+    underneath the dashboard it already renders inside of.
+    """
+    hosted_ids = {ref_to_id[ref] for ref in hosted_refs(plan) if ref in ref_to_id}
+    return [chart_id for chart_id in chart_ids if chart_id not in hosted_ids]
 
 
 def plan_datasets(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -525,11 +724,16 @@ def apply_plan(  # noqa: C901
     dashboard_title: str | None = None,
     menus: str = chrome.MENU_DATA_ONLY,
     filter_scope_answer: str = filter_scope.SCOPE_EXCEPT_TRENDS,
+    registry: Registry | None = None,
 ) -> ApplyResult:
     """Create the charts and the dashboard described by the plan.
 
     Must run inside a Flask request context with ``g.user`` set — the same
     requirement the MCP gateway has, and for the same reason.
+
+    ``registry`` supplies each custom plugin's control panel, from which its
+    query context is derived. Without it only adhoc metric objects are
+    recognised in a custom plugin's params.
     """
     from flask import g
 
@@ -642,7 +846,13 @@ def apply_plan(  # noqa: C901
                 query_context = json.dumps(decoded_qc)
             else:
                 query_context = json.dumps(
-                    build_query_context(params, body["datasource_id"], datasource_type)
+                    build_query_context(
+                        params,
+                        body["datasource_id"],
+                        datasource_type,
+                        viz_type=body.get("viz_type"),
+                        controls=_controls_for(body.get("viz_type"), registry),
+                    )
                 )
 
             attempting = {
@@ -685,8 +895,16 @@ def apply_plan(  # noqa: C901
         ).run()
         created_dashboard_id = dashboard.id
 
+        design_system = plan.get("design_system") or {}
         metadata: dict[str, Any] = {
-            "color_scheme": (plan.get("design_system") or {}).get("color_scheme"),
+            "color_scheme": design_system.get("color_scheme"),
+            # A stock chart's own `color_scheme` control only ever picks a
+            # *named* scheme, and this pipeline registers none of its own --
+            # so a design's exact brand colours reach stock charts here
+            # instead, the same surface Superset's own dashboard properties
+            # UI writes to. Applied by category label across every chart on
+            # the dashboard, independent of each chart's `color_scheme`.
+            "label_colors": _label_colors(design_system),
             # Native filters are configured by hand afterwards by whoever
             # wants them; nothing in this pipeline creates one.
             "native_filter_configuration": [],
@@ -701,7 +919,9 @@ def apply_plan(  # noqa: C901
         # `slices` is a SQLAlchemy relationship: it takes Slice objects, not
         # ids. The update command setattr's the value straight onto the model,
         # so ints raise "'int' object has no attribute '_sa_instance_state'".
-        all_ids = created_charts + result.charts_reused
+        all_ids = _unhosted_ids(
+            created_charts + result.charts_reused, result.ref_to_id, plan
+        )
         slice_objects = (
             db.session.query(Slice).filter(Slice.id.in_(all_ids)).all()
             if all_ids
@@ -717,11 +937,16 @@ def apply_plan(  # noqa: C901
         metadata["chart_configuration"] = filter_scope.build(
             plan, usable, result.ref_to_id, filter_scope_answer, design_analysis
         )
+        result.warnings.extend(
+            filter_scope.range_conflicts(
+                plan, usable, filter_scope_answer, design_analysis
+            )
+        )
         entries = chrome.resolve(design_analysis, plan, menus)
         css = chrome.compile_css(
             entries,
             result.ref_to_id,
-            plan.get("design_system") or {},
+            design_system,
             (design_analysis.get("global") or {}).get("page_background"),
         )
         result.chrome_effects = chrome.effects(entries) + filter_scope.effects(
@@ -757,6 +982,45 @@ def apply_plan(  # noqa: C901
         len(result.charts_reused),
     )
     return result
+
+
+def _controls_for(
+    viz_type: str | None, registry: Registry | None
+) -> QueryControls | None:
+    """A custom plugin's query controls, when its control panel can be read."""
+    if registry is None or not viz_type or not is_custom_viz_type(viz_type):
+        return None
+    from superset.design_to_dashboard.registry import RegistryError
+
+    try:
+        _, source = registry.control_panel(viz_type)
+    except (RegistryError, OSError, KeyError):
+        logger.info("no control panel for %s; deriving its query by shape", viz_type)
+        return None
+    return query_controls(source)
+
+
+def _label_colors(design_system: dict[str, Any]) -> dict[str, str]:
+    """Stage C's category-to-hex map, cleaned to what Superset's own dashboard
+    colour settings actually accept.
+
+    A stock chart type's own `color_scheme` control only ever picks a *named*
+    scheme, and this pipeline registers none of its own, so a design's exact
+    brand colours have no path to a stock chart through that control at all.
+    This is the other one: Superset already lets a dashboard map a category
+    label straight to a hex, applied across every chart that draws it
+    regardless of `color_scheme`. Only well-formed string pairs pass through
+    -- a category or colour of any other shape is a value no chart could read
+    back as a category label anyway.
+    """
+    raw = design_system.get("label_colors")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(category): str(hex_value)
+        for category, hex_value in raw.items()
+        if isinstance(category, str) and isinstance(hex_value, str)
+    }
 
 
 def _derive_title(design_analysis: dict[str, Any]) -> str:

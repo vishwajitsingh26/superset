@@ -57,7 +57,7 @@ from typing import Any
 
 from superset.utils import json
 
-from .base import LLMProvider, LLMResponse
+from .base import LLMProvider, LLMResponse, LLMTruncatedError
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +161,13 @@ class RecordingProvider:
     ) -> None:
         call_dir.mkdir(parents=True, exist_ok=True)
         text = response.text if response else ""
+        # A reply cut off at its budget is billed in full but arrives as an
+        # exception, so its trace used to hold no output and `usage: {}` --
+        # losing the partial reply and the token counts that show the budget,
+        # not the model's formatting, was the problem.
+        truncated = error if isinstance(error, LLMTruncatedError) else None
+        if truncated is not None and not text:
+            text = truncated.partial_text
 
         _write_text(
             call_dir / "prompt.md",
@@ -194,13 +201,29 @@ class RecordingProvider:
             "output_chars": len(text),
             "output_is_json": bool(text) and _as_json(text) is not None,
             "images": images,
-            "usage": response.usage if response else {},
+            "usage": response.usage if response else _truncation_usage(truncated),
             "cost_usd": response.cost_usd if response else None,
             "provider_session_id": response.session_id if response else None,
             "error": f"{type(error).__name__}: {error}" if error else None,
+            # Empty for a provider with no tool loop, or when the call raised
+            # before returning a response -- see LLMResponse.tool_calls.
+            "tool_calls": response.tool_calls if response else [],
         }
         _write_text(call_dir / "meta.json", json.dumps(meta, indent=2, default=str))
         _append_index(self.session_dir / "calls.jsonl", call_dir.name, meta)
+
+
+def _truncation_usage(error: LLMTruncatedError | None) -> dict[str, Any]:
+    """What a cut-off call spent, from the error that is its only record."""
+    if error is None:
+        return {}
+    return {
+        "truncated_attempts": error.attempts,
+        "max_tokens": error.max_tokens,
+        "output_tokens": error.output_tokens,
+        "thinking_tokens": error.thinking_tokens,
+        "stop_reason": error.stop_reason,
+    }
 
 
 class _ThinkingCapture:
@@ -210,16 +233,47 @@ class _ThinkingCapture:
     is what lets the session replace its buffer instead of appending, so the
     longest update seen is the whole trace. Unlike the session's copy this one
     is not truncated.
+
+    Kept per attempt. A provider that re-sends (a transient error, a reply cut
+    off at its budget) announces a `restart`. Keeping only the longest update
+    paired a discarded attempt's reasoning with the kept attempt's reply;
+    keeping only the last attempt lost the reasoning that shows how a budget
+    ran out -- and when the re-send fails too, the recorded reply is the
+    discarded attempt's. So every attempt is written, each under its own
+    heading.
     """
 
     def __init__(self, downstream: Any = None) -> None:
-        self.text = ""
+        self._attempts: list[str] = [""]
         self._downstream = downstream
 
+    @property
+    def text(self) -> str:
+        if len(self._attempts) == 1:
+            return self._attempts[0]
+        if not any(self._attempts):
+            return ""
+        total = len(self._attempts)
+        sections = [
+            f"_The provider sent this call {total} times. A reply that finished "
+            "belongs to the last attempt; a cut-off reply recorded after a "
+            "failed re-send belongs to the attempt that was cut off._"
+        ]
+        for number, body in enumerate(self._attempts, start=1):
+            state = "" if number == total else " (re-sent)"
+            sections.append(
+                f"## Attempt {number} of {total}{state}\n\n"
+                f"{body or '_No reasoning was streamed for this attempt._'}"
+            )
+        return "\n\n".join(sections)
+
     def sink(self, update: dict[str, Any]) -> None:
-        candidate = (update or {}).get("text") or ""
-        if len(candidate) > len(self.text):
-            self.text = candidate
+        update = update or {}
+        if update.get("phase") == "restart":
+            self._attempts.append("")
+        candidate = update.get("text") or ""
+        if len(candidate) > len(self._attempts[-1]):
+            self._attempts[-1] = candidate
         if self._downstream is not None:
             self._downstream(update)
 

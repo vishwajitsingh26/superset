@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import pathlib
+import re
 import uuid
 from typing import Any
 
@@ -48,15 +49,20 @@ NODE_TYPES = {
     "CHART",
     "TABS",
     "TAB",
-    "MARKDOWN",
     "HEADER",
     "DIVIDER",
 }
+# `MARKDOWN` is a real Superset node type, deliberately absent here: its own
+# rendering always wraps content in a scrolling container, which no design
+# this pipeline builds from ever draws. A `grid_text` decision is always one
+# line and always a `HEADER` node; anything longer is stage C's to build as
+# `configure: custom_text` instead, never this pipeline's to route around a
+# scrollbar for.
 # Decisions that never occupy a grid cell.
 NON_GRID_DECISIONS = {"drop"}
-# `grid_text` does occupy a cell, but as a MARKDOWN/HEADER node, which carries
-# no chart ref. Counting it among the refs a CHART node must claim failed the
-# whole layout with "ref 'c1' was never placed on the grid".
+# `grid_text` does occupy a cell, but as a HEADER node, which carries no chart
+# ref. Counting it among the refs a CHART node must claim failed the whole
+# layout with "ref 'c1' was never placed on the grid".
 NON_CHART_DECISIONS = {"grid_text"}
 
 
@@ -117,9 +123,9 @@ def build_user_prompt(
 ) -> str:
     """Only geometry and refs — deliberately no data or params."""
     # Regions stage C dropped or routed to the filter bar must not be laid out.
-    # Passing every region let stage E apply its own "header -> MARKDOWN" rule
-    # to a header C had already assigned to the dashboard title, producing a
-    # duplicate heading.
+    # A dropped header region has already been decided; showing it to stage E
+    # anyway once produced a duplicate heading built from a region nothing
+    # downstream should still be looking at.
     excluded = {
         decision.get("region_id")
         for decision in plan.get("decisions", [])
@@ -130,16 +136,30 @@ def build_user_prompt(
         for region in design_analysis.get("regions", [])
         if region.get("region_id") not in excluded
     ]
-    placements = [
-        {
+    on_grid = [
+        decision
+        for decision in plan.get("decisions", [])
+        if decision.get("decision") not in NON_GRID_DECISIONS
+    ]
+    placed = {str(decision.get("ref")) for decision in on_grid if decision.get("ref")}
+    placements: list[dict[str, Any]] = []
+    for decision in on_grid:
+        placement = {
             "ref": decision.get("ref"),
             "region_id": decision.get("region_id"),
             "slice_name": decision.get("slice_name"),
             "decision": decision.get("decision"),
         }
-        for decision in plan.get("decisions", [])
-        if decision.get("decision") not in NON_GRID_DECISIONS
-    ]
+        # The prompt's rule -- a parent's `children` get no grid node -- can
+        # only be followed if the placement says which refs those are. Only
+        # refs still on the grid are named: a dropped child has nothing to
+        # place, and a dropped parent never reaches this list, so its charts
+        # arrive as ordinary placements.
+        if hosted := [
+            str(c) for c in decision.get("children") or [] if str(c) in placed
+        ]:
+            placement["children"] = hosted
+        placements.append(placement)
     box = content_box(regions)
     payload = {
         "regions": regions,
@@ -172,6 +192,25 @@ GRID_MIN_ROW_UNITS = 5
 # A page heading needs room for a large font plus padding; the model has chosen
 # 4 (32px) for a 26px heading and clipped it.
 MIN_TEXT_HEIGHT = 8
+# A `filter`-role card's width has a floor of its own, for the same reason a
+# row's height does: rounding a design's own bbox fraction to columns can draw
+# a card narrower than the text it always renders needs, whatever the design's
+# geometry says. A date-range pill drawn at 0.145 of the page rounds to 2
+# columns -- not enough to hold "Apr 1, 2025 - Apr 30, 2025" without losing the
+# year. Unlike a chart, whose content is whatever stage D configures it to
+# show, a `filter` widget's text is a fixed shape this stage can predict a
+# floor for; no other role gets one, because nothing else is content this
+# stage knows in advance is too wide to shrink.
+GRID_MIN_FILTER_COLUMNS = 3
+# A card whose menu is hidden because it draws its own action -- most often a
+# "View all ->" link -- has to draw that action somewhere, and the only
+# somewhere left is its own body: there is no header row for it once the menu
+# it would have anchored to is gone. `CHART_HEADER_UNITS` only ever gives that
+# row's height *back* (see `strip_header_allowance`); this is its mirror,
+# adding a chrome row's worth of height back for the row the body has to spend
+# on it instead. Sized the same, because both are one chrome row, whichever
+# side of the header it ends up drawn on.
+ACTION_LINK_UNITS = CHART_HEADER_UNITS
 
 
 def ref_of(node: dict[str, Any]) -> str | None:
@@ -186,6 +225,26 @@ def ref_of(node: dict[str, Any]) -> str | None:
     return None
 
 
+def hosted_refs(plan: dict[str, Any]) -> set[str]:
+    """Refs a composing parent draws inside itself, so the grid must not.
+
+    Only a parent that is itself on the grid hosts anything. A container the
+    run gave up on -- stage C dropped it, or its plugin would not generate or
+    compile -- draws nothing, and the charts it listed are ordinary charts
+    that need a cell of their own. Reading `children` off every decision
+    deleted eight of eleven built charts from the grid as "drawn by its
+    parent", for parents that did not exist, and Superset appended them at
+    the foot of the page at its default size.
+    """
+    return {
+        str(child)
+        for decision in plan.get("decisions") or []
+        if isinstance(decision, dict)
+        and decision.get("decision") not in NON_GRID_DECISIONS
+        for child in decision.get("children") or []
+    }
+
+
 def drop_composed_children(  # noqa: C901
     position: dict[str, Any], plan: dict[str, Any]
 ) -> list[str]:
@@ -197,11 +256,7 @@ def drop_composed_children(  # noqa: C901
     eighteen charts had already been configured -- so the grid is corrected
     here rather than the run rejected.
     """
-    children = {
-        child
-        for decision in plan.get("decisions", [])
-        for child in decision.get("children") or []
-    }
+    children = hosted_refs(plan)
     if not children:
         return []
 
@@ -299,6 +354,245 @@ def strip_header_allowance(
     return notes
 
 
+def min_width_refs(
+    design_analysis: dict[str, Any], plan: dict[str, Any]
+) -> dict[str, int]:
+    """Refs that need a column floor independent of their measured bbox, and
+    how wide.
+
+    Only `filter`-role regions today -- the one documented case (a date-range
+    pill truncating its year). A chart's content is whatever stage D
+    configures it to show, which this stage never sees, so it has no basis to
+    second-guess the design's own fraction for anything else; widening a
+    heading or a KPI tile on the same theory would be a guess with no
+    evidence behind it.
+    """
+    regions = {
+        str(r.get("region_id")): r
+        for r in design_analysis.get("regions") or []
+        if isinstance(r, dict)
+    }
+    floors: dict[str, int] = {}
+    for decision in plan.get("decisions") or []:
+        if not isinstance(decision, dict):
+            continue
+        if decision.get("decision") in NON_GRID_DECISIONS:
+            continue
+        ref = decision.get("ref")
+        if not ref:
+            continue
+        region = regions.get(str(decision.get("region_id")))
+        if isinstance(region, dict) and region.get("role") == "filter":
+            floors[str(ref)] = GRID_MIN_FILTER_COLUMNS
+    return floors
+
+
+def enforce_min_width(position: dict[str, Any], floors: dict[str, int]) -> list[str]:
+    """Raise a CHART's width to its role's column floor, mechanically.
+
+    `E_layout.md` computes width as a direct fraction of the design's bbox --
+    correct for a chart, wrong for a widget whose content is fixed text a
+    narrow design draws too small for. Left to a prompt rule the model could
+    round past every time; enforced here instead.
+
+    Done a row at a time, mirroring `strip_header_allowance`: growing the
+    floored card can push its row over the grid's own 12-column ceiling, so
+    the widest other sibling gives back exactly what the floor took, the same
+    trade the prompt's own overflow rule already makes by hand.
+    """
+    if not floors:
+        return []
+    notes: list[str] = []
+    for row_id, row in position.items():
+        if not isinstance(row, dict) or row.get("type") != "ROW":
+            continue
+        charts = [
+            position[c]
+            for c in row.get("children", [])
+            if isinstance(position.get(c), dict) and position[c].get("type") == "CHART"
+        ]
+        grown: list[dict[str, Any]] = []
+        for chart in charts:
+            ref = ref_of(chart)
+            meta = chart.get("meta") or {}
+            width = meta.get("width")
+            floor = floors.get(ref) if ref is not None else None
+            if floor is None or not isinstance(width, int) or width >= floor:
+                continue
+            meta["width"] = floor
+            grown.append(chart)
+            notes.append(
+                f"{row_id}: width {width} -> {floor}, {ref!r} is a filter "
+                "and needs room for its own fixed text, not the design's "
+                "narrower fraction"
+            )
+        if not grown:
+            continue
+        total = sum((c.get("meta") or {}).get("width") or 0 for c in charts)
+        overflow = total - GRID_COLUMN_COUNT
+        if overflow > 0:
+            widest = max(
+                (c for c in charts if c not in grown),
+                key=lambda c: (c.get("meta") or {}).get("width") or 0,
+                default=None,
+            )
+            if widest is not None:
+                meta = widest["meta"]
+                reduced = max(1, (meta.get("width") or 0) - overflow)
+                notes.append(
+                    f"{row_id}: width {meta.get('width')} -> {reduced}, "
+                    "shrunk to keep the row at 12 after the filter's own floor"
+                )
+                meta["width"] = reduced
+    return notes
+
+
+def action_link_refs(design_analysis: dict[str, Any], plan: dict[str, Any]) -> set[str]:
+    """Refs whose card draws a `link` action -- e.g. "View all ->" -- with no
+    header of its own left to hold it.
+
+    Stage A's own chrome reading already answers this without asking the
+    runner's global menu setting (`menus`), which never reaches this stage:
+    the chrome resolver hides Superset's overflow menu unconditionally
+    whenever a region draws its own action, whatever that setting is -- the
+    design drew its own control, and Superset's menu would be a second one
+    sitting beside it. A `link` action is therefore always rendered inside
+    the plugin's own body, never in a header that no longer exists for it.
+    """
+    regions = {
+        str(r.get("region_id")): r
+        for r in design_analysis.get("regions") or []
+        if isinstance(r, dict)
+    }
+    refs: set[str] = set()
+    for decision in plan.get("decisions") or []:
+        if not isinstance(decision, dict):
+            continue
+        if decision.get("decision") in NON_GRID_DECISIONS:
+            continue
+        ref = decision.get("ref")
+        if not ref:
+            continue
+        region = regions.get(str(decision.get("region_id")))
+        chrome_value = region.get("chrome") if isinstance(region, dict) else None
+        if not isinstance(chrome_value, dict):
+            continue
+        actions = chrome_value.get("actions")
+        if not isinstance(actions, list):
+            continue
+        if any(isinstance(a, dict) and a.get("kind") == "link" for a in actions):
+            refs.add(str(ref))
+    return refs
+
+
+def add_action_link_allowance(position: dict[str, Any], refs: set[str]) -> list[str]:
+    """Give height back for a `link` action drawn in the body instead of a
+    header -- the mirror of `strip_header_allowance`, which only ever takes
+    height away.
+
+    Same row-at-a-time restriction and for the same reason: Superset lays a
+    row out as one band, so growing one card without its siblings agreeing
+    would trade one clipped card for a row of mismatched ones.
+    """
+    if not refs:
+        return []
+    notes: list[str] = []
+    for row_id, row in position.items():
+        if not isinstance(row, dict) or row.get("type") != "ROW":
+            continue
+        children = [
+            position[c]
+            for c in row.get("children", [])
+            if isinstance(position.get(c), dict)
+        ]
+        charts = [c for c in children if c.get("type") == "CHART"]
+        if not charts or len(charts) != len(children):
+            continue
+        if not all(ref_of(chart) in refs for chart in charts):
+            continue
+        heights = {
+            chart["meta"].get("height")
+            for chart in charts
+            if isinstance(chart.get("meta"), dict)
+        }
+        if len(heights) != 1 or not isinstance(next(iter(heights)), int):
+            continue
+        height = next(iter(heights))
+        grown = height + ACTION_LINK_UNITS
+        for chart in charts:
+            chart["meta"]["height"] = grown
+        notes.append(
+            f"{row_id}: height {height} -> {grown}, a link action is drawn "
+            "in this row's body with no header left to hold it"
+        )
+    return notes
+
+
+_MARKDOWN_EMPHASIS = re.compile(r"^[*_#\s]+|[*_\s]+$")
+
+
+def _first_line(text: str) -> str:
+    """`text`'s first non-blank line, its markdown emphasis stripped.
+
+    A `grid_text` decision's `text` is markdown -- `"**Title**\n\nSubtitle."`
+    -- and a placed node's own `meta.text` carries only the plain title. This
+    is the plain form of that first line, so the two can be matched by content
+    rather than by a ref neither node type carries.
+    """
+    for line in text.splitlines():
+        if stripped := _MARKDOWN_EMPHASIS.sub("", line).strip():
+            return stripped
+    return ""
+
+
+def _reject_overlong_grid_text(
+    position: dict[str, Any], plan: dict[str, Any]
+) -> list[str]:
+    """Flag a `grid_text` decision that reached layout carrying more than one
+    line -- and make sure the `HEADER` node built from it never grows a
+    second line it has nowhere to put.
+
+    Stage C's own validator is supposed to catch this before a plan ever gets
+    here: a heading with a subtitle is `configure: custom_text`, not
+    `grid_text`, precisely because neither native node this pipeline is
+    willing to build can hold it -- `HEADER` takes one line, and `MARKDOWN`
+    takes more but always renders inside a scrolling container no design
+    draws. This is the fallback for a plan that slipped through anyway: it
+    does not invent a second node type to work around the gap, it truncates
+    to the title alone (a `HEADER` node can always hold at least that) and
+    says so, the same way a lost section is recorded rather than silently
+    dropped.
+    """
+    notes: list[str] = []
+    for decision in plan.get("decisions") or []:
+        if not isinstance(decision, dict):
+            continue
+        if decision.get("decision") not in NON_CHART_DECISIONS:
+            continue
+        text = str(decision.get("text") or "")
+        if "\n" not in text.strip():
+            continue
+        heading = _first_line(text)
+        if not heading:
+            continue
+        for node_id, node in position.items():
+            if not isinstance(node, dict) or node.get("type") != "HEADER":
+                continue
+            meta = node.get("meta")
+            if not isinstance(meta, dict):
+                continue
+            if _first_line(str(meta.get("text") or "")) != heading:
+                continue
+            meta["text"] = heading
+            notes.append(
+                f"{node_id}: kept to its title alone -- {decision.get('region_id')} "
+                "carries more than one line, which belongs in a "
+                "configure: custom_text decision, not grid_text"
+            )
+            break
+    return notes
+
+
 def normalise(position: dict[str, Any]) -> list[str]:
     """Make the grid self-consistent, in place, and report what changed.
 
@@ -322,7 +616,7 @@ def normalise(position: dict[str, Any]) -> list[str]:
 
         for node in children:
             meta = node.setdefault("meta", {})
-            if node.get("type") in {"MARKDOWN", "HEADER"}:
+            if node.get("type") == "HEADER":
                 if (meta.get("height") or 0) < MIN_TEXT_HEIGHT:
                     notes.append(
                         f"{row_id}: heading height "
@@ -390,7 +684,13 @@ def run(
     )
     layout = extract_json(response.text)
     position = layout.get("position_json") or {}
-    corrections = drop_composed_children(position, plan) + normalise(position)
+    corrections = (
+        drop_composed_children(position, plan)
+        + _reject_overlong_grid_text(position, plan)
+        + enforce_min_width(position, min_width_refs(design_analysis, plan))
+        + normalise(position)
+        + add_action_link_allowance(position, action_link_refs(design_analysis, plan))
+    )
     if adjustments := corrections:
         layout.setdefault("adjustments", []).extend(
             {"row_id": note.split(":")[0], "issue": note, "resolution": "normalised"}
@@ -425,11 +725,7 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
     # of their own. This is keyed on `children` rather than on `decision ==
     # "wrap"` because a generated container plugin composes exactly the same
     # way; keying on the decision word laid its children out twice.
-    child_refs = {
-        child
-        for decision in plan.get("decisions", [])
-        for child in decision.get("children") or []
-    }
+    child_refs = hosted_refs(plan)
     expected_refs -= child_refs
 
     placed_refs: set[str] = set()
@@ -492,7 +788,84 @@ def validate(layout: dict[str, Any], plan: dict[str, Any]) -> list[str]:  # noqa
     if stranded:
         problems.append(f"stage reported unplaced: {stranded}")
 
+    problems.extend(_text_content_problems(position, plan))
+    problems.extend(_row_underflow_problems(position, layout))
+
     return problems
+
+
+# How far under 12 a row's widths may fall before it is treated as unfinished
+# arithmetic rather than a deliberate gap. Matches `E_layout.md`'s own rule --
+# "if it underflows by 1-2, widen the widest child" -- so a check and the
+# prompt it backs up cannot silently drift apart.
+ROW_UNDERFLOW_MARGIN = 2
+
+
+def _row_underflow_problems(
+    position: dict[str, Any], layout: dict[str, Any]
+) -> list[str]:
+    """A row left short of the grid's 12 columns, with nothing on record
+    saying why.
+
+    `E_layout.md` already tells the model to widen the widest child when a
+    row underflows by 1-2 columns -- but a prompt rule is not a check, and a
+    real run left a row at 5 of 12 with the underflow reasoned away as "the
+    design's intent", while the actual page drew the item left-aligned
+    instead of anchored where the design placed it. `adjustments` is where a
+    genuine, deliberate gap belongs on record -- the same place an overflow
+    shrink is recorded; a row underflowing with no entry there is not a
+    documented design choice, it is arithmetic nobody finished. This is the
+    same single severity tier every other check in this function uses: a
+    problem fails the run, so a real underflow either gets fixed or gets
+    written down as `adjustments` say why.
+    """
+    justified = {
+        str(entry.get("row_id"))
+        for entry in layout.get("adjustments") or []
+        if isinstance(entry, dict)
+    }
+    problems: list[str] = []
+    for node_id, node in position.items():
+        if not isinstance(node, dict) or node.get("type") != "ROW":
+            continue
+        children = node.get("children") or []
+        if not children:
+            continue
+        total = sum(
+            ((position.get(c) or {}).get("meta") or {}).get("width") or 0
+            for c in children
+        )
+        gap = GRID_COLUMN_COUNT - total
+        if 1 <= gap <= ROW_UNDERFLOW_MARGIN and node_id not in justified:
+            problems.append(
+                f"{node_id}: child widths sum to {total}, {gap} short of "
+                f"{GRID_COLUMN_COUNT} with no adjustment on record -- widen "
+                "the widest child or record why the gap is deliberate"
+            )
+    return problems
+
+
+def _text_content_problems(position: dict[str, Any], plan: dict[str, Any]) -> list[str]:
+    """A `grid_text` decision carrying more than the one line a `HEADER` node
+    can hold.
+
+    Stage C's own validator is supposed to reject this before it ever reaches
+    layout -- a heading with a subtitle is `configure: custom_text`, never
+    `grid_text` -- so a decision still shaped this way here is a plan that
+    got through anyway. `_reject_overlong_grid_text` has already truncated
+    whatever `HEADER` node it built down to the title alone rather than
+    inventing a second node type to hold the rest, so the fault to report is
+    the decision itself, not a node that failed to reproduce it.
+    """
+    return [
+        f"{decision.get('region_id')}: grid_text carries more than one line "
+        "-- a HEADER node can only hold the title; this needs "
+        "configure: custom_text instead"
+        for decision in plan.get("decisions") or []
+        if isinstance(decision, dict)
+        and decision.get("decision") in NON_CHART_DECISIONS
+        and "\n" in str(decision.get("text") or "").strip()
+    ]
 
 
 def ensure_uuids(position: dict[str, Any]) -> dict[str, Any]:

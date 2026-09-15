@@ -34,6 +34,88 @@ class LLMTimeoutError(LLMError):
     """Raised when a provider exceeds its configured timeout."""
 
 
+class LLMTruncatedError(LLMError):
+    """Raised when a completion stopped at its output-token budget.
+
+    The partial reply is usually JSON cut off mid-object. Handed on as a normal
+    response it surfaces downstream as a parse error: the stage blames the
+    model's formatting, the retry logic sees a bad answer rather than a spent
+    budget, and nothing records that the budget was the problem. Raised as its
+    own type, the caller can tell the two apart -- and knows that sending the
+    identical request again will most likely be cut off at the same place.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        max_tokens: int | None,
+        output_tokens: int | None = None,
+        thinking_tokens: int | None = None,
+        stop_reason: str = "max_tokens",
+        partial_text: str = "",
+        attempts: list[dict[str, Any]] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.max_tokens = max_tokens
+        self.output_tokens = output_tokens
+        self.thinking_tokens = thinking_tokens
+        self.stop_reason = stop_reason
+        self.partial_text = partial_text
+        # Usage of every attempt that was cut off, oldest first. A truncated
+        # reply is billed in full, so this is what keeps it on the record.
+        self.attempts = attempts or []
+
+
+class LLMMalformedReplyError(LLMError):
+    """Raised when a completion finished normally but does not parse as JSON.
+
+    A sibling of `LLMTruncatedError`, not a subclass: the two look alike from
+    the caller's side (both end in a stage failing to get usable JSON) but
+    call for different retries. A truncated reply's fix is a smaller budget
+    for reasoning -- a lower `effort` -- because reasoning is what filled the
+    budget it ran out of. A malformed-but-complete reply was never a budget
+    problem, so retrying it at lower effort is a guess with no evidence behind
+    it; it gets the same plain retry any other transient `LLMError` gets,
+    same effort, and nothing more.
+    """
+
+
+class LLMMaxTurnsError(LLMError):
+    """Raised when an agent-loop provider exhausts its turn budget unanswered.
+
+    Another sibling of `LLMTruncatedError`, not a subclass: both mean the
+    model was cut off before it finished, but the lever that fixes each is
+    different. A truncated reply ran out of *output* budget mid-answer --
+    reasoning is what filled it, so a lower `effort` is the fix. This is cut
+    off before it ever typed an answer, having spent its turns on tool calls
+    instead -- for a stage given design images and only the `Read` tool, that
+    is almost always opening them -- so a lower `effort` changes nothing and
+    an identical retry burns the same budget on the same reads and fails the
+    same way. What is left to try is a larger turn budget.
+    """
+
+    def __init__(self, message: str, *, max_turns: int | None = None) -> None:
+        super().__init__(message)
+        self.max_turns = max_turns
+
+
+# Effort levels in increasing order of how hard the model thinks.
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def lower_effort(effort: str) -> str | None:
+    """The next effort level down, or None at the bottom or for an unknown one.
+
+    Reasoning is the part of an output budget that grows with effort, so this
+    is the lever left once a reply is cut off at the largest budget allowed.
+    """
+    if effort not in EFFORT_LEVELS:
+        return None
+    index = EFFORT_LEVELS.index(effort)
+    return EFFORT_LEVELS[index - 1] if index else None
+
+
 @dataclass
 class LLMResponse:
     """A single completion plus whatever telemetry the provider exposes."""
@@ -43,6 +125,15 @@ class LLMResponse:
     usage: dict[str, Any] = field(default_factory=dict)
     session_id: str | None = None
     provider: str = ""
+    # Every tool call an agent-loop provider made getting to this answer, in
+    # order: {"turn": int, "tool": str, "input": dict, "result_is_error":
+    # bool | None, "result_preview": str}. Empty for a provider with no tool
+    # loop (anthropic_api, bedrock). This is what turns "the call took 14
+    # turns" into "it re-read the same image four times" -- a turn count
+    # alone cannot tell a stage's genuine need for more turns apart from one
+    # thrashing on the same call, and deciding where turn budgets actually
+    # need raising (or a prompt needs fixing instead) needs to see which.
+    tool_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 class LLMProvider(Protocol):

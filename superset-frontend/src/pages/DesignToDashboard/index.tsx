@@ -16,11 +16,15 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '@apache-superset/core/translation';
 import { styled } from '@apache-superset/core/theme';
 import ChatPanel from 'src/features/designToDashboard/ChatPanel';
-import { useDesignToDashboard } from 'src/features/designToDashboard/useDesignToDashboard';
+import {
+  assetUrl,
+  Region,
+  useDesignToDashboard,
+} from 'src/features/designToDashboard/useDesignToDashboard';
 
 /**
  * Design-to-Dashboard page shell.
@@ -98,12 +102,78 @@ const Placeholder = styled.div`
 
 const PreviewImage = styled.img`
   ${({ theme }) => `
+    display: block;
     width: 100%;
     height: auto;
     border: 1px solid ${theme.colorBorder};
     border-radius: ${theme.borderRadius}px;
   `}
 `;
+
+/**
+ * Positions the region overlay against the rendered image rather than its
+ * natural size -- `PreviewImage` is scaled to the pane's width, and the
+ * boxes are drawn in the same percentage units `bbox` already uses, so they
+ * track that scaling for free.
+ */
+const PreviewFrame = styled.div`
+  position: relative;
+  display: inline-block;
+  width: 100%;
+`;
+
+const RegionOverlay = styled.div`
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+`;
+
+const RegionBox = styled.div`
+  ${({ theme }) => `
+    position: absolute;
+    box-sizing: border-box;
+    border: 2px solid ${theme.colorError};
+  `}
+`;
+
+const RegionLabel = styled.span`
+  ${({ theme }) => `
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform: translateY(-100%);
+    max-width: 100%;
+    padding: 0 ${theme.sizeUnit}px;
+    background-color: ${theme.colorError};
+    color: ${theme.colorWhite};
+    font-size: ${theme.fontSizeSM}px;
+    line-height: ${theme.sizeUnit * 4}px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  `}
+`;
+
+/** What a region shows in its tag: the title a human would recognise it by,
+ * falling back to its id -- filters and icon-only controls are often read
+ * with no title at all. */
+export function regionLabel(region: Region): string {
+  return region.title?.trim() || region.region_id || t('Region');
+}
+
+/** A region known to have a `bbox` -- the box's position/size need never be
+ * re-checked once a region has passed through `regionsForPreview`. */
+export type PositionedRegion = Region & { bbox: NonNullable<Region['bbox']> };
+
+/** Stage A can read more than one uploaded image; the preview only ever
+ * shows the first, so only its regions belong on top of it. */
+export function regionsForPreview(regions: Region[]): PositionedRegion[] {
+  return regions.filter(
+    (region): region is PositionedRegion =>
+      (region.source_image ?? 0) === 0 && Boolean(region.bbox),
+  );
+}
 
 export default function DesignToDashboard() {
   const {
@@ -115,11 +185,32 @@ export default function DesignToDashboard() {
     thinkingStage,
     pending,
     reply,
+    sessionId,
+    imageCount,
     start,
     reset,
   } = useDesignToDashboard();
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // The tab that just chose a file has it as a blob URL, instantly and with
+  // no round trip. A tab that reconnects to an existing session -- a reload,
+  // or the link shared -- never had that `File` object, only the id in the
+  // address bar: `imageCount` (from the session itself) says whether the
+  // server now has something to draw, and `assetUrl` is where to draw it
+  // from. Either source ends up in the same place both panes read from.
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const previewUrl =
+    localPreviewUrl ??
+    (sessionId && imageCount > 0 ? assetUrl(sessionId) : null);
   const [requirement, setRequirement] = useState('');
+
+  // Stage A's own event, not the running state -- its regions stay on
+  // screen through every later stage rather than disappearing once A is no
+  // longer the one in flight.
+  const regions = useMemo(() => {
+    const read = [...events]
+      .reverse()
+      .find(event => event.type === 'stage_complete' && event.stage === 'A');
+    return regionsForPreview(read?.regions ?? []);
+  }, [events]);
 
   // Object URLs leak until revoked. The latest one is mirrored into a ref so
   // unmount cleanup does not have to depend on render state.
@@ -129,7 +220,7 @@ export default function DesignToDashboard() {
     if (previewRef.current) URL.revokeObjectURL(previewRef.current);
     const next = file ? URL.createObjectURL(file) : null;
     previewRef.current = next;
-    setPreviewUrl(next);
+    setLocalPreviewUrl(next);
   }, []);
 
   useEffect(
@@ -183,7 +274,29 @@ export default function DesignToDashboard() {
         </Pane>
         <Pane data-test="d2d-preview-pane">
           {previewUrl ? (
-            <PreviewImage src={previewUrl} alt={t('Uploaded design')} />
+            <PreviewFrame>
+              <PreviewImage src={previewUrl} alt={t('Uploaded design')} />
+              {regions.length > 0 && (
+                <RegionOverlay data-test="d2d-region-overlay">
+                  {regions.map(region => {
+                    const { x, y, w, h } = region.bbox;
+                    return (
+                      <RegionBox
+                        key={region.region_id ?? `${x}-${y}-${w}-${h}`}
+                        style={{
+                          left: `${x * 100}%`,
+                          top: `${y * 100}%`,
+                          width: `${w * 100}%`,
+                          height: `${h * 100}%`,
+                        }}
+                      >
+                        <RegionLabel>{regionLabel(region)}</RegionLabel>
+                      </RegionBox>
+                    );
+                  })}
+                </RegionOverlay>
+              )}
+            </PreviewFrame>
           ) : (
             <Placeholder>
               {t('Your design will appear here once you choose a file.')}

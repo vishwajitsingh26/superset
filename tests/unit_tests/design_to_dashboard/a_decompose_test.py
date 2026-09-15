@@ -191,7 +191,17 @@ def test_a_leaf_frames_nothing(analysis: dict[str, Any]) -> None:
 def test_a_tabbed_wrapper_is_accepted(analysis: dict[str, Any]) -> None:
     """The card the old `composition` enum had no honest value for."""
     analysis["regions"][0]["frame"] = "tabs"
+    analysis["regions"][0]["frame_why"] = "each tab queries a different account"
     assert validate(analysis, KNOWN_VIZ) == []
+
+
+def test_a_tabbed_wrapper_without_frame_why_is_rejected(
+    analysis: dict[str, Any],
+) -> None:
+    """`tabs`/`toggle` must say what differs between children, not just assert it."""
+    analysis["regions"][0]["frame"] = "tabs"
+    problems = validate(analysis, KNOWN_VIZ)
+    assert any("frame_why" in problem for problem in problems)
 
 
 # --- geometry is the unit square --------------------------------------------
@@ -219,6 +229,15 @@ def test_a_child_must_sit_inside_its_parent(analysis: dict[str, Any]) -> None:
     """The check that inverted: containment used to be the failure."""
     analysis["regions"][1]["bbox"] = {"x": 0.02, "y": 0.10, "w": 0.14, "h": 0.03}
     assert any("not inside it" in p for p in validate(analysis, KNOWN_VIZ))
+
+
+def test_siblings_should_not_draw_over_each_other(analysis: dict[str, Any]) -> None:
+    """Containment alone misses a block of siblings that drifted together."""
+    # Region 3 (GCP Coverage) moved onto region 2 (AWS Coverage)'s box -- both
+    # still sit inside their parent, so only a sibling check catches this.
+    analysis["regions"][2]["bbox"] = {"x": 0.03, "y": 0.665, "w": 0.14, "h": 0.03}
+    problems = validate(analysis, KNOWN_VIZ)
+    assert any("overlap" in p for p in problems)
 
 
 def test_two_parents_cannot_claim_one_child(analysis: dict[str, Any]) -> None:
@@ -439,3 +458,219 @@ def test_a_reading_that_stays_broken_is_returned_for_the_caller_to_reject(
     result, _ = run(provider, "a dashboard", [], _prompts_dir())
 
     assert validate(result) != [], "the caller still fails the run"
+
+
+# --- a repair pass cannot silently drift a region it was not asked to fix ---
+
+
+def test_regions_named_in_reads_the_numbers_a_problem_was_about() -> None:
+    from superset.design_to_dashboard.stages.a_decompose import _regions_named_in
+
+    problems = [
+        "region 4 (Coming Soon): chrome.actions[0] needs a `kind`",
+        "duplicate n: 9",
+    ]
+    assert _regions_named_in(problems) == {4}
+
+
+def test_restore_untouched_chrome_reverts_a_region_not_named() -> None:
+    from superset.design_to_dashboard.stages.a_decompose import (
+        _restore_untouched_chrome,
+    )
+
+    previous: list[dict[str, Any]] = [
+        {"n": 4, "chrome": {"surface": "bare", "title": "none"}}
+    ]
+    regenerated: list[dict[str, Any]] = [
+        {"n": 4, "chrome": {"surface": "card", "title": "none"}}
+    ]
+
+    notes = _restore_untouched_chrome(regenerated, previous, named=set())
+
+    assert notes
+    assert regenerated[0]["chrome"]["surface"] == "bare"
+
+
+def test_restore_untouched_chrome_leaves_a_named_region_alone() -> None:
+    """A region the repair was actually asked to fix keeps its new reading."""
+    from superset.design_to_dashboard.stages.a_decompose import (
+        _restore_untouched_chrome,
+    )
+
+    previous: list[dict[str, Any]] = [{"n": 4, "chrome": {"surface": "bare"}}]
+    regenerated: list[dict[str, Any]] = [{"n": 4, "chrome": {"surface": "card"}}]
+
+    notes = _restore_untouched_chrome(regenerated, previous, named={4})
+
+    assert notes == []
+    assert regenerated[0]["chrome"]["surface"] == "card"
+
+
+def test_a_retry_does_not_regress_an_unrelated_regions_chrome(
+    analysis: dict[str, Any],
+) -> None:
+    """The bug this guards: a repair pass fixing region 4's chrome.actions
+    silently flipped region 6's chrome.surface from bare to card in the same
+    reply, and nothing caught it because the reply is a whole new analysis,
+    not a patch."""
+    from superset.design_to_dashboard.stages.a_decompose import run
+
+    first = copy.deepcopy(analysis)
+    first["regions"][3]["chrome"] = {
+        "surface": "bare",
+        "title": "none",
+        "actions": [{"foo": "bar"}],  # missing `kind` -- the real defect
+    }
+    first["regions"][5]["chrome"] = {"surface": "bare", "title": "none"}
+
+    second = copy.deepcopy(analysis)
+    second["regions"][3]["chrome"] = {"surface": "bare", "title": "none"}
+    # Unasked-for drift: region 6 was never named in the repair note.
+    second["regions"][5]["chrome"] = {"surface": "card", "title": "none"}
+
+    provider = _Provider(first, second)
+    result, _ = run(provider, "a dashboard", [], _prompts_dir())
+
+    fixed = next(r for r in result["regions"] if r["n"] == 6)
+    assert fixed["chrome"]["surface"] == "bare"
+
+
+# --- an ambiguity the gate already asked about and the user skipped ---------
+
+
+def _ambiguity_question(region_id: str) -> dict[str, Any]:
+    from superset.design_to_dashboard.gate_a import GAP_AMBIGUITY
+
+    return {
+        "id": f"q:{region_id}:ambiguity",
+        "region_id": region_id,
+        "gap": GAP_AMBIGUITY,
+        "text": "Stage A flagged an ambiguity here and guessed: ... Is that "
+        "reading right?",
+    }
+
+
+def test_an_unanswered_ambiguity_question_is_flagged() -> None:
+    """The gate asked, the user said nothing -- indistinguishable from
+    "never asked" unless something marks it."""
+    from superset.design_to_dashboard.stages.a_decompose import (
+        _mark_unanswered_ambiguities,
+        UNANSWERED_AMBIGUITY_PREFIX,
+    )
+
+    regions = [{"region_id": "r02_aws_coverage", "ambiguity": "could be % or count"}]
+    questions = [_ambiguity_question("r02_aws_coverage")]
+    _mark_unanswered_ambiguities(regions, questions, answers={})
+
+    assert regions[0]["ambiguity"] == (
+        UNANSWERED_AMBIGUITY_PREFIX + "could be % or count"
+    )
+
+
+def test_an_answered_ambiguity_question_is_left_alone() -> None:
+    """`revise`'s own instructions clear an answered ambiguity to `null`; this
+    only has to leave alone the case where the model did clear it, or left it
+    for a genuine reason after seeing the answer."""
+    from superset.design_to_dashboard.stages.a_decompose import (
+        _mark_unanswered_ambiguities,
+    )
+
+    regions = [{"region_id": "r02_aws_coverage", "ambiguity": "could be % or count"}]
+    questions = [_ambiguity_question("r02_aws_coverage")]
+    answers = {"q:r02_aws_coverage:ambiguity": "It's a percentage"}
+    _mark_unanswered_ambiguities(regions, questions, answers)
+
+    assert regions[0]["ambiguity"] == "could be % or count"
+
+
+def test_a_region_never_asked_about_is_left_alone() -> None:
+    from superset.design_to_dashboard.stages.a_decompose import (
+        _mark_unanswered_ambiguities,
+    )
+
+    regions = [{"region_id": "r05_table", "ambiguity": "could be a table or a list"}]
+    _mark_unanswered_ambiguities(regions, questions=[], answers={})
+
+    assert regions[0]["ambiguity"] == "could be a table or a list"
+
+
+def test_marking_is_not_applied_twice() -> None:
+    """A region already carrying the prefix (a second revision pass over the
+    same unanswered ambiguity) is not double-prefixed."""
+    from superset.design_to_dashboard.stages.a_decompose import (
+        _mark_unanswered_ambiguities,
+        UNANSWERED_AMBIGUITY_PREFIX,
+    )
+
+    already = UNANSWERED_AMBIGUITY_PREFIX + "could be % or count"
+    regions = [{"region_id": "r02_aws_coverage", "ambiguity": already}]
+    questions = [_ambiguity_question("r02_aws_coverage")]
+    _mark_unanswered_ambiguities(regions, questions, answers={})
+
+    assert regions[0]["ambiguity"] == already
+
+
+def test_revise_marks_an_unanswered_ambiguity_in_the_returned_reading(
+    analysis: dict[str, Any],
+) -> None:
+    """End to end: `revise()` itself applies the mark to what it returns, not
+    just the helper in isolation."""
+    from superset.design_to_dashboard.stages.a_decompose import revise
+
+    with_id = assign_region_ids(copy.deepcopy(analysis))
+    region_id = with_id["regions"][1]["region_id"]  # r02_aws_coverage
+    reply = copy.deepcopy(analysis)
+    reply["regions"][1]["ambiguity"] = "could be % or count"
+    provider = _Provider(reply)
+
+    questions = [_ambiguity_question(region_id)]
+    result, _ = revise(
+        provider, with_id, questions, answers={}, prompts_dir=_prompts_dir()
+    )
+
+    assert result["regions"][1]["ambiguity"].startswith(
+        "(asked at review, left unanswered)"
+    )
+
+
+# --- a region's `tab` against `global.tabs` ----------------------------------
+
+
+def test_a_design_with_no_tabs_flags_nothing(analysis: dict[str, Any]) -> None:
+    """No `image_set.kind: tabs` and no `global.tabs` -- a single-page design
+    has nothing for this check to look at."""
+    assert validate(analysis) == []
+
+
+def test_a_region_missing_tab_is_flagged_when_the_design_has_tabs(
+    analysis: dict[str, Any],
+) -> None:
+    analysis["global"]["tabs"] = ["Overview", "Detail"]
+    for region in analysis["regions"]:
+        region["tab"] = "Overview"
+    del analysis["regions"][0]["tab"]
+    assert any("no tab set" in p for p in validate(analysis))
+
+
+def test_a_tab_not_in_global_tabs_is_flagged(analysis: dict[str, Any]) -> None:
+    analysis["global"]["tabs"] = ["Overview", "Detail"]
+    for region in analysis["regions"]:
+        region["tab"] = "Overview"
+    analysis["regions"][0]["tab"] = "Somewhere Else"
+    assert any("does not match any label" in p for p in validate(analysis))
+
+
+def test_consistent_tabs_are_not_flagged(analysis: dict[str, Any]) -> None:
+    analysis["global"]["tabs"] = ["Overview", "Detail"]
+    for region in analysis["regions"]:
+        region["tab"] = "Overview"
+    assert validate(analysis) == []
+
+
+def test_image_set_kind_tabs_alone_is_enough_to_check(
+    analysis: dict[str, Any],
+) -> None:
+    """`global.tabs` might be temporarily empty mid-repair; the model's own
+    verdict in `image_set.kind` is reason enough on its own to check."""
+    analysis["global"]["image_set"] = {"kind": "tabs"}
+    assert any("no tab set" in p for p in validate(analysis))

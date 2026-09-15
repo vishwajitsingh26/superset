@@ -40,6 +40,7 @@ from superset.design_to_dashboard import (
 
 if TYPE_CHECKING:
     from superset.design_to_dashboard.registry import Registry
+    from superset.design_to_dashboard.stages.d_configure import ChartSpecResult
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,15 @@ def _done_label(checks: Any, visual: Any) -> str:
     reason nobody reads the body.
     """
     caveats = []
-    broken = [c for c in getattr(checks, "charts", []) if not c.ok]
+    charts = getattr(checks, "charts", [])
+    broken = [c for c in charts if not c.ok]
     if broken:
-        caveats.append(f"{len(broken)} of {len(checks.charts)} charts not right")
+        caveats.append(f"{len(broken)} of {len(charts)} charts not right")
+    # A custom plugin the data API cannot query and no browser rendered is not
+    # known to work; counted silently among the working, the headline claims
+    # more than the run found out.
+    if unchecked := [c for c in charts if c.ok and not getattr(c, "checked", True)]:
+        caveats.append(f"{len(unchecked)} of {len(charts)} charts not checked")
     if visual.blocked:
         caveats.append("could not be compared with your design")
     elif visual.verdict and visual.verdict not in {"pass", "unknown"}:
@@ -128,119 +135,423 @@ def _plugins_in_errors(
     return blamed
 
 
+# What a section the run gave up on is marked. Written only through
+# `_drop_decision`, so no site can mark a drop and forget what it hosted.
+DROPPED = "drop"
+
+
+def _add_loss(decision: dict[str, Any], text: str) -> None:
+    """Append to a decision's `fidelity_loss` without losing the reason it has."""
+    existing = decision.get("fidelity_loss")
+    decision["fidelity_loss"] = f"{existing}; {text}" if existing else text
+
+
+def _released_note(refs: list[str]) -> str:
+    return (
+        f"the chart(s) it held ({', '.join(refs)}) are laid out on the grid on "
+        "their own"
+    )
+
+
+def release_dropped_children(decisions: list[dict[str, Any]]) -> list[str]:  # noqa: C901
+    """Undo every hosting relation a dropped decision is part of, in place.
+
+    `children` is how every later stage learns a chart is drawn inside a
+    parent rather than on the grid: stage E removes its grid node, the chrome
+    pass skips its holder, stage D requires the parent to reference it. A
+    dropped parent draws nothing, so what it listed is hosted by nobody --
+    left in place, the list deleted eight of eleven built charts from the
+    layout as "drawn by its parent". The other direction matters as much: a
+    live parent still naming a dropped child is asked to render a chart that
+    never gets an id.
+
+    A live parent left with no children stays live. A generated container
+    draws its own title, value and caption from controls of its own, and
+    stage D configures it with no chart ids; dropping it would take that
+    header with the cards it lost. What it lost is recorded in its
+    `fidelity_loss` only: stage D is handed the whole decision, and a list of
+    refs there reads as charts to reference. The loop repeats until nothing
+    changes, since a note correction can follow a later drop.
+
+    What a dropped parent released is kept on it (`released_children`), so a
+    later drop of one of those charts -- in the same batch or a later one --
+    corrects the note instead of leaving it promising a chart on the grid that
+    is not there.
+
+    Idempotent, so it runs after every drop and once more before the stages
+    that read `children` -- which also covers a drop stage C wrote itself and
+    a plan restored from an earlier run.
+    """
+    notes: list[str] = []
+    changed = True
+    while changed:
+        changed = False
+        dropped = {
+            str(d.get("ref"))
+            for d in decisions
+            if isinstance(d, dict) and d.get("decision") == DROPPED and d.get("ref")
+        }
+        for decision in decisions:
+            if not isinstance(decision, dict):
+                continue
+            region_id = decision.get("region_id")
+            if decision.get("decision") == DROPPED:
+                changed |= _correct_released(decision, dropped)
+                if not decision.get("children"):
+                    continue
+                children = [str(c) for c in decision.pop("children")]
+                if released := [c for c in children if c not in dropped]:
+                    decision["released_children"] = released
+                    _add_loss(decision, _released_note(released))
+                    notes.append(f"{region_id}: dropped, so {released} go on the grid")
+                changed = True
+                continue
+            if not decision.get("children"):
+                continue
+            children = list(decision["children"])
+            if not (gone := [str(c) for c in children if str(c) in dropped]):
+                continue
+            decision["children"] = [c for c in children if str(c) not in dropped]
+            _add_loss(
+                decision,
+                f"it no longer holds {', '.join(gone)}, which could not be built",
+            )
+            notes.append(f"{region_id}: no longer hosts dropped {gone}")
+            if not decision["children"]:
+                del decision["children"]
+                _add_loss(
+                    decision,
+                    "every chart it held is missing, so it draws only what it "
+                    "renders itself",
+                )
+                notes.append(f"{region_id}: kept with none of the charts it held")
+            changed = True
+    return notes
+
+
+def _correct_released(decision: dict[str, Any], dropped: set[str]) -> bool:
+    """Take charts dropped since from a dropped parent's released list and note."""
+    released = decision.get("released_children") or []
+    if not (gone := [ref for ref in released if ref in dropped]):
+        return False
+    remaining = [ref for ref in released if ref not in dropped]
+    old_note = _released_note(released)
+    loss = str(decision.get("fidelity_loss") or "")
+    if remaining:
+        decision["released_children"] = remaining
+        decision["fidelity_loss"] = loss.replace(old_note, _released_note(remaining))
+    else:
+        del decision["released_children"]
+        decision["fidelity_loss"] = (
+            loss.replace(f"; {old_note}", "").replace(old_note, "").strip("; ")
+        )
+    logger.info("%s: released %s were dropped as well", decision.get("region_id"), gone)
+    return True
+
+
+def _drop_decision(
+    decision: dict[str, Any], decisions: list[dict[str, Any]], reason: str
+) -> None:
+    """Mark a section as missing, and release whatever it hosted.
+
+    A decision already dropped keeps the reason it has: the sweep drops a
+    container whose charts all failed, and its own plugin failing afterwards
+    changes nothing about why the section is missing.
+    """
+    if decision.get("decision") == DROPPED:
+        return
+    decision["decision"] = DROPPED
+    decision["fidelity_loss"] = reason
+    if notes := release_dropped_children(decisions):
+        logger.info("released hosted charts: %s", "; ".join(notes))
+
+
+def drop_unconfigured_parents(
+    charts: list[ChartSpecResult], decisions: list[dict[str, Any]]
+) -> list[str]:
+    """Drop every parent stage D gave up on, and release what it hosted.
+
+    A chart stage D could not configure -- a failed call, an unparseable
+    answer, a control panel that would not load, or a chart left out because
+    it would throw -- is skipped by the applier. A parent skipped that way
+    still listed its children, so stage E removed their grid nodes as drawn
+    inside it: the charts were created and placed nowhere, and Superset
+    appended them at the foot of the page at its default size. Dropped here,
+    before stage E, its children are ordinary charts on the grid.
+
+    A child configured as hosted was never left out, because its parent's
+    params named it. Released, nothing names it, so one that would throw is
+    left out here. That can leave out a parent in turn, so this repeats until
+    nothing changes.
+    """
+    from superset.design_to_dashboard.stages.e_layout import hosted_refs
+
+    by_ref = {
+        str(d.get("ref")): d for d in decisions if isinstance(d, dict) and d.get("ref")
+    }
+    notes: list[str] = []
+    changed = True
+    while changed:
+        changed = False
+        hosted = hosted_refs({"decisions": decisions})
+        for chart in charts:
+            decision = by_ref.get(str(chart.ref))
+            if decision is None or decision.get("decision") == DROPPED:
+                continue
+            if chart.error is None and chart.leave_out and chart.ref not in hosted:
+                chart.error = chart.leave_out
+                notes.append(f"{chart.ref}: no longer hosted, so left out")
+                changed = True
+            if chart.error and decision.get("children"):
+                _drop_decision(
+                    decision,
+                    decisions,
+                    "stage D could not configure it, so this section is "
+                    f"missing: {chart.error[:200]}",
+                )
+                notes.append(f"{chart.ref}: dropped, stage D could not configure it")
+                changed = True
+    return notes
+
+
+def resolve_filter_scope(
+    session: Any,
+    plan: dict[str, Any],
+    chart_specs: list[dict[str, Any]],
+    design_analysis: dict[str, Any] | None,
+) -> str:
+    """Ask the one question `filter_scope` exists to ask, if this design raises it.
+
+    Stage D is the earliest point the ambiguity can even be seen: it takes the
+    plan's filter decisions (does the page have a picker at all) and the
+    params stage D just wrote (do any charts beside it draw a trend), and
+    neither is available before D runs. That is also why this is not folded
+    into stage C's own question round -- C is asked and re-planned long
+    before D's charts exist to compare against.
+
+    Most designs never reach the second `if`: `filter_scope.question` returns
+    `None` the moment there is no picker, or no trend chart for it to
+    disagree with, and this hands back the module's own default unasked.
+    """
+    from superset.design_to_dashboard import filter_scope, questions
+    from superset.design_to_dashboard.stages import c_resolve
+
+    asked = filter_scope.question(plan, chart_specs, design_analysis)
+    if asked is None:
+        return filter_scope.SCOPE_EXCEPT_TRENDS
+    merged = {"questions": [asked]}
+    questions.normalise_questions(merged)
+    session.publish(
+        "stage_start",
+        stage="D",
+        label="One more thing before I build this",
+    )
+    reply = session.ask(
+        "questions",
+        {
+            "label": "One more thing before I build this",
+            "questions": merged["questions"],
+        },
+    )
+    return filter_scope.scope_from_answer(
+        c_resolve.replies_of(reply).get(filter_scope.SCOPE_QUESTION_ID)
+    )
+
+
+def _plugin_directories(scaffolds: dict[str, Any]) -> dict[str, str]:
+    """Each written plugin's directory, by viz type."""
+    return {
+        viz_type: (scaffold.scaffold or {}).get("directory") or ""
+        for viz_type, scaffold in scaffolds.items()
+        if scaffold.ok
+    }
+
+
+def _errors_for(errors: list[dict[str, str]], directory: str) -> list[dict[str, str]]:
+    """The errors `_plugins_in_errors` blames on the plugin in `directory`."""
+    leaf = directory.rsplit("/", 1)[-1]
+    return [e for e in errors if leaf and leaf in (e.get("file") or "")]
+
+
+def _headline(detail: str) -> str:
+    """An error's first line, short enough for an event label.
+
+    A type-check error can carry indented lines naming the property at fault;
+    those are for the repair prompt, not for a progress message.
+    """
+    return detail.split("\n", 1)[0][:120]
+
+
+def _autofix_plugins(
+    session: Any, outcome: dict[str, Any], scaffolds: dict[str, Any]
+) -> dict[str, Any]:
+    """Remove the unused imports the compiler named, then check again.
+
+    No model call: `import React from 'react'` under the automatic JSX
+    runtime is an edit that needs no judgement, and handing it to a model
+    cost a whole generation. Returns the verdict it was given when nothing
+    changed, so the caller can tell that no re-check happened.
+    """
+    from superset.design_to_dashboard import (
+        frontend,
+        import_autofix,
+        plugin_skeleton,
+        plugin_writer,
+    )
+
+    errors = outcome.get("errors") or []
+    directories = _plugin_directories(scaffolds)
+    fixed: dict[str, int] = {}
+    for viz_type in sorted(_plugins_in_errors(errors, directories)):
+        current = scaffolds[viz_type]
+        if current.plugin is None:
+            continue
+        try:
+            owned = plugin_skeleton.owned_paths(current.plugin, REPO_ROOT)
+            removed = import_autofix.fix_plugin(
+                REPO_ROOT, directories[viz_type], errors, owned
+            )
+            if removed:
+                # Kept in step with the disk, so what is held in memory is
+                # never an older plugin than the one that was checked.
+                on_disk = plugin_writer.read(directories[viz_type], REPO_ROOT)
+                current.scaffold["files"] = [
+                    {"path": path, "contents": contents}
+                    for path, contents in sorted(on_disk.sources.items())
+                    if path not in owned
+                ]
+        except Exception:  # noqa: BLE001 - the model repair still runs
+            logger.exception("could not remove unused imports from %s", viz_type)
+            continue
+        if removed:
+            fixed[viz_type] = sum(removed.values())
+
+    if not fixed:
+        return outcome
+    session.publish(
+        "plugin_autofixed",
+        label=f"Removed {sum(fixed.values())} unused import(s) — rechecking",
+        detail=", ".join(f"{viz_type} ({n})" for viz_type, n in sorted(fixed.items())),
+        viz_types=sorted(fixed),
+    )
+    return frontend.typecheck(REPO_ROOT)
+
+
 def _repair_broken_plugins(  # noqa: C901
     session: Any,
     outcome: dict[str, Any],
     scaffolds: dict[str, Any],
     by_type: dict[str, list[dict[str, Any]]],
-    region_for: Callable[[str], dict[str, Any]],
-    binding_for: Callable[[str], dict[str, Any]],
-    plan: dict[str, Any],
     provider: Any,
-    tag: str,
-    crops_dir: Any,
-    design_analysis: dict[str, Any],
 ) -> dict[str, Any]:
-    """Ask the author of a plugin that did not compile to fix it, once.
+    """One repair round for every plugin that did not compile.
 
     The checks stage F runs are regex over the scaffold's text: they catch a
     wrong import and cannot catch a property invented on a type. Only the
-    compiler sees those -- and it already did, into a log nothing read. Two
-    plugins shipped that never compiled, which leaves their charts rendering
-    "Empty query?" on a dashboard the run called finished.
+    compiler sees those.
 
-    One pass, because a compiler error names the file, the line and the rule;
-    an author that cannot use that will not do better with a third telling.
+    Unused imports are removed first, without a model. What the compiler
+    still rejects is then patched: the author is shown the files as they are
+    on disk with the errors against their lines, and returns only the files
+    it changes. Everything else stays exactly as it was, so a round cannot
+    undo what the previous one fixed, or rewrite what already compiled.
+
+    Returns the verdict it was given when it changed nothing, and a fresh
+    type-check otherwise.
     """
     from superset.design_to_dashboard import frontend, plugin_writer
-    from superset.design_to_dashboard.stages import c_resolve, f_scaffold
+    from superset.design_to_dashboard.stages import f_scaffold
 
-    directories = {
-        viz_type: (scaffold.scaffold or {}).get("directory") or ""
-        for viz_type, scaffold in scaffolds.items()
-        if scaffold.ok
-    }
-    blamed = _plugins_in_errors(outcome.get("errors") or [], directories)
+    checked = _autofix_plugins(session, outcome, scaffolds)
+    if checked.get("compiled") is not False:
+        return checked
+    errors = checked.get("errors") or []
+    directories = _plugin_directories(scaffolds)
+    blamed = _plugins_in_errors(errors, directories)
     if not blamed:
         # The build is broken by something this run did not write.
-        return outcome
+        return checked
 
     session.publish(
         "plugin_repair",
-        label=f"{len(blamed)} plugin(s) did not compile — fixing",
+        label=f"{len(blamed)} plugin(s) did not compile — patching",
         detail=", ".join(sorted(blamed)),
         viz_types=sorted(blamed),
     )
-    repaired = []
+    patched: dict[str, list[str]] = {}
+    relink = False
     for viz_type in sorted(blamed):
+        current = scaffolds[viz_type]
+        plugin = current.plugin
+        if plugin is None:
+            continue
         decision = by_type[viz_type][0]
-        region_id = decision.get("region_id", "?")
-        leaf = directories[viz_type].rsplit("/", 1)[-1]
-        mine = [e for e in outcome.get("errors") or [] if leaf in (e.get("file") or "")]
-        try:
-            retry = f_scaffold.run_one(
-                provider,
-                region_for(region_id),
-                binding_for(region_id),
-                decision,
-                c_resolve.design_system(plan, design_analysis),
-                PROMPTS,
-                REPO_ROOT,
-                set(),
-                tag=tag,
-                region_image=crop.region_crop(
-                    session.image_paths,
-                    region_for(region_id),
-                    crops_dir,
-                ),
-                children=f_scaffold.resolve_children(
-                    decision, plan.get("decisions", [])
-                ),
-                build_errors=mine,
+        on_disk = plugin_writer.read(directories[viz_type], REPO_ROOT)
+        result = f_scaffold.repair_one(
+            provider,
+            decision,
+            plugin,
+            on_disk.sources,
+            _errors_for(errors, directories[viz_type]),
+            PROMPTS,
+            REPO_ROOT,
+        )
+        # Billed whether or not the patch is usable.
+        current.cost_usd += result.cost_usd
+        if not result.ok or result.scaffold is None:
+            reason = result.error or "; ".join(result.problems)
+            logger.warning("repair of %s not applied: %s", viz_type, reason)
+            session.publish(
+                "plugin_repair_rejected",
+                label=f"Could not patch {viz_type} — left as it was",
+                viz_type=viz_type,
+                detail=reason[:400],
             )
-        except Exception:  # noqa: BLE001 - a failed repair leaves the first try
-            logger.exception("repair of %s failed", viz_type)
-            continue
-        if not retry.ok or retry.scaffold is None:
-            logger.info("repair of %s still invalid: %s", viz_type, retry.problems)
             continue
         try:
-            plugin_writer.write(retry.scaffold, REPO_ROOT, retry.plugin, decision)
-        except Exception:  # noqa: BLE001 - the first attempt stays on disk
+            # The merged file set, so every file the patch did not touch
+            # survives the writer's replacement of `src/`; the binary assets
+            # beside them are put back the same way.
+            written = plugin_writer.write(
+                result.scaffold, REPO_ROOT, plugin, decision, assets=on_disk.assets
+            )
+        except Exception:  # noqa: BLE001 - the quarantine handles what is left
             logger.exception("could not write the repair of %s", viz_type)
             continue
-        # The repair supersedes the attempt that did not compile. Only its
-        # files used to be kept, so a later removal addressed the superseded
-        # attempt, the repair's own generation never reached the run's cost,
-        # and stage D was handed the first attempt's `params_hint` and told
-        # it was authoritative -- for controls the repair may have renamed.
-        scaffolds[viz_type].scaffold = retry.scaffold
-        scaffolds[viz_type].plugin = retry.plugin
-        scaffolds[viz_type].cost_usd += retry.cost_usd
-        if hint := retry.scaffold.get("params_hint"):
+        relink = relink or written.dependency_added
+        # Only what the patch returned replaces what was held; a `params_hint`
+        # it did not return is still the one stage D should use.
+        current.scaffold = {**(current.scaffold or {}), **result.scaffold}
+        if hint := result.scaffold.get("params_hint"):
             for sibling in by_type[viz_type]:
                 sibling["params_hint"] = hint
-        repaired.append(viz_type)
+        patched[viz_type] = result.changed
+        session.publish(
+            "plugin_patched",
+            label=f"Patched {len(result.changed)} file(s) in {viz_type}",
+            viz_type=viz_type,
+            detail=", ".join(path.rsplit("/src/", 1)[-1] for path in result.changed),
+        )
 
-    if not repaired:
-        return outcome
+    if not patched:
+        return checked
     session.publish(
         "plugin_repaired",
-        label=f"Rewrote {len(repaired)} plugin(s) — rechecking",
-        detail=", ".join(repaired),
+        label=f"Patched {len(patched)} plugin(s) — rechecking",
+        detail=", ".join(sorted(patched)),
     )
-    # Re-link first: a repair can rename the package, and an unlinked package
-    # fails to resolve in a way that reads as the author's fault rather than
-    # as a missing symlink.
-    frontend.link_plugins(REPO_ROOT)
+    # The package name comes from the skeleton, which a patch cannot touch,
+    # so this is a guard rather than an expected step: an unlinked package
+    # fails to resolve in a way that reads as the author's fault.
+    if relink:
+        frontend.link_plugins(REPO_ROOT)
     return frontend.typecheck(REPO_ROOT)
 
 
-# How many times a plugin that did not compile is handed its own errors and
-# asked again. A compiler error names the file, the line and the rule, so the
-# first pass clears most of them; a second catches the case where fixing one
-# fault exposed another. Beyond that the author is guessing, and the plugin is
-# removed instead.
+# How many repair rounds a plugin that did not compile gets. Each round
+# patches the state the previous one left, so its fixes accumulate: the first
+# clears what the compiler listed, and a second catches a fault the first
+# exposed. Beyond that the author is guessing, and the plugin is removed.
 REPAIR_ROUNDS = 2
 
 
@@ -248,16 +559,10 @@ def _typecheck_and_quarantine(  # noqa: C901
     session: Any,
     scaffolds: dict[str, Any],
     by_type: dict[str, list[dict[str, Any]]],
-    region_for: Callable[[str], dict[str, Any]],
-    binding_for: Callable[[str], dict[str, Any]],
     plan: dict[str, Any],
     provider: Any,
-    tag: str,
-    crops_dir: Any,
-    design_analysis: dict[str, Any],
     built: list[str],
 ) -> float:
-    """Returns what the repair generations cost, for the run's total."""
     """Compile what was written, repair what failed, remove what cannot be.
 
     The guarantee this exists to make is that nobody opens the dashboard to a
@@ -266,11 +571,13 @@ def _typecheck_and_quarantine(  # noqa: C901
     just its own section -- the run would otherwise report success while the
     dev server served a compile error.
 
-    So a plugin gets ``REPAIR_ROUNDS`` attempts with the compiler's own output
+    So a plugin gets ``REPAIR_ROUNDS`` rounds with the compiler's own output
     in hand, and if it still fails it is deleted, unregistered, and its
     sections are dropped the way stage C drops a section it cannot build. An
     incomplete dashboard is a worse outcome than a complete one and a far
     better outcome than a broken one.
+
+    Returns what the repairs cost, for the run's total.
     """
     from superset.design_to_dashboard import frontend, plugin_writer
 
@@ -283,29 +590,23 @@ def _typecheck_and_quarantine(  # noqa: C901
             "typecheck_failed",
             label=f"{len(verdict.get('errors') or [])} type error(s) — fixing",
             detail="; ".join(
-                f"{e['file']}: {e['detail'][:120]}"
+                f"{e['file']}: {_headline(e['detail'])}"
                 for e in (verdict.get("errors") or [])[:6]
             ),
         )
         repaired = _repair_broken_plugins(
-            session,
-            verdict,
-            scaffolds,
-            by_type,
-            region_for,
-            binding_for,
-            plan,
-            provider,
-            tag,
-            crops_dir,
-            design_analysis,
+            session, verdict, scaffolds, by_type, provider
         )
-        # `_repair_broken_plugins` re-checks only when it rewrote something.
-        # When it returns the verdict it was given, nothing changed and
-        # another round would ask the same question of the same files.
+        # `_repair_broken_plugins` re-checks only when it changed something.
+        # When it returns the verdict it was given, another round would ask
+        # the same question of the same files.
         if repaired is verdict:
             break
         verdict = repaired
+    if verdict.get("compiled") is False:
+        # The last round's patch is checked, never repaired. An import it
+        # stopped using is still not worth a section of the dashboard.
+        verdict = _autofix_plugins(session, verdict, scaffolds)
 
     if verdict.get("compiled") is not False:
         session.publish(
@@ -316,12 +617,8 @@ def _typecheck_and_quarantine(  # noqa: C901
         )
         return sum(s.cost_usd for s in scaffolds.values()) - before
 
-    # Out of repair attempts. Everything still named in an error goes.
-    directories = {
-        viz_type: (scaffold.scaffold or {}).get("directory") or ""
-        for viz_type, scaffold in scaffolds.items()
-        if scaffold.ok
-    }
+    # Out of repair rounds. Everything still named in an error goes.
+    directories = _plugin_directories(scaffolds)
     doomed = _plugins_in_errors(verdict.get("errors") or [], directories)
     if not doomed:
         # The build is broken by something this run did not write. Removing a
@@ -331,7 +628,7 @@ def _typecheck_and_quarantine(  # noqa: C901
             "typecheck_failed",
             label="The frontend does not compile, but no generated plugin is at fault",
             detail="; ".join(
-                f"{e['file']}: {e['detail'][:120]}"
+                f"{e['file']}: {_headline(e['detail'])}"
                 for e in (verdict.get("errors") or [])[:6]
             ),
         )
@@ -345,17 +642,18 @@ def _typecheck_and_quarantine(  # noqa: C901
         if viz_type in built:
             built.remove(viz_type)
         for decision in group:
-            decision["decision"] = "drop"
-            decision["fidelity_loss"] = (
+            _drop_decision(
+                decision,
+                plan.get("decisions") or [],
                 f"the {viz_type} plugin did not compile after "
-                f"{REPAIR_ROUNDS} repair attempt(s), so this section is missing"
+                f"{REPAIR_ROUNDS} repair attempt(s), so this section is missing",
             )
         session.publish(
             "plugin_failed",
             label=f"{viz_type} would not compile — removed, dropping {affected}",
             viz_type=viz_type,
             detail="; ".join(
-                e["detail"][:120]
+                _headline(e["detail"])
                 for e in (verdict.get("errors") or [])
                 if directories.get(viz_type, "").rsplit("/", 1)[-1]
                 in (e.get("file") or "")
@@ -514,20 +812,63 @@ def announce_datasets(session: Any, binding_set: dict[str, Any]) -> None:
     )
 
 
-def _retry(session: Any, label: str, attempts: int, call: Any) -> Any:
+def _retry(
+    session: Any,
+    label: str,
+    attempts: int,
+    call: Callable[[], Any],
+    on_truncated: Callable[[], Any] | None = None,
+    on_max_turns: Callable[[], Any] | None = None,
+) -> Any:
     """Retry a single-shot stage.
 
     These calls are non-deterministic: the same prompt can end on
     ``stop_reason: tool_use`` once and answer cleanly the next time. Losing an
     entire multi-dollar run to one flaky turn is not acceptable, so each
     single-shot stage gets a second chance before the run fails.
+
+    A reply cut off at its output budget is not flaky. The provider has already
+    re-sent it once at the largest budget allowed, so the same request again
+    stops at the same place and bills another full budget. It goes to
+    `on_truncated` -- a cheaper way to ask -- exactly once, or is raised when
+    the stage has none.
+
+    An agent loop that exhausted its turn budget without answering is not
+    flaky either, for the same reason in a different shape: an identical
+    retry spends the identical turns on the identical `Read` calls and fails
+    the identical way. It goes to `on_max_turns` -- a larger budget to ask
+    with -- exactly once, or is raised when the stage has none.
     """
-    from superset.design_to_dashboard.llm.base import LLMError
+    from superset.design_to_dashboard.llm.base import (
+        LLMError,
+        LLMMaxTurnsError,
+        LLMTruncatedError,
+    )
 
     last: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
             return call()
+        except LLMTruncatedError as ex:
+            logger.warning("%s ran out of output budget: %s", label, ex)
+            if on_truncated is None:
+                raise
+            session.publish(
+                "retry",
+                label=f"{label} ran out of output budget — retrying at lower effort",
+                detail=str(ex)[:200],
+            )
+            return on_truncated()
+        except LLMMaxTurnsError as ex:
+            logger.warning("%s exhausted its turn budget: %s", label, ex)
+            if on_max_turns is None:
+                raise
+            session.publish(
+                "retry",
+                label=f"{label} ran out of turns — retrying with a larger budget",
+                detail=str(ex)[:200],
+            )
+            return on_max_turns()
         except LLMError as ex:
             last = ex
             logger.warning("%s attempt %d/%d failed: %s", label, attempt, attempts, ex)
@@ -538,6 +879,95 @@ def _retry(session: Any, label: str, attempts: int, call: Any) -> Any:
                     detail=str(ex)[:200],
                 )
     raise last  # type: ignore[misc]
+
+
+def _lower_effort_provider(provider: Any, stage: str, session_id: str) -> Any:
+    """The stage's provider one effort level down, or None. **Request thread only.**
+
+    For a reply cut off at the largest output budget allowed: reasoning is what
+    fills that budget, and it shrinks with effort. Built before a stage fans
+    out rather than when a truncation happens, because building a provider
+    reads `current_app.config` and a worker thread has no app context. Recorded
+    under its own label, so its numbered traces do not overwrite the stage's.
+    """
+    from superset.design_to_dashboard.llm.base import lower_effort
+    from superset.design_to_dashboard.llm.factory import get_llm_provider
+
+    lower = lower_effort(getattr(provider, "effort", None) or "")
+    if lower is None:
+        return None
+    try:
+        lowered: Any = get_llm_provider(stage, effort=lower)
+    except Exception:  # noqa: BLE001 - a missing fallback must not end the run
+        logger.exception("could not build a lower-effort provider for %s", stage)
+        return None
+    if _config().get("record_calls"):
+        from superset.design_to_dashboard.llm.recorder import RecordingProvider
+
+        lowered = RecordingProvider(lowered, f"{stage}-{lower}", session_id, REPO_ROOT)
+    return lowered
+
+
+# The most turns a retry will ask for, however small the budget it started at.
+# A ceiling rather than a fixed step: doubling is meaningless past some size,
+# and without one a stage whose floor is already large could ask for an
+# unbounded number of turns on every retry.
+MAX_RETRY_TURNS = 48
+
+
+def _higher_turns_provider(provider: Any, stage: str, session_id: str) -> Any:
+    """The stage's provider with a larger turn budget, or None. **Request thread only.**
+
+    For an agent loop that exhausted its turns before answering: unlike a
+    truncated reply, this was never a reasoning-budget problem, so a lower
+    `effort` is not the fix -- a larger turn budget is. Doubled rather than
+    incremented, so a retry actually changes the shape of the request instead
+    of asking for one turn more than a call that just burned every one it had.
+    Built before a stage fans out, for the same app-context reason as
+    `_lower_effort_provider`, and recorded under its own label so its traces
+    do not overwrite the stage's.
+    """
+    from superset.design_to_dashboard.llm.factory import get_llm_provider
+
+    current = getattr(provider, "max_turns", None)
+    if not isinstance(current, int):
+        return None
+    higher = min(current * 2, MAX_RETRY_TURNS)
+    if higher <= current:
+        return None
+    try:
+        lifted: Any = get_llm_provider(stage, max_turns=higher)
+    except Exception:  # noqa: BLE001 - a missing fallback must not end the run
+        logger.exception("could not build a higher-turn-budget provider for %s", stage)
+        return None
+    if _config().get("record_calls"):
+        from superset.design_to_dashboard.llm.recorder import RecordingProvider
+
+        lifted = RecordingProvider(
+            lifted, f"{stage}-turns{higher}", session_id, REPO_ROOT
+        )
+    return lifted
+
+
+def _chart_checks(checks: Any) -> list[dict[str, Any]]:
+    """Each chart's check as published: what the API and the browser saw."""
+    return [
+        {
+            "chart_id": c.chart_id,
+            "name": c.slice_name,
+            "viz_type": c.viz_type,
+            "ok": c.ok,
+            # False for a custom plugin nothing has rendered: its `ok` then
+            # means only that no failure was seen.
+            "checked": c.checked,
+            "rows": c.rows,
+            "error": c.error,
+            "note": c.note,
+            "status_code": c.status_code,
+            "render_error": c.render_error,
+        }
+        for c in checks.charts
+    ]
 
 
 PROMPTS = (
@@ -585,7 +1015,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 raise RuntimeError(f"user {session.user_id} not found")
             g.user = user
 
-            from superset.design_to_dashboard import plugin_writer, questions
+            from superset.design_to_dashboard import gate_a, plugin_writer, questions
             from superset.design_to_dashboard.applier import apply_plan, ApplyError
             from superset.design_to_dashboard.llm.factory import get_llm_provider
             from superset.design_to_dashboard.mcp.gateway import InProcessGateway
@@ -662,6 +1092,25 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
             # ---- A: decompose ------------------------------------------------
             session.publish("stage_start", stage="A", label="Reading the design")
+            a_provider = provider_for("A")
+            # Same two fallbacks stage F gets, for the same reasons: A is
+            # given the design image(s) and only the `Read` tool, so it is
+            # exposed to the identical turn-budget failure, and a reply cut
+            # off at its output budget is no more fixable by an identical
+            # retry here than it is there.
+            a_provider_lower = _lower_effort_provider(a_provider, "A", session.id)
+            a_provider_more_turns = _higher_turns_provider(a_provider, "A", session.id)
+
+            def _read_design(provider: Any) -> Any:
+                return a_decompose.run(
+                    provider,
+                    session.requirement,
+                    session.image_paths,
+                    PROMPTS,
+                    on_thinking=_thinking_for("A"),
+                    registry=registry,
+                )
+
             # Parsing happens inside the retried call, not after it: an
             # unparseable reply is exactly as transient as a failed one, and
             # this is the longest single call in the pipeline to lose.
@@ -669,13 +1118,16 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 session,
                 "Reading the design",
                 2,
-                lambda: a_decompose.run(
-                    provider_for("A"),
-                    session.requirement,
-                    session.image_paths,
-                    PROMPTS,
-                    on_thinking=_thinking_for("A"),
-                    registry=registry,
+                lambda: _read_design(a_provider),
+                on_truncated=(
+                    (lambda: _read_design(a_provider_lower))
+                    if a_provider_lower is not None
+                    else None
+                ),
+                on_max_turns=(
+                    (lambda: _read_design(a_provider_more_turns))
+                    if a_provider_more_turns is not None
+                    else None
                 ),
             )
             total_cost += stage_a_cost
@@ -723,6 +1175,71 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 thinking=_reasoning,
                 label="Read the design",
                 summary=_stage_a_summary(design_analysis, session.image_paths),
+                regions=design_analysis.get("regions", []),
+                cost=round(total_cost, 4),
+            )
+
+            # ---- gate: review the reading before B binds it to data -----------
+            #
+            # Every stage after this one joins on `region_id`. Once B has
+            # designed a data spec against today's reading, a correction here
+            # means redoing B too -- so this is the one point where fixing a
+            # misread region, or answering what B would otherwise guess, is
+            # nearly free. The run genuinely stops: `session.ask` blocks this
+            # worker thread until a human calls `session.answer`, the same
+            # primitive stage C's questions already use, with no timeout that
+            # lets the run continue unanswered.
+            presentation = gate_a.build_presentation(design_analysis)
+            session.publish(
+                "stage_start",
+                stage="A_gate",
+                label="Waiting for your review of the design reading",
+            )
+            gate_answer = session.ask("region_review", presentation)
+            plugin_choices = {
+                str(k): str(v)
+                for k, v in (gate_answer.get("plugin_choices") or {}).items()
+            }
+            free_answers = {
+                str(k): str(v) for k, v in (gate_answer.get("answers") or {}).items()
+            }
+            revised_analysis, gate_cost = a_decompose.revise(
+                provider_for("A"),
+                design_analysis,
+                presentation["questions"],
+                free_answers,
+                PROMPTS,
+                plugin_choices=plugin_choices,
+                image_paths=session.image_paths,
+                on_thinking=_thinking_for("A"),
+                registry=registry,
+            )
+            total_cost += gate_cost
+            if gate_problems := a_decompose.validate(
+                revised_analysis, registry.chart_types()
+            ):
+                # The pre-gate reading already passed validation and is known
+                # usable; a revision that fails is a worse answer than the one
+                # the user was shown, so it is logged and discarded rather than
+                # sent on to bind against.
+                logger.error(
+                    "stage A revision validation: %s", "; ".join(gate_problems)
+                )
+                session.publish(
+                    "validation_failed",
+                    stage="A_gate",
+                    label=f"The revised reading has {len(gate_problems)} problem(s)",
+                    detail="; ".join(gate_problems)[:1000],
+                    problems=gate_problems,
+                )
+            else:
+                design_analysis = revised_analysis
+                session.artifacts["design_analysis"] = design_analysis
+                session.save_stage("A", design_analysis)
+            session.publish(
+                "stage_complete",
+                stage="A_gate",
+                label="Reading confirmed",
                 regions=design_analysis.get("regions", []),
                 cost=round(total_cost, 4),
             )
@@ -844,8 +1361,12 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             session.publish("stage_start", stage="C", label="Choosing chart types")
             binding_with_answers = dict(binding.final)
             # Stage C plans against the datasets that will actually exist, not
-            # the ones stage B wished for.
-            binding_with_answers["created_datasets"] = binding.final.get("views") or []
+            # the ones stage B wished for -- already true without a separate
+            # key: `binding.final["views"]` is stage B's own record of what it
+            # actually created, and `c_resolve.build_user_prompt` reads `views`
+            # straight off `binding_set` already. A `created_datasets` key
+            # holding the exact same list under a name nothing read was dead
+            # weight, not a second copy serving a different reader.
             if answers:
                 binding_with_answers["user_answers"] = answers
 
@@ -896,6 +1417,21 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 return result
 
             plan = _resolve()
+
+            # A `configure` decision that names its own fidelity_loss and asks
+            # nothing about it is a stock-versus-custom trade-off settled on
+            # the user's behalf without them. Folded in here, before the one
+            # round the run asks anything: a question this loop adds to
+            # `needs` reaches the user in the same round as every other one
+            # C wrote itself, rather than being found too late to ask at all.
+            for _attempt in range(C_MAX_REPLANS):
+                fidelity_problems = c_resolve.stock_fidelity_unasked(
+                    plan.final.get("decisions") or [], plan.final.get("needs") or []
+                )
+                if not fidelity_problems:
+                    break
+                logger.info("stage C fidelity check: %s", "; ".join(fidelity_problems))
+                plan = _resolve({"validation_problems": fidelity_problems})
 
             # The one place the run asks anything. Stage C has resolved the
             # whole page by now, so it knows what is genuinely undecided and
@@ -956,7 +1492,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
             # away the twenty minutes A and B already spent.
             for _attempt in range(C_MAX_REPLANS):
                 problems = c_resolve.validate(
-                    plan.final, design_analysis, binding_with_answers, registry
+                    plan.final,
+                    design_analysis,
+                    binding_with_answers,
+                    registry,
+                    chart_searches,
                 )
                 if not problems:
                     break
@@ -973,7 +1513,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 # still wrong with it attached: a plan you can look at and
                 # reject beats a run that dies holding one.
                 still_wrong = c_resolve.validate(
-                    plan.final, design_analysis, binding_with_answers, registry
+                    plan.final,
+                    design_analysis,
+                    binding_with_answers,
+                    registry,
+                    chart_searches,
                 )
                 if still_wrong:
                     logger.warning(
@@ -1152,6 +1696,30 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     by_type.setdefault(decision.get("viz_type") or "", []).append(
                         decision
                     )
+                # Sharing a `viz_type` name is not the same as sharing a shape:
+                # only `group[0]` is ever sent to stage F, and grouping on the
+                # name alone trusted every other member to fit the plugin built
+                # for it with nothing checking that they actually did. Checked,
+                # and split, here -- before a generation call is spent on a
+                # group that was never going to hold together -- rather than
+                # after a scaffold built for three children meets a sibling
+                # needing four and the whole group is dropped together.
+                by_type, shape_splits = c_resolve.split_incompatible_groups(
+                    by_type, regions
+                )
+                for split in shape_splits:
+                    session.publish(
+                        "plugin_group_split",
+                        label=(
+                            f"{split['viz_type']} does not fit every region that "
+                            f"named it — building {split['new_viz_type']} for "
+                            f"{', '.join(split['region_ids'])}"
+                        ),
+                        viz_type=split["viz_type"],
+                        new_viz_type=split["new_viz_type"],
+                        region_ids=split["region_ids"],
+                        detail=split["reason"],
+                    )
                 for viz_type, group in by_type.items():
                     for extra in group[1:]:
                         session.publish(
@@ -1162,6 +1730,17 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         )
 
                 f_provider = provider_for("F")
+                # Resolved here, on the request thread, for the one failure a
+                # second identical request cannot fix: a reply cut off at the
+                # largest output budget allowed.
+                f_provider_lower = _lower_effort_provider(f_provider, "F", session.id)
+                # Same reasoning, for the other failure a second identical
+                # request cannot fix: an agent loop that exhausted its turns
+                # -- almost always spent opening the attached images -- before
+                # it ever answered.
+                f_provider_more_turns = _higher_turns_provider(
+                    f_provider, "F", session.id
+                )
 
                 def _region_for(region_id: str) -> dict[str, Any]:
                     """The region a plugin decision describes.
@@ -1195,15 +1774,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
 
                 def _build(viz_type: str, decision: dict[str, Any]) -> Any:
                     region_id = decision.get("region_id", "?")
-                    # F is a single-shot call like A and E, and equally prone to
-                    # a transient failure -- losing a long run to one is not
-                    # acceptable.
-                    return viz_type, _retry(
-                        session,
-                        f"Building the plugin for {region_id}",
-                        2,
-                        lambda: f_scaffold.run_one(
-                            f_provider,
+
+                    def _generate(provider: Any) -> Any:
+                        return f_scaffold.run_one(
+                            provider,
+                            gateway,
                             _region_for(region_id),
                             _binding_for(region_id),
                             decision,
@@ -1213,10 +1788,19 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                             known,
                             tag=tag,
                             on_thinking=_thinking_for("F"),
+                            on_progress=_tool_progress,
                             region_image=crop.region_crop(
                                 session.image_paths,
                                 _region_for(region_id),
                                 crops_dir,
+                            ),
+                            # The whole design the crop was cut from, so a
+                            # pixel-perfect build can check this region's
+                            # chrome against the page's own repeated
+                            # treatment rather than inventing one in
+                            # isolation.
+                            design_image=crop.source_image_path(
+                                session.image_paths, _region_for(region_id)
                             ),
                             # Refs mean nothing to the author of a wrapper.
                             # Resolved first, so it knows what it hosts before
@@ -1224,6 +1808,31 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                             children=f_scaffold.resolve_children(
                                 decision, plan.final.get("decisions", [])
                             ),
+                        )
+
+                    # F is a single-shot call like A and E, and equally prone to
+                    # a transient failure -- losing a long run to one is not
+                    # acceptable.
+                    return viz_type, _retry(
+                        session,
+                        f"Building the plugin for {region_id}",
+                        2,
+                        lambda: _generate(f_provider),
+                        # Reasoning is what fills a plugin's budget, so thinking
+                        # one level less hard is what is left to try.
+                        on_truncated=(
+                            (lambda: _generate(f_provider_lower))
+                            if f_provider_lower is not None
+                            else None
+                        ),
+                        # Turns, not reasoning, are what ran out here -- almost
+                        # always spent on the `Read` calls for the attached
+                        # images -- so a larger turn budget is what is left to
+                        # try.
+                        on_max_turns=(
+                            (lambda: _generate(f_provider_more_turns))
+                            if f_provider_more_turns is not None
+                            else None
                         ),
                     )
 
@@ -1242,7 +1851,8 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     }
                     for future in concurrent.futures.as_completed(futures):
                         # `run_one` reports most failures as a result, but
-                        # re-raises a timeout so the retry can see it, and
+                        # re-raises a timeout or a truncated reply so the retry
+                        # can see it, and
                         # `_retry` re-raises after its attempts. Unguarded,
                         # that escaped the executor block and ended the run --
                         # discarding stages A, B, C, the plan approval, the
@@ -1277,10 +1887,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         affected = ", ".join(str(d.get("region_id")) for d in group)
                         failed_plugins.append(f"{viz_type} ({affected}): {detail}")
                         for decision in group:
-                            decision["decision"] = "drop"
-                            decision["fidelity_loss"] = (
+                            _drop_decision(
+                                decision,
+                                plan.final.get("decisions", []),
                                 f"the {viz_type} plugin could not be generated, "
-                                "so this section is missing from the dashboard"
+                                "so this section is missing from the dashboard",
                             )
                         session.publish(
                             "plugin_failed",
@@ -1310,10 +1921,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         failed_plugins.append(f"{viz_type} ({affected}): {ex}")
                         plugin_writer.remove(scaffold.scaffold, REPO_ROOT)
                         for decision in group:
-                            decision["decision"] = "drop"
-                            decision["fidelity_loss"] = (
+                            _drop_decision(
+                                decision,
+                                plan.final.get("decisions", []),
                                 f"the {viz_type} plugin could not be written to "
-                                "disk, so this section is missing"
+                                "disk, so this section is missing",
                             )
                         session.publish(
                             "plugin_failed",
@@ -1324,6 +1936,11 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         continue
                     built.append(scaffold.viz_type or "?")
                     for decision in group:
+                        if decision.get("decision") == DROPPED:
+                            # A container every hosted chart of which failed
+                            # was dropped with them; a plugin that built does
+                            # not give it anything to hold.
+                            continue
                         decision["viz_type"] = scaffold.viz_type
                         if scaffold.scaffold.get("params_hint"):
                             # Stage D needs params for a control panel that did
@@ -1383,13 +2000,8 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     session,
                     scaffolds,
                     by_type,
-                    _region_for,
-                    _binding_for,
                     plan.final,
                     f_provider,
-                    tag,
-                    crops_dir,
-                    design_analysis,
                     built,
                 )
 
@@ -1404,7 +2016,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                         label=_restart_label(outcome),
                         detail=outcome.get("reason")
                         or "; ".join(
-                            f"{e['file']}: {e['detail'][:120]}"
+                            f"{e['file']}: {_headline(e['detail'])}"
                             for e in outcome.get("errors") or []
                         )
                         or None,
@@ -1440,6 +2052,12 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 )
 
             # ---- D: configure ------------------------------------------------
+            # Every drop this run made has already released what it hosted.
+            # This catches the ones it did not make: stage C dropping a frame
+            # it still listed children for, or a plan restored from a run that
+            # predates the release.
+            if released := release_dropped_children(plan.final.get("decisions", [])):
+                logger.info("released hosted charts: %s", "; ".join(released))
             jobs = [
                 d
                 for d in plan.final.get("decisions", [])
@@ -1468,6 +2086,10 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 on_chart=_chart_done,
             )
             total_cost += sum(c.cost_usd for c in charts)
+            if dropped_parents := drop_unconfigured_parents(
+                charts, plan.final.get("decisions", [])
+            ):
+                logger.info("after stage D: %s", "; ".join(dropped_parents))
             failed = [c for c in charts if not c.ok]
             chart_specs = [
                 {
@@ -1516,20 +2138,47 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     )[:600],
                 )
 
+            # Only now do the charts stage D wrote exist to compare against the
+            # picker stage A/C placed, so this is the earliest the page's one
+            # filter-scope ambiguity can be asked -- and the only place it is.
+            filter_scope_answer = resolve_filter_scope(
+                session, plan.final, chart_specs, design_analysis
+            )
+
             # ---- E: layout ---------------------------------------------------
             session.publish("stage_start", stage="E", label="Laying out the dashboard")
-            layout, cost = _retry(
-                session,
-                "Laying out the dashboard",
-                2,
-                lambda: e_layout.run(
-                    provider_for("E"),
+            e_provider = provider_for("E")
+            # Same fallbacks as A and F: E is given the design image(s) and
+            # only the `Read` tool too, so the identical turn-budget failure
+            # reaches it the same way.
+            e_provider_lower = _lower_effort_provider(e_provider, "E", session.id)
+            e_provider_more_turns = _higher_turns_provider(e_provider, "E", session.id)
+
+            def _lay_out(provider: Any) -> Any:
+                return e_layout.run(
+                    provider,
                     design_analysis,
                     plan.final,
                     PROMPTS,
                     on_thinking=_thinking_for("E"),
                     image_paths=session.image_paths,
                     user_answers=answers or None,
+                )
+
+            layout, cost = _retry(
+                session,
+                "Laying out the dashboard",
+                2,
+                lambda: _lay_out(e_provider),
+                on_truncated=(
+                    (lambda: _lay_out(e_provider_lower))
+                    if e_provider_lower is not None
+                    else None
+                ),
+                on_max_turns=(
+                    (lambda: _lay_out(e_provider_more_turns))
+                    if e_provider_more_turns is not None
+                    else None
                 ),
             )
             total_cost += cost
@@ -1581,6 +2230,10 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     layout=layout,
                     dashboard_title=(design_analysis.get("global") or {}).get("title"),
                     menus=menus,
+                    # Rebuilt after stage F, so a custom plugin written this
+                    # run has a control panel its saved query is read from.
+                    registry=registry,
+                    filter_scope_answer=filter_scope_answer,
                 )
             except ApplyError as ex:
                 raise RuntimeError(str(ex)) from ex
@@ -1594,11 +2247,24 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                     label="What matching the design's chrome changed",
                     effects=applied.chrome_effects,
                 )
+            # A layout node the applier had to drop, or a chart it created
+            # despite an unresolved problem, used to reach nobody but the log.
+            # Surfaced here so a run that "succeeded" still says what it quietly
+            # gave up on.
+            if applied.warnings:
+                session.publish(
+                    "apply_warnings",
+                    label="What the applier could not build as planned",
+                    warnings=applied.warnings,
+                )
 
             session.publish(
                 "stage_start", stage="verify", label="Checking the dashboard renders"
             )
-            from superset.design_to_dashboard.verify import verify as verify_dashboard
+            from superset.design_to_dashboard.verify import (
+                confirm_new_plugins,
+                verify as verify_dashboard,
+            )
 
             if applied.dashboard_id is None:
                 raise RuntimeError("apply succeeded without a dashboard id")
@@ -1608,18 +2274,7 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 stage="verify",
                 label="Checked the dashboard",
                 summary=checks.rendering,
-                charts=[
-                    {
-                        "chart_id": c.chart_id,
-                        "name": c.slice_name,
-                        "viz_type": c.viz_type,
-                        "ok": c.ok,
-                        "rows": c.rows,
-                        "error": c.error,
-                        "note": c.note,
-                    }
-                    for c in checks.charts
-                ],
+                charts=_chart_checks(checks),
                 fidelity_notes=checks.fidelity_notes,
             )
 
@@ -1645,6 +2300,51 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 ref_to_id=applied.ref_to_id,
             )
             total_cost += visual.cost_usd
+            # The data API cannot see a script crash and cannot query a custom
+            # plugin at all; the browser saw both. Folded into the verify
+            # result, so the headline, the result and the trace count a chart
+            # that failed to render as broken rather than as working.
+            if visual.render:
+                checks.apply_render(visual.render)
+                session.publish(
+                    "stage_start",
+                    stage="render",
+                    label="Checking how each chart rendered in the browser",
+                )
+                session.publish(
+                    "stage_complete",
+                    stage="render",
+                    label="Rendered the dashboard in a browser",
+                    summary=checks.rendering,
+                    charts=_chart_checks(checks),
+                    failures=checks.render_failures,
+                )
+
+            # Stage F reporting a plugin "built" is not evidence it works --
+            # only the registry it actually landed in, and a real render, are.
+            # Checked once, here, against the registry snapshot D and E were
+            # given and the same render evidence every other chart is judged
+            # by, and written to the trace as its own entry rather than left
+            # implied by the overall "N/N charts working" summary.
+            confirmations = confirm_new_plugins(
+                plan.final, registry.viz_types(), checks.charts, applied.ref_to_id
+            )
+            if confirmations:
+                session.publish(
+                    "plugin_confirmations",
+                    label="Confirming new plugins actually registered and rendered",
+                    confirmations=[
+                        {
+                            "region_id": c.region_id,
+                            "viz_type": c.viz_type,
+                            "chart_id": c.chart_id,
+                            "registered": c.registered,
+                            "rendered_ok": c.rendered_ok,
+                        }
+                        for c in confirmations
+                    ],
+                )
+
             session.publish(
                 "stage_complete",
                 stage="visual",
@@ -1681,7 +2381,21 @@ def _run(app: Any, session: Any) -> None:  # noqa: C901
                 "visual_findings": visual.findings,
                 "screenshot_path": visual.screenshot_path,
                 "all_charts_ok": checks.all_ok,
+                "render_failures": checks.render_failures,
+                "dev_error_overlay": visual.overlays,
                 "fidelity_notes": checks.fidelity_notes,
+                "apply_warnings": applied.warnings,
+                "not_verified_close_up": visual.not_verified,
+                "plugin_confirmations": [
+                    {
+                        "region_id": c.region_id,
+                        "viz_type": c.viz_type,
+                        "chart_id": c.chart_id,
+                        "registered": c.registered,
+                        "rendered_ok": c.rendered_ok,
+                    }
+                    for c in confirmations
+                ],
             }
             session.publish("done", label=_done_label(checks, visual), **session.result)
 

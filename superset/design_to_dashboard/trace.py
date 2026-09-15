@@ -66,6 +66,7 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
             f"- **Cost:** ${result.get('cost_usd', 0):.2f}",
             f"- **Rendering:** {result.get('rendering') or 'not checked'}",
         ]
+        out += [f"    - {failure}" for failure in result.get("render_failures") or []]
     if state.get("error"):
         out.append(f"- **Error:** {state['error']}")
     out.append("")
@@ -101,9 +102,11 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
                     "",
                 ]
             for decision in event.get("decisions") or []:
+                kind = decision.get("chart_kind")
                 out.append(
                     f"- `{decision.get('region_id')}` → **{decision.get('decision')}**"
                     f" `{decision.get('viz_type') or ''}`"
+                    + (f" — _{kind}_" if kind else "")
                 )
                 for label, key in (
                     ("thumbnails", "thumbnail_evidence"),
@@ -112,6 +115,15 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
                 ):
                     if decision.get(key):
                         out.append(f"    - _{label}_: {decision[key]}")
+                # The registry's own account of what was compared, alongside
+                # the model's -- so a reader can check `thumbnail_evidence`
+                # against the actual card rather than trust it on its own.
+                if card := decision.get("capability_card_compared"):
+                    excerpt = card if len(card) <= 400 else card[:397] + "..."
+                    out.append(
+                        "    - _capability card compared_: "
+                        + excerpt.replace("\n", " ")
+                    )
             if event.get("decisions"):
                 out.append("")
             for check in event.get("charts") or []:
@@ -119,12 +131,22 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
                     continue
                 if "rows" in check:
                     # The verify stage: a chart that exists, queried for real.
-                    mark = "ok" if check.get("ok") else "**FAILED**"
+                    # A custom plugin the data API cannot query has no failure
+                    # on record and no success either, until a browser renders
+                    # it; marked "ok" it read as working.
+                    if not check.get("ok"):
+                        mark = "**FAILED**"
+                    elif check.get("checked", True):
+                        mark = "ok"
+                    else:
+                        mark = "unchecked"
                     out.append(
                         f"- {mark} `{check.get('viz_type')}` #{check.get('chart_id')}"
                         f" rows={check.get('rows')} "
                         f"{check.get('error') or check.get('note') or ''}"
                     )
+                    if check.get("render_error"):
+                        out.append(f"    - _render_: {check['render_error']}")
                 elif not check.get("ok"):
                     # Stage D: only the charts that did not come out clean.
                     # Recorded with what was wrong, because the summary line
@@ -180,6 +202,22 @@ def render(state: dict[str, Any]) -> str:  # noqa: C901
             "cancelled",
         ):
             out.append(f"- _{kind}_: {event.get('label')}")
+        elif kind == "plugin_confirmations":
+            # "Built" is stage F's word; this is whether it is real -- present
+            # in the registry stage D and E actually read, and rendered
+            # without error, checked independently of each other.
+            out += ["", f"### {event.get('label')}", ""]
+            for c in event.get("confirmations") or []:
+                registered = "✅" if c.get("registered") else "❌ NOT IN REGISTRY"
+                if c.get("rendered_ok") is None:
+                    rendered = "not checked (no chart was created)"
+                else:
+                    rendered = "✅ rendered" if c.get("rendered_ok") else "❌ FAILED"
+                out.append(
+                    f"- `{c.get('viz_type')}` ({c.get('region_id')}, "
+                    f"chart #{c.get('chart_id')}): {registered}, {rendered}"
+                )
+            out.append("")
         elif kind == "chrome_effects":
             # Not a bullet like the other notices: this is the one place the
             # run tells the user what matching the design took away, and a
@@ -235,6 +273,18 @@ def _visual_section(result: dict[str, Any]) -> list[str]:  # noqa: C901
         out += ["", summary]
     if problems := result.get("visual_problems") or []:
         out += ["", "_The report broke its own contract:_ " + "; ".join(problems)]
+    # Mechanical, not left to whether the model's own `summary` happened to
+    # mention it: a region dropped for image budget got no close-up pair, so
+    # any finding about it -- or its total absence from `findings` -- was
+    # judged from the full-page screenshot alone, at a size too small to read
+    # a number or a label. A reader who does not see this list has no way to
+    # tell "checked closely and it matched" from "never checked closely".
+    if unverified := result.get("not_verified_close_up") or []:
+        out += [
+            "",
+            "_No close-up was affordable within one request's image budget "
+            "for:_ " + ", ".join(f"`{region_id}`" for region_id in unverified),
+        ]
     out.append("")
 
     for finding in findings:

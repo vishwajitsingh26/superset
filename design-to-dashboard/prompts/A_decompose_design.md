@@ -27,25 +27,73 @@ size the copy you are looking at happens to be, fractions are the same.
 
 ## Where one section ends and the next begins
 
-**Follow the borders you can see.** A design draws its own component
-boundaries — a card edge, a panel outline, a background change, a rule. If you
-can see a border around something, that is a component. Split there.
+**A region is the smallest thing one Superset component, built once against
+one query, would fully produce.** That is the test — apply it everywhere,
+whatever the design shows, whether or not you have seen this kind of component
+before. At every boundary, ask: **if this were built as two separate charts
+instead of one, would either be missing data it needs, or would one keep
+changing without the other?** No — they always move together, off one query —
+means one region, whatever it visually contains. Yes — either can change,
+render, or need data independently of the other — means separate regions, or a
+wrapper with real children.
 
-Inside a border, stop at **the thing that would get its own chart**. A card
-showing `AWS Database`, `$10,495`, a delta chip, a sub-line, a sparkline, a
-"top cost driver" pill and a "last updated" timestamp is **one** region: every
-part of it describes that provider's spend. Its pieces are described in
-`observed`, not split off.
+A visible border is the strongest single piece of evidence for "one query" —
+a design usually draws one card around one component — but it is evidence, not
+the rule. Judge the box's own contents against the test above; do not stop at
+a border just because it is there, and do not require one to split where the
+test says to.
+
+**The reverse is evidence too, and it is weighed the same way, not overridden
+by it.** A piece drawn with its own distinct chrome — its own fill colour, its
+own border, its own corner radius, different from whatever sits beside or
+below it — is evidence that piece is its own build, even when its data is
+plainly derived from the same source as its neighbour. "Reads related data" is
+not "is the same component": a callout banner stating an insight computed from
+the table above it is still visually its own card if the design draws it as
+one — separate fill, separate border, a gap between the two — regardless of
+whether the number in the banner came from the same query. Weigh both kinds of
+evidence together; do not let one silently win because it happens to be the
+test named first. When they conflict, the chrome is usually the more reliable
+signal, because it is what the design actually drew, and the data relationship
+is your own inference about how it might be built.
+
+Two worked examples, because the test reads the same whether the design looks
+like a KPI tile or nothing you have a name for:
+
+- A card showing `AWS Database`, `$10,495`, a delta chip, a sub-line, a
+  sparkline, a "top cost driver" pill and a "last updated" timestamp is **one**
+  region: one query (this provider's spend) produces every part of it, so none
+  of it can change without the rest. Its pieces are described in `observed`,
+  not split off.
+- A map coloured by region next to a list of the same regions and their spend
+  is **one** region, for the same reason: one query (spend grouped by region)
+  drives both halves, and neither is independently interactive or independently
+  queryable. Splitting it into a "chart" and a "table" side by side loses that
+  they are one component — describe the list as part of the map's `observed`,
+  the way the KPI card's delta chip is part of its.
 
 ## Nesting
 
-A framed section that holds other bordered components is a **wrapper**. Give it
-`role: "wrapper"` and list what it holds in `children`. The children are real
-regions in their own right — number them, describe them, do not fold them into
-the parent's `observed`.
+A section is a **wrapper** — `role: "wrapper"`, its contents listed in
+`children` — only where the test above actually fails between its parts: two
+or more pieces that could be built, rendered, or changed independently of each
+other, grouped inside one outer frame. A wrapper is not "a card that contains
+more than one visually distinct thing"; it is specifically a card whose
+contents are more than one *component*. The children are real regions in their
+own right — number them, describe them, do not fold them into the parent's
+`observed`.
 
 - **A child's `bbox` must sit inside its parent's.** That is how the nesting is
   checked, so read both boxes carefully.
+- **A `tabs`/`toggle` wrapper's `children` are the switched content, and
+  nothing else.** They are what the control replaces on the page as it moves
+  between states — not everything that happens to sit inside the frame around
+  them. A callout, a caption, a total row, or anything else that stays on
+  screen no matter which state is showing is not one of the states, so it is
+  not a child of that wrapper: if it has its own distinct chrome (see above),
+  it is a sibling region in its own right, drawn near the wrapper, not held by
+  it. Getting this wrong tells a later stage a static element is one of several
+  interchangeable views — it is neither interchangeable nor a view.
 - **Nest as deep as the design does.** There is no cap. A panel holding cards
   and a table is two levels; if a card inside it has its own bordered
   sub-sections, that is three.
@@ -84,10 +132,23 @@ Sweep the design top-left to bottom-right. Number every region `n`, starting at
 - `same_as` — the number of the earlier region drawn the same way, or `null`
 - `frame` — for a wrapper, what its own chrome does to its children:
   `none` (just groups them) | `tabs` (a tab strip switches between them) |
-  `toggle` (a view toggle swaps how the same content renders). `null` for
-  everything else. **Always set this on every wrapper — it is never left
-  blank.** e.g. a card with a list/chart/grid toggle over one table is
-  `frame: "toggle"`.
+  `toggle` (a control switches which child is shown, and each child is built
+  from a **different query or a different renderer** than the others — not
+  merely a different parameter of the same one). `null` for everything else.
+  **Always set this on every wrapper — it is never left blank.** e.g. a card
+  with a list/chart/grid toggle over one table is `frame: "toggle"`, because a
+  table, a chart and a grid are three different components. A `Daily / Weekly
+  / Monthly` control on one stacked-area chart is **not** `toggle` at all —
+  every state is the same component with one query parameter changed, so the
+  section fails the wrapper test above and is a single leaf region with the
+  control listed in its own `controls`.
+
+  `tabs` and `toggle` both require `frame_why`: one clause naming what
+  actually differs between the states — a renderer, a query, a dataset — the
+  same way `chrome.why` names what decided `surface`. "it's a toggle control"
+  is not a reason; "list view queries raw rows, chart view queries an
+  aggregate — different queries" is. `frame_why` is `null` when `frame` is
+  `none` or the region is not a wrapper.
 - `chrome` — what the section is *drawn on*, which decides what Superset is
   allowed to draw around it. Superset wraps every chart in a holder that paints
   a card, pads it, and puts a title and an overflow menu on top. Answer the
@@ -100,7 +161,13 @@ Sweep the design top-left to bottom-right. Number every region `n`, starting at
   ```
 
   - `surface` — `card` when the section sits on its own filled or bordered
-    surface, `bare` when it sits directly on the page background. A page
+    surface, `bare` when it sits directly on the page background. Judge the
+    region's own bounding box against the counterfactual, not any one
+    element inside it: a compact pill or button drawn with its own thin
+    border is still `bare` if the box around it — the space Superset's
+    holder would actually fill, at the holder's own generous padding and
+    shadow — is otherwise empty page background. `card` is for a section
+    whose whole box the design outlines as one panel, edge to edge. A page
     heading, a control band and a floating pill are almost always `bare`;
     adding a card to one is the most visible way this pipeline has broken a
     design.
@@ -151,6 +218,28 @@ Sweep the design top-left to bottom-right. Number every region `n`, starting at
     elements, shadow
   - empty and loading states the design draws, including "coming soon" cards
   - icons, deltas and their arrows, and what direction means
+- `axis_formats` — for a region that draws an axis or a series (an axis
+  label row, a sparkline, a trendline, a run of bars), one entry per axis or
+  series naming **the actual shape of what is plotted there**, read off the
+  design rather than left for a later stage to guess from a component's own
+  idea of what a date looks like:
+
+  ```json
+  { "axis": "x", "kind": "date", "pattern": "MMM YYYY", "prefix": null, "suffix": null }
+  ```
+
+  - `axis` — `x`, `y`, or a series name when several run different scales.
+  - `kind` — `date | category | number`.
+  - `pattern` — the exact format as drawn: `"MMM YYYY"` for `Nov 2024`,
+    `"MMM D"` for `Apr 7`, `",.0f"` for `1,234`. Read it off the labels
+    themselves, not off what you assume the underlying data must be.
+  - `prefix` / `suffix` — a literal drawn beside every value on this axis —
+    `"$"`, `"%"`, `"K"` — or `null` when none is drawn.
+
+  Empty list when the region draws no axis or series (a table, a plain KPI
+  card with only a value). This is what a plugin builds its formatter from
+  later; the general "axis labels, ticks, units" note above is the human
+  account of the same thing, this is its structured form.
 - `implied_data` — the dimensions and measures this element must be reading,
   **in the design's own vocabulary**. Write `"monthly spend broken down by
   cloud provider"`, never `"SUM(cost) GROUP BY provider_name"`. You do not know
@@ -179,6 +268,28 @@ Sweep the design top-left to bottom-right. Number every region `n`, starting at
   Flag anything the design hides from you: a horizontal scrollbar means columns
   continue past the edge, a truncated list means rows you cannot count. The
   next stage asks the user rather than letting you guess.
+
+## Before moving to the next region
+
+A box that is inside its parent and does not collide with a sibling can still
+be wrong — those are checks on the *structure*, not on whether the box is
+where the picture actually puts it. Only you can check that, so do it while
+the region is in front of you, not after the whole design is numbered:
+
+- **Does this region's own `bbox` actually contain the `title` and the first
+  line of `observed` you just wrote for it?** A region titled `AWS Coverage`
+  whose box sits on the table drawn below it has the right title and the wrong
+  box. If they do not visibly agree, recheck the box against the image before
+  you move on — do not adjust the title to match the box instead.
+- **When several regions stack inside one wrapper, place each one's edge
+  against its neighbour's, not against the page.** "This tile row ends where
+  the table's header begins" is a boundary you can point to; "this tile row is
+  at `y: 0.42`" is a guess that drifts silently, especially the third or fourth
+  time you make it in the same wrapper. Read the boundary between two
+  neighbours once, and give both regions that same edge.
+- **A chart or table region's box must hold its own full extent** — every
+  axis's start and end, the legend, a header row, whatever an open tooltip is
+  currently drawn over — not just whichever part of it is easiest to see.
 
 ## When you are given more than one image
 
@@ -214,9 +325,6 @@ the whole dashboard, so the next stage asks rather than letting you guess.
   on this; your `bbox` fractions are the coordinate system.
 - `tabs` — top-level tab labels in order, or `null`
 - `image_set` — `{ "kind": "tabs|continuation|separate|single", "why": "...", "confidence": "..." }`
-- `filter_bar` — `{ present, position: "top"|"left"|"none", controls: [...] }`.
-  A dedicated bar of filters spanning the page. Controls drawn as their own
-  bordered components in the layout are regions, not a filter bar.
 - `palette` — hex values in order of prominence, and what each is used for
 - `typography` — the observed size/weight scale
 - `theme` — `light | dark`
@@ -235,19 +343,26 @@ the whole dashboard, so the next stage asks rather than letting you guess.
   Do not name it.
 - **Decoration is not a chart.** Logos, dividers, background art →
   `role: decoration`.
-- **A control band is one region, not one region per control.** A row of
-  page-level controls — several selects and an Apply button — sets
-  `global.filter_bar.present` and is a **single** region with `role: "filter"`,
-  every control listed in `controls`. A border drawn around each select does not
-  make it its own region: they commit together and one component renders them.
-  Number a control on its own only when it acts alone and applies immediately,
-  such as a search box beside one table — or when it is a date range, which is
-  always its own region (next rule), even when the band is where it is drawn.
+- **A control band is as many regions as it has independent outcomes** — apply
+  the same one-query test as everywhere else. Several selects that only take
+  effect together, behind one shared commit, are **one** region: nothing
+  happens until the button is pressed, so the button's press is the one query
+  change, and the whole band is `role: "filter"` with every select listed in
+  `controls`. Several selects with **no shared commit — each applies the
+  moment it changes** are as many regions as there are selects: each is
+  independently a live filter on its own dimension, so each is its own
+  `role: "filter"` region, even though they are drawn in one visually
+  continuous band with no border between them. A shared border or a shared row
+  is not shared data; only a shared commit is.
+  Number a control on its own the same way when it acts alone and applies
+  immediately, such as a search box beside one table — or when it is a date
+  range, which is always its own region (next rule), even when the band is
+  where it is drawn.
   **Say how it commits.** A commit button drawn in the band (Apply, Search, Go)
   goes in `controls`, and `interactions` says nothing takes effect until it is
-  pressed. With no such button, say the selections apply as they change. That is
-  the difference between one dashboard refresh and one per control, so it is not
-  a detail to leave out.
+  pressed — that is the evidence for treating the band as one region. With no
+  such button, say each control applies as it changes — and reflect that in how
+  many regions you numbered, not just in the prose.
 - **A date or time range control is always its own region**, wherever it is
   drawn — a pill in the header band, a field inside a control row. Give it
   `role: "filter"`, put the range it displays in `observed` verbatim (`"Apr 1,

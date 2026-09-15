@@ -55,6 +55,7 @@ ARCHETYPE_LABELS = {
     "table": "a table with drawn cells, not plain text",
     "filter_widget": "a filter that drives the rest of the dashboard",
     "navigation": "navigation between dashboard states",
+    "map": "a chart plotted on a map",
 }
 
 
@@ -80,6 +81,34 @@ def _group_key(decision: dict[str, Any]) -> str:
     if kind == "reuse":
         return f"reuse:{decision.get('existing_chart_id')}"
     return f"{kind}:{decision.get('viz_type')}"
+
+
+def _reuse_evidence(decision: dict[str, Any]) -> str:
+    """What a reviewer can check a `reuse` decision against.
+
+    `reuse_confirmed_evidence` is the real `get_chart_info` result C's
+    `reuse_evidence` paraphrases -- prefer it, because it is the fact, not the
+    account of the fact, and a stale or wishful paraphrase would otherwise
+    look identical to a checked one. Falls back to C's own sentence only
+    where no confirming lookup was attached; still worth showing, just not
+    independently verified.
+    """
+    confirmed = decision.get("reuse_confirmed_evidence")
+    if isinstance(confirmed, dict) and confirmed:
+        parts = []
+        if name := confirmed.get("name"):
+            parts.append(str(name))
+        if viz_type := confirmed.get("viz_type"):
+            parts.append(f"({viz_type})")
+        if dataset := confirmed.get("dataset"):
+            parts.append(f"on {dataset}")
+        if metrics := confirmed.get("metrics"):
+            parts.append(f"reading {', '.join(str(m) for m in metrics)}")
+        if columns := confirmed.get("columns"):
+            parts.append(f"grouped by {', '.join(str(c) for c in columns)}")
+        if parts:
+            return " ".join(parts)
+    return str(decision.get("reuse_evidence") or "")
 
 
 def _queries(
@@ -187,6 +216,11 @@ def build(  # noqa: C901
             "viz_type": decision.get("viz_type"),
             "what": _label_for(decision),
             "rationale": decision.get("rationale") or "",
+            "reuse_evidence": (
+                _reuse_evidence(decision)
+                if decision.get("decision") == "reuse"
+                else ""
+            ),
             "fidelity_loss": decision.get("fidelity_loss") or "",
             "used_by": [member],
             "queries": queries,

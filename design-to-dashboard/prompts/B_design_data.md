@@ -97,6 +97,11 @@ not fifty.
   real region names, the real instance types it draws.
 - **Every row has one value per column, in column order.** Dates as
   `YYYY-MM-DD` strings, booleans as `true` or `false`, numbers unquoted.
+- **A column that means a percentage is stored as a fraction of 1** —
+  `-0.152` for `-15.2%`, never `-15.2`. The number-format stage C picks for a
+  percent column multiplies by 100 to draw the `%` sign, the same way
+  spreadsheet software does; a column already scaled to whole percentage
+  points is drawn 100× too large.
 - Correctness of the *numbers* is not the goal; a dashboard that renders
   exactly like the design is.
 
@@ -116,6 +121,12 @@ columns, the grouping or the ordering genuinely differ.
   rather than leaving the chart to discard rows it fetched.
 - **Name it for what it serves**, and never with a taken name:
   `database_spend_by_provider`, `coverage_summary`.
+- **A view that carries a real date or time value always exposes it as
+  `d2d_date`** — `SELECT usage_date AS d2d_date, ...` — whatever the
+  underlying fact table calls its own column. One fixed name means a later
+  stage never has to look up what a specific view happens to call its time
+  column: it is always this one. Only the two-column range-bounds shape below
+  is exempt, because it has no single time column to name this way.
 
 ## Step 5 — Point every region at something
 
@@ -124,28 +135,74 @@ your spec. Regions that draw no data still get one, because Superset requires a
 datasource on every chart:
 
 - **`wrapper`, `nav`, `header`, `text`, and any `decoration` that survives** →
-  `shared_no_query`. Include it in `fact_tables` as one `TEXT` column named
-  `placeholder` holding one row, `["static"]`.
+  `shared_no_query` — **unless the region's own `wrapper_reads_data` is
+  `true`.** That field is set only when a person, at the review gate between
+  stage A and this one, was shown the region and said it genuinely prints a
+  real value (a header total, a banner stat) — not a guess this stage makes
+  itself. Where it is `true`, bind the region to a real source the way any
+  chart would, and read `data_notes` for what the value actually is (often a
+  sum or share of sibling regions' own figures — reconcile against those,
+  don't invent a second number). Where it is absent or `false`, the plain
+  role-based rule above still applies.
 - **A `filter` region reads data like any chart.** It is built as a real control
-  and it needs real columns, so `shared_no_query` is never the answer for one:
-  - **A date or time range control** → a **one-row view carrying the earliest
-    and latest value** of the time column it filters, columns named
-    `range_start` and `range_end`, plus that column's own name in
-    `time_column`. The calendar opens on that window and rejects dates outside
-    it. Name it for the series it bounds: `cloud_spend_date_bounds`.
-  - **A select** → a view of the distinct values it offers, one column per
-    field. Several selects in one control band share one view.
+  and it needs real columns, so `shared_no_query` is never the answer for one.
+  If the region carries `filter_kind` from the gate, it names the shape
+  directly — build to it rather than re-deriving it from `observed`:
+  - **`date_range`** (or, absent a `filter_kind`, anything read as a date or
+    time range control) → a **one-row view carrying the earliest and latest
+    value** of the time column it filters, columns named `range_start` and
+    `range_end`. **Set `time_column` to `null` on this binding** — the view
+    has no single time column to name, only the two bounds, and a downstream
+    stage that finds a name there and queries it as a literal column on this
+    view is querying a column that does not exist. Name the view for the
+    series it bounds: `cloud_spend_date_bounds`.
+  - **`select`** (or, absent a `filter_kind`, anything read as a select) → a
+    view of the distinct values it offers, one column per field. Several
+    selects in one control band share one view.
+  - **`search`** → a view of the column(s) it searches over; no distinct-value
+    narrowing, the control reads free text.
+  - **`other`**, or a `filter_kind` you cannot map to one of the above → fall
+    back to your own reading of `observed`, same as when the field is absent.
+- **Any region whose `has_embedded_series` is `true`, or whose
+  `unusual_treatment` names a sparkline, trendline, or other embedded
+  mini-series — not just a chart whose whole purpose is a trend — needs a
+  real temporal column bound, even where its headline value would not
+  otherwise require one.** `has_embedded_series` is decisive where it is set
+  at all (`true` or `false`, from the gate) — do not fall back to reading
+  `unusual_treatment` yourself when the field is present, only when it is
+  absent entirely. A KPI card is drawn once for its value and again, silently,
+  for the line beside it: a binding with no time column gives that second
+  drawing nothing to run on, and the card ships with an empty sparkline the
+  design never shows empty. Bind such a region to a view whose time column is
+  `d2d_date`, wide enough to cover the span the design draws.
 - **Everything else** → the view that serves it.
 
-**`same_as` never collapses two bindings.** Two regions can be the same
-component and read completely different data — a coverage panel and a runtime
-panel are built identically and share nothing. Same plugin, separate bindings,
-often separate views.
+**`same_as` never collapses two bindings** on its own — two regions can be the
+same component and read completely different data, a coverage panel and a
+runtime panel are built identically and share nothing. **Where a `same_as`
+group's first region carries `data_notes` from the gate, follow it instead of
+guessing:** it may say the group genuinely shares one table (bind every member
+to the same source, filtered differently) or that each member is separate
+(the default). This is the one place `data_notes` is expected on a region that
+is not itself `wrapper_reads_data` — it is answering "one table or several",
+not "does this read data at all".
+
+`plugin_choice` (stock vs. custom) is not yours to read or act on. It decides
+how stage C builds the chart, not what data it reads; every binding is written
+exactly the same regardless of what it says.
 
 ## Rules
 
 - **Never bind a column your spec does not create.** Every dimension, measure
   and time column must be a column of the table or view the binding reads.
+- **A binding's `time_column` names a column of the view it points at, never
+  the fact table underneath it.** Since every view that carries a real date
+  exposes it as `d2d_date` (Step 4), `time_column` is `"d2d_date"` whenever a
+  binding is temporal at all, and `null` otherwise — never the fact table's
+  own column name, which a view built on top of it may alias away, group by,
+  or not expose at all. A `time_column` naming something the bound view does
+  not select is a chart or filter that fails outright, with no warning until
+  it is queried.
 - **`is_dttm` is a claim, not a fact.** A column holding `1985` is not a date
   however it is typed; a time grain on it makes Superset emit
   `DATE_TRUNC('year', 1985)` and the chart errors. Type real dates as `DATE`

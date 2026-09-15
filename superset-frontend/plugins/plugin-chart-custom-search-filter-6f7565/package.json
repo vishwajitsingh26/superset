@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-search-filter-6f7565",
+  "version": "0.1.0",
+  "description": "Per user answer q6, this control performs ilike matching against account_name (r14 / dataset 310), service_name (r13 / dataset 309) and region_name (r17 / data…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

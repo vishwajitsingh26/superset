@@ -31,12 +31,12 @@ import { fetchDatasourceMetadata } from "src/dashboard/actions/datasources";
 import { Empty } from "@superset-ui/core/components";
 import { SupersetClient } from "@superset-ui/core";
 import type { JsonObject, QueryFormData } from "@superset-ui/core";
-import { styled, t, ExtraFormData } from "../../adapters/supersetAdapter";
-import { WrapperFilter, WrapperFilterValues } from "../../types";
+import { styled, t, ExtraFormData } from "../adapters/supersetAdapter";
+import { WrapperFilter, WrapperFilterValues } from "./types";
 import {
   mergeExtraFormData,
   wrapperFilterValuesAsExtraFormData,
-} from "../../utils/extraFormData";
+} from "./utils/extraFormData";
 
 const NATIVE_FILTER_PREFIX = "NATIVE_FILTER-";
 

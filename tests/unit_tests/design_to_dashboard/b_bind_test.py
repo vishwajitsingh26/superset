@@ -454,6 +454,171 @@ def test_a_region_the_spec_forgot_is_reported() -> None:
     assert "region not bound: r03_card" in validate_spec(spec, DESIGN)
 
 
+# a temporal column that is not named the one way the design prompt allows
+
+
+def test_a_time_column_naming_anything_but_d2d_date_is_reported() -> None:
+    spec = _spec()
+    spec["bindings"][2]["time_column"] = "usage_date"
+    problems = validate_spec(spec, DESIGN)
+    assert any("not 'd2d_date'" in p for p in problems)
+
+
+def test_a_time_column_the_bound_views_sql_never_selects_is_reported() -> None:
+    spec = _spec()
+    spec["bindings"][2]["time_column"] = "d2d_date"
+    # spend_total's SQL, unchanged from the base spec, never aliases to
+    # d2d_date -- so the name and the view disagree.
+    problems = validate_spec(spec, DESIGN)
+    assert any("never selects a column under that name" in p for p in problems)
+
+
+def test_a_time_column_the_bound_table_has_no_such_column_is_reported() -> None:
+    spec = _spec()
+    spec["bindings"][2]["source"] = "spend_by_day"
+    spec["bindings"][2]["time_column"] = "d2d_date"
+    problems = validate_spec(spec, DESIGN)
+    assert any("has no column by that name" in p for p in problems)
+
+
+def test_a_time_column_matching_the_views_own_alias_has_no_problem() -> None:
+    spec = _spec()
+    spec["views"][0]["sql"] = (
+        "SELECT SUM(cost) AS spend, MAX(usage_date) AS d2d_date FROM d2d.spend_by_day"
+    )
+    spec["bindings"][2]["time_column"] = "d2d_date"
+    assert validate_spec(spec, DESIGN) == []
+
+
+# a sparkline or trendline needs a real time column behind it
+
+
+def test_a_sparkline_with_no_time_column_is_reported() -> None:
+    design = {
+        "global": DESIGN["global"],
+        "regions": [
+            *REGIONS[:2],
+            {
+                **REGIONS[2],
+                "unusual_treatment": ["a sparkline trending up behind the delta"],
+            },
+        ],
+    }
+    problems = validate_spec(_spec(), design)
+    assert any("sparkline/trendline" in p for p in problems)
+
+
+def test_a_sparkline_with_a_time_column_has_no_problem() -> None:
+    design = {
+        "global": DESIGN["global"],
+        "regions": [
+            *REGIONS[:2],
+            {
+                **REGIONS[2],
+                "unusual_treatment": ["a sparkline trending up behind the delta"],
+            },
+        ],
+    }
+    spec = _spec()
+    spec["views"][0]["sql"] = (
+        "SELECT SUM(cost) AS spend, MAX(usage_date) AS d2d_date FROM d2d.spend_by_day"
+    )
+    spec["bindings"][2]["time_column"] = "d2d_date"
+    assert validate_spec(spec, design) == []
+
+
+# the stage A/B gate's fields, taught to stage B
+
+
+def test_has_embedded_series_true_is_decisive_even_with_no_unusual_treatment() -> None:
+    """Not just another vote alongside the keyword guess -- checked instead of it."""
+    design = {
+        "global": DESIGN["global"],
+        "regions": [*REGIONS[:2], {**REGIONS[2], "has_embedded_series": True}],
+    }
+    problems = validate_spec(_spec(), design)
+    assert any("gate confirmed an embedded series" in p for p in problems)
+
+
+def test_has_embedded_series_false_overrides_a_stray_keyword_match() -> None:
+    """A region the gate confirmed does NOT need a series is not re-flagged."""
+    design = {
+        "global": DESIGN["global"],
+        "regions": [
+            *REGIONS[:2],
+            {
+                **REGIONS[2],
+                "has_embedded_series": False,
+                "unusual_treatment": ["a sparkline trending up behind the delta"],
+            },
+        ],
+    }
+    assert validate_spec(_spec(), design) == []
+
+
+def test_wrapper_reads_data_true_requires_a_real_binding() -> None:
+    """The gate confirmed this header/wrapper/text prints a real value."""
+    design = {
+        "global": DESIGN["global"],
+        "regions": [
+            {**REGIONS[0], "wrapper_reads_data": True},
+            *REGIONS[1:],
+        ],
+    }
+    # r01_header still points at shared_no_query in the base spec and names
+    # no columns -- the override means it is judged as a real chart now, so
+    # it is flagged for naming no columns, not for reading the shared table.
+    problems = validate_spec(_spec(), design)
+    assert not any(
+        "role 'header' draws no data but reads 'shared_no_query'" in p for p in problems
+    )
+    assert any(
+        "wrapper_reads_data says this region reads real data" in p for p in problems
+    )
+
+
+def test_wrapper_reads_data_true_with_a_real_binding_has_no_problem() -> None:
+    design = {
+        "global": DESIGN["global"],
+        "regions": [
+            {**REGIONS[0], "wrapper_reads_data": True},
+            *REGIONS[1:],
+        ],
+    }
+    spec = _spec()
+    spec["bindings"][0] = {
+        "region_id": "r01_header",
+        "source": "spend_total",
+        "measures": ["spend"],
+    }
+    assert validate_spec(spec, design) == []
+
+
+def test_attach_gate_fields_copies_present_fields_onto_the_matching_binding() -> None:
+    spec = _spec()
+    design = {
+        "global": DESIGN["global"],
+        "regions": [
+            {**REGIONS[0], "wrapper_reads_data": True, "data_notes": "a real total"},
+            REGIONS[1],
+            {**REGIONS[2], "plugin_choice": "custom", "has_embedded_series": False},
+        ],
+    }
+    b_bind.attach_gate_fields(spec, design)
+    header, _, card = spec["bindings"]
+    assert header["wrapper_reads_data"] is True
+    assert header["data_notes"] == "a real total"
+    assert card["plugin_choice"] == "custom"
+    assert card["has_embedded_series"] is False
+
+
+def test_attach_gate_fields_leaves_bindings_alone_when_nothing_is_set() -> None:
+    spec = _spec()
+    before = json.dumps(spec["bindings"])
+    b_bind.attach_gate_fields(spec, DESIGN)
+    assert json.dumps(spec["bindings"]) == before
+
+
 # keeping clear of datasets earlier dashboards own
 
 

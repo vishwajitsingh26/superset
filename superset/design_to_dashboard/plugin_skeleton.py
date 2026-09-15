@@ -59,7 +59,12 @@ ARCHETYPE_BEHAVIORS = {
     "table": ["InteractiveChart", "DrillToDetail"],
     "container": ["InteractiveChart"],
     "filter_widget": ["InteractiveChart", "NativeFilter"],
-    "navigation": ["InteractiveChart", "NativeFilter"],
+    # A navigation plugin posts to the parent app -- it never calls
+    # `setDataMask`, so it earns no entry in `chart_configuration` and
+    # declaring `NativeFilter` would list it in the filter picker as a filter
+    # type that silently does nothing once added.
+    "navigation": ["InteractiveChart"],
+    "map": ["InteractiveChart", "DrillToDetail", "DrillBy"],
 }
 ARCHETYPE_CATEGORY = {
     "viz": "Custom Charts",
@@ -67,6 +72,17 @@ ARCHETYPE_CATEGORY = {
     "container": "Custom Charts",
     "filter_widget": "Filter",
     "navigation": "Filter",
+    "map": "Map",
+}
+
+# Extra `dependencies` (beyond the shared `peerDependencies` every plugin
+# gets) a given archetype's generated code needs at runtime. `datamaps` is
+# not a new addition to this instance -- it is already what Superset's own
+# stock `legacy-plugin-chart-world-map` depends on and already sits in
+# `node_modules` through that plugin's install. A `map` plugin declaring it
+# here is naming a real dependency, not introducing one.
+ARCHETYPE_DEPENDENCIES: dict[str, dict[str, str]] = {
+    "map": {"datamaps": "^0.5.10"},
 }
 
 
@@ -197,6 +213,71 @@ def _render(template: str, values: dict[str, str]) -> str:
     return template
 
 
+# Metric helpers every plugin gets, written by the skeleton and owned by it.
+# A metric control arrives empty more often than its control panel suggests:
+# a chart saved through the API skips the panel's validators, and a plugin
+# shared by several regions is configured for siblings reading fewer measures
+# than the one it was written from. `getMetricLabel` throws on an empty
+# metric, and one chart that throws is an error overlay across the whole
+# dashboard. Owned rather than seeded, so a generated adapter cannot drop them;
+# they reach Superset only through the adapter's existing exports.
+OPTIONAL_METRICS_PATH = "src/adapters/optionalMetrics.ts"
+OPTIONAL_METRIC_HELPERS = (
+    "hasMetric",
+    "metricLabelOrNull",
+    "metricValue",
+    "presentMetrics",
+)
+OPTIONAL_METRICS_SOURCE = """\
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+// Written for every plugin and not replaceable. A saved chart may hold an
+// empty metric in any control, whatever its validators say, and
+// `getMetricLabel` throws on one -- so read every metric control through
+// these and draw what is present instead of failing the whole dashboard.
+import { getMetricLabel } from './supersetAdapter';
+import type { DataRecord, QueryFormMetric } from './supersetAdapter';
+
+export type OptionalMetric = QueryFormMetric | null | undefined;
+
+export function hasMetric(metric: OptionalMetric): metric is QueryFormMetric {
+  return metric !== null && metric !== undefined && metric !== '';
+}
+
+export function metricLabelOrNull(metric: OptionalMetric): string | null {
+  return hasMetric(metric) ? getMetricLabel(metric) : null;
+}
+
+export function presentMetrics(metrics: OptionalMetric[]): QueryFormMetric[] {
+  return metrics.filter(hasMetric);
+}
+
+export function metricValue(
+  row: DataRecord | undefined,
+  metric: OptionalMetric,
+): DataRecord[string] {
+  const label = metricLabelOrNull(metric);
+  return label === null || !row ? null : (row[label] ?? null);
+}
+"""
+
+
 def render(
     plugin: PluginIdentity,
     decision: dict[str, Any],
@@ -218,6 +299,12 @@ def render(
     description = _one_line(
         decision.get("rationale") or f"Generated for {plugin.display_name}."
     )
+    dependencies_block = ""
+    if extra_deps := ARCHETYPE_DEPENDENCIES.get(archetype, {}):
+        dep_lines = ",\n".join(
+            f'    "{name}": "{version}"' for name, version in extra_deps.items()
+        )
+        dependencies_block = f'"dependencies": {{\n{dep_lines}\n  }},\n  '
     values = {
         "package_name": plugin.package_name,
         "class_name": plugin.class_name,
@@ -228,6 +315,7 @@ def render(
         "category": ARCHETYPE_CATEGORY.get(archetype, "Custom Charts"),
         "behaviors": ", ".join(f"Behavior.{name}" for name in behaviors),
         "tags": ", ".join(f"t('{tag}')" for tag in ("Custom Charts", "Generated")),
+        "dependencies": dependencies_block,
     }
     rendered: dict[str, str] = {}
     for template in sorted(root.rglob("*.tmpl")):
@@ -237,6 +325,7 @@ def render(
         )
     if not rendered:
         raise FileNotFoundError(f"no plugin skeleton at {root}")
+    rendered[f"{plugin.directory}/{OPTIONAL_METRICS_PATH}"] = OPTIONAL_METRICS_SOURCE
     return rendered
 
 

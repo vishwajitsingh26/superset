@@ -33,6 +33,7 @@ const ASK_HEADINGS: Record<PendingAsk['kind'], string> = {
   plan: t('Review the plan'),
   datasets: t('Data I need to create'),
   plugins: t('The plugins I would write'),
+  region_review: t('Review how I read your design'),
 };
 
 const Wrap = styled.div`

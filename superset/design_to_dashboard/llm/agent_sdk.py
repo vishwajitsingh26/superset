@@ -32,9 +32,49 @@ import logging
 import pathlib
 from typing import Any
 
-from .base import LLMError, LLMResponse, LLMTimeoutError
+from .base import LLMError, LLMMaxTurnsError, LLMResponse, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
+
+
+def _is_max_turns_error(detail: str) -> bool:
+    """Whether an Agent SDK error result is the turn budget running out.
+
+    A module-level function rather than inline in the raise site, so the
+    string this depends on -- the SDK's own wording, not ours -- is tested
+    without importing the SDK package itself.
+    """
+    return "maximum number of turns" in detail.lower()
+
+
+# How much of a tool result survives into the trace. A `Read` on an image
+# returns its bytes as base64 in this field -- writing that in full would
+# make every trace megabytes of unreadable text for no diagnostic value; a
+# few hundred characters is enough to see a file path, an error message, or
+# that a result repeats one already seen.
+TOOL_RESULT_PREVIEW_LENGTH = 300
+
+
+def _preview(content: str | list[dict[str, Any]] | None) -> str | None:
+    """A short, safe-to-store rendering of a tool result.
+
+    `content` is either plain text or a list of API content blocks (an image
+    read comes back as one of the latter, `type: "image"`, with the bytes
+    under a `source` key this never touches).
+    """
+    if content is None:
+        return None
+    if isinstance(content, str):
+        text = content
+    else:
+        text = ", ".join(
+            block.get("type", "?") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    text = " ".join(text.split())
+    if len(text) > TOOL_RESULT_PREVIEW_LENGTH:
+        text = text[: TOOL_RESULT_PREVIEW_LENGTH - 1] + "…"
+    return text
 
 
 class ClaudeAgentSdkProvider:
@@ -46,7 +86,7 @@ class ClaudeAgentSdkProvider:
         self,
         model: str = "claude-opus-5",
         timeout: int = 600,
-        max_turns: int = 6,
+        max_turns: int | None = 6,
         display: str = "summarized",
         effort: str = "medium",
     ) -> None:
@@ -97,6 +137,9 @@ class ClaudeAgentSdkProvider:
             TextBlock,
             ThinkingBlock,
             ThinkingConfigAdaptive,
+            ToolResultBlock,
+            ToolUseBlock,
+            UserMessage,
         )
 
         prompt = self._compose(user_prompt, image_paths)
@@ -133,9 +176,18 @@ class ClaudeAgentSdkProvider:
         usage: dict[str, Any] = {}
         session_id: str | None = None
         result_text: str | None = None
+        # Turn-by-turn tool use, kept for observation rather than enforcement:
+        # a turn count alone cannot tell a call that genuinely needed the room
+        # apart from one thrashing on the same read, and deciding where a
+        # budget is worth reintroducing (or a prompt needs fixing instead)
+        # needs to see which. `by_id` matches a tool's result back to the call
+        # that made it once the result arrives on a later message.
+        turn = 0
+        tool_calls: list[dict[str, Any]] = []
+        by_id: dict[str, dict[str, Any]] = {}
 
         async def run() -> None:  # noqa: C901
-            nonlocal cost, usage, session_id, result_text
+            nonlocal cost, usage, session_id, result_text, turn
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, StreamEvent):
                     # Raw Anthropic stream event: thinking_delta carries the
@@ -157,6 +209,10 @@ class ClaudeAgentSdkProvider:
                     continue
                 if isinstance(message, AssistantMessage):
                     session_id = message.session_id or session_id
+                    # One assistant reply is one turn, whether it ends in a
+                    # final answer or another tool call -- matches `num_turns`
+                    # on the eventual `ResultMessage`.
+                    turn += 1
                     for block in message.content:
                         if isinstance(block, ThinkingBlock):
                             chunk = block.thinking or ""
@@ -173,15 +229,58 @@ class ClaudeAgentSdkProvider:
                                     )
                         elif isinstance(block, TextBlock):
                             text_parts.append(block.text or "")
+                        elif isinstance(block, ToolUseBlock):
+                            entry = {
+                                "turn": turn,
+                                "tool": block.name,
+                                "input": block.input,
+                                "result_is_error": None,
+                                "result_preview": None,
+                            }
+                            tool_calls.append(entry)
+                            by_id[block.id] = entry
+                elif isinstance(message, UserMessage):
+                    # The tool's result, injected by the SDK as the next
+                    # "user" turn -- matched back to the call it answers so a
+                    # trace shows both sides of each turn, not just the ask.
+                    content = message.content
+                    if isinstance(content, list):
+                        for block in content:
+                            if not isinstance(block, ToolResultBlock):
+                                continue
+                            matched = by_id.get(block.tool_use_id)
+                            if matched is None:
+                                continue
+                            matched["result_is_error"] = block.is_error
+                            matched["result_preview"] = _preview(block.content)
                 elif isinstance(message, ResultMessage):
                     cost = message.total_cost_usd
-                    usage = message.usage or {}
+                    raw_usage = message.usage or {}
+                    # Not enforced -- observation only, to size a real budget
+                    # (or find what a call actually spent its turns on) from
+                    # evidence instead of another guess.
+                    usage = {
+                        **(raw_usage if isinstance(raw_usage, dict) else {}),
+                        "num_turns": message.num_turns,
+                        "terminal_reason": message.terminal_reason,
+                        "result_subtype": message.subtype,
+                    }
                     session_id = message.session_id or session_id
                     if message.is_error:
-                        raise LLMError(
-                            f"Agent SDK reported an error: "
-                            f"{message.result or message.errors}"
-                        )
+                        detail = str(message.result or message.errors)
+                        if _is_max_turns_error(detail):
+                            # The agent hit `max_turns` before it produced a
+                            # final answer -- typically spent on `Read`ing the
+                            # attached images. A plain LLMError here reads to
+                            # the caller as an ordinary failure and gets no
+                            # retry; typed distinctly, the caller can raise
+                            # the turn budget instead of repeating the same
+                            # request that already burned it once.
+                            raise LLMMaxTurnsError(
+                                f"Agent SDK reported an error: {detail}",
+                                max_turns=self.max_turns,
+                            )
+                        raise LLMError(f"Agent SDK reported an error: {detail}")
                     # `result` is the authoritative final text.
                     if isinstance(message.result, str) and message.result.strip():
                         result_text = message.result
@@ -205,6 +304,7 @@ class ClaudeAgentSdkProvider:
             usage=usage if isinstance(usage, dict) else {},
             session_id=session_id,
             provider=self.name,
+            tool_calls=tool_calls,
         )
 
     @staticmethod

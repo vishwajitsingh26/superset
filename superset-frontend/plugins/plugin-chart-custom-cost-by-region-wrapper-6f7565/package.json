@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-cost-by-region-wrapper-6f7565",
+  "version": "0.1.0",
+  "description": "Stage A recorded this region with two children (r16 map, r17 list); the container rule applies regardless of both reading the same spend_by_region rows. The us…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

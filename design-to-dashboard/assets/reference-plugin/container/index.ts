@@ -25,7 +25,7 @@ import {
 import buildQuery from "./buildQuery";
 import controlPanel from "./controlPanel";
 import transformProps from "./transformProps";
-import { CustomWrapperChartFormData } from "../types";
+import { CustomWrapperChartFormData } from "./types";
 import thumbnail from "../images/thumbnail.png";
 
 const metadata = new ChartMetadata({
@@ -54,10 +54,7 @@ export default class CustomWrapperChartPlugin extends ChartPlugin<CustomWrapperC
     super({
       buildQuery,
       controlPanel,
-      loadChart: () =>
-        import("../components/WrapperChart/WrapperChart").then(
-          (module) => module.default,
-        ),
+      loadChart: () => import("./WrapperChart").then((module) => module.default),
       metadata,
       transformProps,
     });

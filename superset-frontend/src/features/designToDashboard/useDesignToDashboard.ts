@@ -19,6 +19,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { SupersetClient } from '@superset-ui/core';
 
+/**
+ * One region stage A found in the design, as published on its
+ * `stage_complete` event. `bbox` is normalized (0-1) against the image it was
+ * read from -- `source_image` says which, for a design uploaded as more than
+ * one file/page.
+ */
+export type Region = {
+  region_id?: string;
+  title?: string | null;
+  role?: string;
+  source_image?: number;
+  bbox?: { x: number; y: number; w: number; h: number };
+};
+
 export type StageEvent = {
   type:
     | 'stage_start'
@@ -26,6 +40,7 @@ export type StageEvent = {
     | 'tool_call'
     | 'chart_done'
     | 'plugin_built'
+    | 'plugin_group_split'
     | 'registry_rebuilt'
     | 'frontend_restarted'
     | 'frontend_restart_needed'
@@ -50,7 +65,7 @@ export type StageEvent = {
   ok?: boolean;
   detail?: string;
   cost?: number;
-  regions?: unknown[];
+  regions?: Region[];
   decisions?: unknown[];
   questions?: unknown[];
   adjustments?: unknown[];
@@ -65,10 +80,41 @@ export type StageEvent = {
 
 type RunState = 'idle' | 'uploading' | 'running' | 'waiting' | 'done' | 'error';
 
+/**
+ * One region in the stage A / stage B gate's tree, nested the way it will be
+ * built. `plugin_choice` is `null` on a wrapper -- only a leaf is ever built
+ * as a plugin -- and carries stage A's own reading only as a starting point:
+ * the user's choice always wins, nothing here is a default that gets sent
+ * unchosen.
+ */
+export type GateRegionNode = {
+  region_id: string;
+  n?: number;
+  title?: string | null;
+  role?: string;
+  composition?: string;
+  behavior?: string;
+  plugin_choice?: {
+    options: string[];
+    /** A registered viz type stage A matched this region against, or `null`.
+     * Information, not a default -- neither option is pre-selected either
+     * way, see `note`. */
+    stock_candidate?: string | null;
+    /** Neutral: states what stage A found (or didn't) with no "recommends"
+     * language, so it cannot read as a suggested answer. */
+    note?: string;
+  } | null;
+  question_ids?: string[];
+  children?: GateRegionNode[];
+};
+
 /** What the run is blocked on. Only ever set while planning. */
 export type PendingAsk = {
-  kind: 'questions' | 'plan' | 'datasets' | 'plugins';
+  kind: 'questions' | 'plan' | 'datasets' | 'plugins' | 'region_review';
   label?: string;
+  dashboard_title?: string | null;
+  /** The stage A/B gate's region tree (`kind: 'region_review'` only). */
+  regions?: GateRegionNode[];
   /** Sample tables the run proposes to write. Approved before anything else. */
   datasets?: {
     name: string;
@@ -80,7 +126,9 @@ export type PendingAsk = {
   options?: string[];
   questions?: {
     id: string;
-    question: string;
+    /** Stage C's shape. The gate (`kind: 'region_review'`) uses `text`
+     * instead -- it has no options to pick from, only a free-text answer. */
+    question?: string;
     why_it_matters?: string;
     /** Set when the build cannot proceed without an answer. */
     why_blocking?: string;
@@ -88,6 +136,11 @@ export type PendingAsk = {
     topic?: string;
     options?: string[];
     default?: string;
+    /** The gate's shape: a free-text prompt and which stage B gap it closes
+     * (see `gate_a.py`'s `GAP_*` constants) -- shown so the user knows what
+     * an answer is for, not just what it is. */
+    text?: string;
+    gap?: string;
   }[];
   /** What stage F will build, one entry per distinct component. */
   entries?: {
@@ -97,6 +150,11 @@ export type PendingAsk = {
     viz_type?: string | null;
     what: string;
     rationale?: string;
+    /** Only set on a `reuse` entry: what `get_chart_info` actually confirmed
+     * about the existing chart, or (if no lookup was attached) stage C's own
+     * unverified account of the match -- what the user checks a reuse
+     * against, not just the plan to trust it. */
+    reuse_evidence?: string;
     fidelity_loss?: string;
     used_by: { region_id: string; title: string }[];
     queries: number;
@@ -129,8 +187,16 @@ export type PendingAsk = {
   counts?: Record<string, number>;
 };
 
-const ENDPOINT = '/api/v1/design_to_dashboard';
+export const ENDPOINT = '/api/v1/design_to_dashboard';
 const ROUTE = '/design-to-dashboard';
+
+/** The design image at this index, as a plain URL a browser `<img>` can
+ * fetch directly -- same pattern as a plan step's `crop_url`. Works after a
+ * reload with no local `File` object to build a blob URL from, since the
+ * file lives on the server for the life of the session, not the tab. */
+export function assetUrl(sessionId: string, index = 0): string {
+  return `${ENDPOINT}/session/${sessionId}/asset/${index}/`;
+}
 
 /** The run id in the address bar, or null when this is a fresh page. */
 export function sessionIdFromUrl(): string | null {
@@ -159,6 +225,10 @@ export function useDesignToDashboard() {
   const [thinking, setThinking] = useState('');
   const [thinkingStage, setThinkingStage] = useState('');
   const [pending, setPending] = useState<PendingAsk | null>(null);
+  // What a reconnecting client uses to show the design it uploaded: there is
+  // no local `File` object to build a blob URL from once the tab that chose
+  // it is gone, only the server's own count of what this session holds.
+  const [imageCount, setImageCount] = useState(0);
   const cursorRef = useRef(0);
   const pollRef = useRef<number | null>(null);
   const startedAtRef = useRef<number | null>(null);
@@ -179,6 +249,7 @@ export function useDesignToDashboard() {
     setError(null);
     setState('idle');
     setSessionId(null);
+    setImageCount(0);
     showInUrl(null);
   }, [stopPolling]);
 
@@ -225,6 +296,7 @@ export function useDesignToDashboard() {
               plan?: unknown[];
               fidelity_notes?: unknown[];
               thinking_stage?: string;
+              images?: number;
               error?: string | null;
             };
             // Only events after the cursor arrive, so append rather than
@@ -239,6 +311,9 @@ export function useDesignToDashboard() {
             setThinking(payload.thinking ?? '');
             setThinkingStage(payload.thinking_stage ?? '');
             setPending(payload.pending ?? null);
+            if (typeof payload.images === 'number') {
+              setImageCount(payload.images);
+            }
             if (payload.status === 'waiting') setState('waiting');
             else if (payload.status === 'running') setState('running');
             if (payload.status === 'done') {
@@ -355,6 +430,7 @@ export function useDesignToDashboard() {
     reply,
     error,
     sessionId,
+    imageCount,
     elapsed,
     thinking,
     thinkingStage,

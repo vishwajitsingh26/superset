@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-spending-trend-chart-6f7565",
+  "version": "0.1.0",
+  "description": "Per user answer, the Daily/Weekly/Monthly control re-aggregates this chart’s own query; since the toggle drives only this one chart it is the chart’s own contr…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

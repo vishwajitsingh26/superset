@@ -1,0 +1,15 @@
+{
+  "name": "@superset-ui/plugin-chart-custom-table-with-bar-6f7565",
+  "version": "0.1.0",
+  "description": "User answer confirms building a custom table so the proportional bar stays in its own blank column, rather than merging behind the Total Spend text as the stoc…",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "license": "Apache-2.0",
+  "author": "Superset",
+  "peerDependencies": {
+    "@superset-ui/chart-controls": "*",
+    "@superset-ui/core": "*",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2"
+  }
+}

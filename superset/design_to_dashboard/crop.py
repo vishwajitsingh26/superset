@@ -62,6 +62,23 @@ HIGHLIGHT_WIDTH = 3
 REVIEW_MAX_WIDTH = 560
 
 
+def source_image_path(image_paths: list[str], region: dict[str, Any]) -> str | None:
+    """Which of the design's own images this region was read from, whole.
+
+    Stage A numbers a multi-image design (a scrolled capture, a set of tabs)
+    and records which one each region came from in ``source_image``; this is
+    that lookup, shared with ``region_crop`` rather than duplicated at every
+    caller that needs the design a region's crop was cut from -- not a crop
+    of it, the same file a design-wide comparison already uses.
+    """
+    if not image_paths:
+        return None
+    index = region.get("source_image") or 0
+    if not 0 <= index < len(image_paths):
+        index = 0
+    return image_paths[index]
+
+
 def region_crop(
     image_paths: list[str],
     region: dict[str, Any],
@@ -81,17 +98,14 @@ def region_crop(
     thumbnail does not need the design's full resolution.
     """
     bbox = region.get("bbox") or {}
-    if not image_paths or not bbox:
+    source = source_image_path(image_paths, region)
+    if not source or not bbox:
         return None
-
-    index = region.get("source_image") or 0
-    if not 0 <= index < len(image_paths):
-        index = 0
 
     try:
         from PIL import Image
 
-        with Image.open(image_paths[index]) as image:
+        with Image.open(source) as image:
             width, height = image.size
             # Stage A reports fractions of the image, so the image's own size
             # is the only scale there is -- and it is right per image, which

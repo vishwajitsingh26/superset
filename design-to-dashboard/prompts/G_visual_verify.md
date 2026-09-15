@@ -1,10 +1,12 @@
 # Visual verify — compare what was built against the design
 
 **Input:** the design, a screenshot of the dashboard that was just created —
-one per tab where the dashboard has tabs — and close-up pairs of the sections
-where a number has to be read. Plus the region list: each region's `bbox`, what
-it `contains`, its `unusual_treatment`, and what it `built_as`. The images are
-labelled in order at the top of your user message.
+one per tab where the dashboard has tabs — and a close-up pair for each chart on
+the page. Plus the region list: each region's `bbox`, what it `contains`, its
+`unusual_treatment`, and what it `built_as`; `design_system`, stage C's own
+palette/typography/chrome contract; and, when the browser saw anything fail, a
+`render` block. The images are labelled in order at the top of your user
+message.
 **Output:** `VisualReport`.
 **No tools.**
 
@@ -46,7 +48,12 @@ images side by side in your mind and check, in this order:
    `1,751M` is not `1.75B`. Magnitude suffixes, decimal places, currency
    symbols, thousands separators.
 6. **Colour, weight and chrome** — fill colours, card borders, radius, padding,
-   font weight.
+   font weight. `design_system` is what every plugin was actually told the
+   palette, type scale and card chrome were, so use it as a structured
+   reference for what "right" means here alongside your own reading of the
+   pixels -- a card built to the contract but drifting from the screenshot's
+   own look is still a fault, but knowing the intended values is what lets you
+   say *which* one is wrong rather than just that the two disagree.
 
 ## Nesting, and where a fault belongs
 
@@ -73,11 +80,58 @@ reproduced, say which, and `likely_fix` is almost always `plugin`.
 
 ## The close-up pairs
 
-After the full images you may be given pairs: a section as designed, then the
-same section as built. They are there because number formatting and cell
-rendering cannot be read at page width, and `numbers` is one of the six scores.
-Use them for those two dimensions. Judge presence, position and size from the
-full images — a close-up says nothing about where a card sits.
+After the full images you are given pairs: a section as designed, then the
+same section as built, for as many charts as the image budget affords (numbers
+and tables first). They are there because labels, number formatting, marks and
+colours cannot be read at page width. Use them for `labels`, `numbers`,
+`chart_type` and `styling`. Judge presence, position and size from the full
+images — a close-up says nothing about where a card sits.
+
+If the legend says the page screenshots are covered by an error overlay, the
+close-ups were taken with each chart on its own page. Judge what they show, and
+score `position` from nothing you cannot see: say in `summary` that position
+could not be checked.
+
+If the message names regions with no close-up pair at all, judge each only
+from the full images as it already says, and name every one of them in
+`summary` — a region that went unverified because the budget dropped it is
+exactly what the next run needs to see, not a gap only a caveat mentions.
+
+## Charts that failed to render
+
+The `render` block is what the browser recorded while the dashboard loaded —
+not an opinion, a measurement:
+
+- `failed_to_render` — each chart whose card showed an error, whose data
+  request failed, or whose plugin threw. It carries the `region_id` and the
+  `error`. Report each as **one** `critical` finding for that region: in
+  `screenshot_shows`, quote the error. `likely_fix` is `plugin` for a script
+  error (a `TypeError`, a `Cannot read properties of …`), `chart config` for a
+  failed data request (an HTTP 4xx naming a metric or column). Score that
+  section as absent in `presence`.
+- `script_errors_naming_no_chart` — errors the browser saw that name no chart.
+  Mention them in `summary` only if nothing else explains a broken section.
+- `dev_error_overlay` — the development build's full-screen error overlay, and
+  what became of it:
+  - `removed before the screenshots were taken` — anything grey or empty you
+    still see in the page screenshots is the dashboard itself.
+  - `could not be removed: …` — the page screenshots show the overlay, not the
+    dashboard. Do not score its grey as missing sections: judge each chart from
+    its close-up, and score `position` as the close-up section above says.
+
+## A custom plugin's shape, not asked of you
+
+Where a region's `built_as` carries a `measured_geometry_mismatch`, it is a
+fact, not a hint: pixel-measured from the same close-up crop pair you were
+shown, comparing the design's own aspect ratio against what was actually
+built. Colour is allowed to differ for a custom plugin — the pipeline has no
+way to carry a literal hex into plugin source — but shape, placement and
+size are not, and this is the one of the three a measurement settles outright
+rather than leaving to your read of two images. A region carrying this field
+gets a `critical` finding regardless of what else about it matches; quote the
+measurement in `screenshot_shows` and set `likely_fix` to `plugin`. `null`
+means nothing was measured for that region, not that its shape is confirmed
+right — keep judging position and proportion from the full images as usual.
 
 ## Scoring
 
@@ -109,9 +163,13 @@ Severity:
 about it. An empty `findings` list on a faithful build is the correct answer,
 and a list padded with trivia buries the one thing that actually needs fixing.
 
-If the screenshot is blank, shows a loading state, or shows error cards, say so
-in `blocked` and score nothing — a failed render is not a fidelity problem and
-must not be reported as one.
+Set `blocked` — and score nothing — only when the page as a whole cannot be
+judged: the screenshot is blank, still loading, or every section is covered or
+in error. A few charts in error are not a blocked render: report them from the
+`render` block as above and score the rest of the page, which can still be
+compared. When you do set `blocked`, `findings` stays empty: there is no
+screenshot to check a region against, and a description sourced from the
+design's own read is not a finding about what was built.
 
 ## Output
 

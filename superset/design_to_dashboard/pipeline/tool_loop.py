@@ -156,8 +156,20 @@ def run_tool_loop(
     on_progress: Any = None,
     on_thinking: Any = None,
     image_paths: list[str] | None = None,
+    timeout: int | None = None,
 ) -> ToolLoopResult:
-    """Drive the model until it returns ``final`` or exhausts its budget."""
+    """Drive the model until it returns ``final`` or exhausts its budget.
+
+    ``timeout`` is per call, not for the loop as a whole -- there was no
+    single per-call override to thread through here until stage F started
+    attaching images inside a loop, at which point the gap became a silent
+    one: `None` falls back to whatever the provider itself was constructed
+    with, which is the pipeline's global default, not a stage's own known
+    call length. A caller with a longer stage-specific call (the way stage F
+    already overrode this per-call, before it had a loop to run inside)
+    passes it explicitly; every existing caller that never needed one keeps
+    getting the provider's own default, unchanged.
+    """
     transcript: list[dict[str, Any]] = []
     calls_made = 0
     cost = 0.0
@@ -168,6 +180,7 @@ def run_tool_loop(
             system_prompt,
             prompt,
             image_paths=image_paths,
+            timeout=timeout,
             on_thinking=on_thinking,
         )
         cost += response.cost_usd or 0.0
@@ -182,10 +195,38 @@ def run_tool_loop(
                 transcript=transcript,
             )
 
+        # A stage's terminal contract, emitted bare rather than wrapped in
+        # `final`. The envelope asks the model to wrap it; models sometimes emit
+        # it directly instead -- a `status` object at the top level -- and that
+        # near-miss should not cost a multi-minute stage. Checked before
+        # `tool_calls` on purpose: a finished result may carry a `tool_calls`
+        # *count* field (an integer), which must not be mistaken for a batch of
+        # calls to execute. A dict/list `tool_calls` is a real batch and does
+        # not have a top-level `status`, so the two shapes stay distinct. The
+        # stage's own validator still checks the contents.
+        if isinstance(payload.get("status"), str):
+            logger.info(
+                "accepting a bare stage result (status=%r) that was not wrapped "
+                "in 'final'",
+                payload["status"],
+            )
+            return ToolLoopResult(
+                final=payload,
+                tool_calls=calls_made,
+                iterations=iteration,
+                cost_usd=cost,
+                transcript=transcript,
+            )
+
         requested = payload.get("tool_calls")
         if not requested:
             raise LLMError(
                 f"Reply had neither 'final' nor 'tool_calls': {response.text[:400]}"
+            )
+        if not isinstance(requested, list):
+            raise LLMError(
+                f"'tool_calls' must be a list of calls, got "
+                f"{type(requested).__name__}: {response.text[:200]}"
             )
 
         if calls_made + len(requested) > max_tool_calls:

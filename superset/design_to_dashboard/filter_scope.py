@@ -306,3 +306,64 @@ def effects(
         "scope says."
     )
     return notes
+
+
+def _temporal_comparators(spec: dict[str, Any]) -> list[str]:
+    """Every `TEMPORAL_RANGE` comparator a chart's own adhoc filters carry."""
+    return [
+        str(clause.get("comparator"))
+        for clause in _params_of(spec).get("adhoc_filters") or []
+        if isinstance(clause, dict) and clause.get("operator") == "TEMPORAL_RANGE"
+    ]
+
+
+# A comparator left this way carries no range of its own -- the chart is
+# either unfiltered by design, or it is meant to follow a page-level control
+# through the cross-filter mask (`_apply_filters` overwrites this value; it
+# never reads it). Either reading is consistent with a chart kept out of the
+# date filter's scope so it keeps its full history.
+_NO_RANGE = {"", "no filter", "none"}
+
+
+def range_conflicts(
+    plan: dict[str, Any],
+    chart_specs: list[dict[str, Any]],
+    scope: str = SCOPE_EXCEPT_TRENDS,
+    design_analysis: dict[str, Any] | None = None,
+) -> list[str]:
+    """A chart's own configured range that contradicts why it is excluded.
+
+    `trend_regions` keeps a chart out of the page filter's reach so it draws
+    its full history, as the design shows it. A chart pinned to one narrow
+    span of its own -- a literal comparator rather than a placeholder --
+    already contradicts that before the page filter ever runs, and drew the
+    same single point the exclusion exists to prevent. This is the mechanical
+    half of "does the built range match what the design draws"; there is no
+    render this deterministic check can see, only the parameters that will
+    produce one.
+    """
+    if scope == SCOPE_ALL:
+        return []
+    own = filter_region_ids(plan)
+    trends = set(trend_regions(chart_specs, own, design_analysis))
+    if not trends:
+        return []
+    names = {
+        str(d.get("region_id")): str(d.get("slice_name") or d.get("region_id"))
+        for d in plan.get("decisions") or []
+        if isinstance(d, dict)
+    }
+    problems: list[str] = []
+    for spec in chart_specs:
+        region_id = str(spec.get("region_id"))
+        if region_id not in trends:
+            continue
+        for comparator in _temporal_comparators(spec):
+            if comparator.strip().lower() not in _NO_RANGE:
+                problems.append(
+                    f"{names.get(region_id, region_id)}: kept out of the page "
+                    f"filter's scope to draw its full history, but its own "
+                    f"TEMPORAL_RANGE filter is pinned to {comparator!r} -- it "
+                    "will still draw a single point"
+                )
+    return problems

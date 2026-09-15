@@ -227,10 +227,18 @@ def build_design_prompt(
     payload = {
         "dashboard_title": global_.get("title"),
         "regions": design_analysis.get("regions", []),
-        "global": {
-            key: global_.get(key)
-            for key in ("tabs", "filter_bar", "reading_order", "palette")
-        },
+        # `global` used to also carry `filter_bar`, `tabs`, `reading_order` and
+        # `palette`. `filter_bar` was stage A's alternate reading for a filter
+        # band whose controls did not become their own regions -- but the
+        # control-band rule no longer has a case where that happens (every
+        # control band is now at least one filter region, by shared or
+        # independent outcome), so nothing was ever left for it to describe
+        # that a `role: "filter"` region did not already say. The other three
+        # were checked again for this pass: neither this module's own logic
+        # nor `B_design_data.md`'s instructions read `tabs`, `reading_order` or
+        # `palette` anywhere -- stage B binds data, and none of the three bears
+        # on what a region's data spec should be. All four are removed rather
+        # than sent to describe nothing.
         "dataset_names_already_taken": taken or {},
     }
     return (
@@ -257,6 +265,7 @@ def design_data(
         on_thinking=on_thinking,
     )
     spec = extract_json(response.text)
+    attach_gate_fields(spec, design_analysis)
     logger.info(
         "stage B design: tables=%d views=%d bindings=%d images_opened=%s",
         len(spec.get("fact_tables") or []),
@@ -265,6 +274,49 @@ def design_data(
         images_opened(response),
     )
     return spec, response
+
+
+# Copied onto a binding exactly as stage A/the gate wrote them, on every
+# binding whose region carries a non-null value -- never asked of the design
+# step, the same way `region_id` is minted rather than asked in stage A. The
+# design step's own job is the data; whether a region is built stock or
+# custom, what kind of filter it is, is not something asking it to retype the
+# field can improve on, only risk it getting dropped or altered in transit.
+GATE_PASSTHROUGH_FIELDS = (
+    "plugin_choice",
+    "filter_kind",
+    "wrapper_reads_data",
+    "has_embedded_series",
+    "data_notes",
+)
+
+
+def attach_gate_fields(spec: dict[str, Any], design_analysis: dict[str, Any]) -> None:
+    """Copy the stage A/B gate's per-region fields onto their binding, in place.
+
+    Stage C already receives `design_analysis` whole, so it could always read
+    these off the region directly -- but nothing told it to, and a field that
+    exists only on a document a stage was never asked to open is the same as
+    a field that does not exist (this is exactly the gap the gate itself
+    exists to close one stage earlier). Attaching them to the binding stage C
+    already reads programmatically makes them part of stage B's own contract
+    instead of an easter egg in a document it happens to also receive.
+    """
+    by_region = {
+        region["region_id"]: region
+        for region in design_analysis.get("regions") or []
+        if isinstance(region, dict) and region.get("region_id")
+    }
+    for binding in spec.get("bindings") or []:
+        if not isinstance(binding, dict):
+            continue
+        region = by_region.get(str(binding.get("region_id")))
+        if not region:
+            continue
+        for field_name in GATE_PASSTHROUGH_FIELDS:
+            value = region.get(field_name)
+            if value is not None:
+                binding[field_name] = value
 
 
 def design_step(
@@ -408,6 +460,139 @@ def _validate_views(spec: dict[str, Any]) -> list[str]:
     ]
 
 
+# Keywords in a region's `unusual_treatment` that mean a mini time-series is
+# drawn beside or behind the headline value -- checked case-insensitively, so
+# a region reading "an embedded Trendline" or "sparkline gradient fill" both
+# match. Not an exhaustive vocabulary, only the words this pipeline's own
+# regions have actually used for the shape.
+SERIES_KEYWORDS = ("sparkline", "trendline", "trend line", "mini-chart", "mini chart")
+
+# The one name a view is ever allowed to expose a real date/time column
+# under (Step 4 of the design prompt). A binding whose `time_column` names
+# anything else is naming a column no view in this spec was told to create.
+_TEMPORAL_COLUMN = "d2d_date"
+
+_D2D_DATE_ALIAS = re.compile(
+    r"(?is)\bas\s+d2d_date\b|(?<![a-z0-9_])d2d_date\s*(?:,|\bfrom\b|\)|$)"
+)
+
+
+def _view_sql_by_name(spec: dict[str, Any]) -> dict[str, str]:
+    return {
+        view["name"]: str(view.get("sql") or "")
+        for view in spec.get("views") or []
+        if isinstance(view, dict) and isinstance(view.get("name"), str)
+    }
+
+
+def _table_columns_by_name(spec: dict[str, Any]) -> dict[str, set[str]]:
+    return {
+        table["name"]: {
+            name
+            for c in table.get("columns") or []
+            if isinstance(c, dict) and isinstance(name := c.get("name"), str)
+        }
+        for table in spec.get("fact_tables") or []
+        if isinstance(table, dict) and isinstance(table.get("name"), str)
+    }
+
+
+def _validate_temporal_bindings(
+    spec: dict[str, Any], design_analysis: dict[str, Any]
+) -> list[str]:
+    """`time_column` names the one column a temporal view is ever allowed to
+    expose, and a region drawing a sparkline or trendline has one bound.
+
+    Both are mechanical rather than left to be noticed downstream, because
+    neither fails loudly: a `time_column` naming the fact table's own column
+    instead of the view's alias renders as a data-API error only once a
+    filter or chart actually queries it, and a card with no time column
+    behind its sparkline simply draws no line -- no error, no warning, the
+    kind of gap a browser render is needed to catch at all.
+    """
+    problems: list[str] = []
+    views = _view_sql_by_name(spec)
+    tables = _table_columns_by_name(spec)
+    treatments: dict[str, str] = {}
+    embedded_series: dict[str, bool] = {}
+    for region in design_analysis.get("regions") or []:
+        if not isinstance(region, dict) or not region.get("region_id"):
+            continue
+        region_id = region["region_id"]
+        treatments[region_id] = " ".join(
+            str(item) for item in region.get("unusual_treatment") or []
+        ).lower()
+        # Set at the stage A/B gate, from a person looking at the design --
+        # decisive where present, so it is checked ahead of and instead of
+        # the keyword guess below, not merely in addition to it.
+        has_series = region.get("has_embedded_series")
+        if isinstance(has_series, bool):
+            embedded_series[region_id] = has_series
+    for binding in spec.get("bindings") or []:
+        if not isinstance(binding, dict):
+            continue
+        problem = _validate_temporal_binding(
+            binding, views, tables, treatments, embedded_series
+        )
+        if problem is not None:
+            problems.append(problem)
+    return problems
+
+
+def _validate_temporal_binding(
+    binding: dict[str, Any],
+    views: dict[str, str],
+    tables: dict[str, set[str]],
+    treatments: dict[str, str],
+    embedded_series: dict[str, bool],
+) -> str | None:
+    """The single time-column problem (if any) for one binding.
+
+    Split out of `_validate_temporal_bindings` because that function's loop
+    body was itself doing two unrelated checks -- an explicit `time_column`
+    naming or resolving wrong, versus a missing `time_column` where a series
+    needs one -- and reads more clearly as its own named step.
+    """
+    region_id = str(binding.get("region_id"))
+    time_column = binding.get("time_column")
+    source = binding.get("source")
+    if time_column is not None:
+        if time_column != _TEMPORAL_COLUMN:
+            return (
+                f"{region_id}: time_column is {time_column!r}, not "
+                f"{_TEMPORAL_COLUMN!r} -- every temporal view exposes its "
+                f"date under this one name (Step 4), and a source table's "
+                "own column name is not necessarily a column the bound "
+                "view selects at all"
+            )
+        if source in views and not _D2D_DATE_ALIAS.search(views[source]):
+            return (
+                f"{region_id}: time_column is {_TEMPORAL_COLUMN!r} but view "
+                f"{source!r}'s SQL never selects a column under that name"
+            )
+        if source in tables and _TEMPORAL_COLUMN not in tables[source]:
+            return (
+                f"{region_id}: time_column is {_TEMPORAL_COLUMN!r} but "
+                f"table {source!r} has no column by that name"
+            )
+        return None
+    needs_series = embedded_series.get(region_id)
+    if needs_series is None:
+        treatment = treatments.get(region_id, "")
+        needs_series = any(kw in treatment for kw in SERIES_KEYWORDS)
+    if needs_series:
+        reason = (
+            "the stage A/B gate confirmed an embedded series here"
+            if region_id in embedded_series
+            else "unusual_treatment describes a sparkline/trendline"
+        )
+        return (
+            f"{region_id}: {reason} but this binding has no "
+            "time_column -- the series it needs has nothing to query"
+        )
+    return None
+
+
 def _validate_spec_bindings(
     spec: dict[str, Any], design_analysis: dict[str, Any], names: dict[str, str]
 ) -> list[str]:
@@ -417,27 +602,45 @@ def _validate_spec_bindings(
         for region in design_analysis.get("regions") or []
         if isinstance(region, dict) and region.get("region_id")
     }
+    # Set at the stage A/B gate: a person looked at this specific wrapper,
+    # header, text or nav region and said it genuinely prints a real value,
+    # overriding the role-based assumption below for that one region only.
+    reads_data = {
+        region["region_id"]
+        for region in design_analysis.get("regions") or []
+        if isinstance(region, dict)
+        and region.get("region_id")
+        and region.get("wrapper_reads_data") is True
+    }
     bindings = [b for b in spec.get("bindings") or [] if isinstance(b, dict)]
     problems = _coverage_problems(bindings, set(roles))
     for binding in bindings:
-        region_id = binding.get("region_id")
+        region_id = str(binding.get("region_id"))
         source = binding.get("source")
         if source not in names:
             problems.append(
                 f"{region_id}: source {source!r} is not a table or view in the spec"
             )
-        role = roles.get(str(region_id))
-        if role in NON_DATA_ROLES and source != SHARED_TABLE:
+        role = roles.get(region_id)
+        non_data = role in NON_DATA_ROLES and region_id not in reads_data
+        if non_data and source != SHARED_TABLE:
             problems.append(
                 f"{region_id}: role {role!r} draws no data but reads {source!r} "
                 f"rather than {SHARED_TABLE}"
             )
         elif (
             role is not None
-            and role not in NON_DATA_ROLES
+            and not non_data
             and not (binding.get("measures") or binding.get("dimensions"))
         ):
-            problems.append(f"{region_id}: names no columns to query")
+            problems.append(
+                f"{region_id}: names no columns to query"
+                + (
+                    " -- wrapper_reads_data says this region reads real data"
+                    if region_id in reads_data
+                    else ""
+                )
+            )
     return problems
 
 
@@ -479,6 +682,7 @@ def validate_spec(spec: dict[str, Any], design_analysis: dict[str, Any]) -> list
     problems += _validate_tables(spec)
     problems += _validate_views(spec)
     problems += _validate_spec_bindings(spec, design_analysis, names)
+    problems += _validate_temporal_bindings(spec, design_analysis)
     return problems
 
 

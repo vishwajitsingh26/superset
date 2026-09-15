@@ -585,6 +585,9 @@ DESIGN_TO_DASHBOARD_LLM: dict[str, Any] = {
     # stage F writes an entire plugin in one; both are measured in minutes, and
     # a timeout below the work kills the run at its most expensive moment.
     "timeout": 900,
+    # Stage F (plugin generation) runs at "high" whatever this says, unless
+    # `stage_models["F"]` names an effort -- see STAGE_DEFAULT_EFFORT in
+    # superset/design_to_dashboard/llm/factory.py.
     "effort": "medium",
     "max_turns": 6,
     "allow_cli_provider": False,

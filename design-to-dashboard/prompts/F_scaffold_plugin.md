@@ -1,34 +1,103 @@
 # Stage F — Scaffold plugin
 
-**Input:** the design cropped to this region, plus the region (Stage A) — whose `observed`, `unusual_treatment`, `controls` and `frame` are the specification — its binding (Stage B), its `new_plugin` decision (Stage C), the design-system contract, and the source of a reference plugin.
-**Not in context:** other regions, the registry, the rest of the design.
+**Input:** the whole design, plus the design cropped to this region, plus the
+region (Stage A) — whose `observed`, `unusual_treatment`, `controls` and
+`frame` are the specification — its binding (Stage B), its `new_plugin`
+decision (Stage C), the design-system contract, and the source of a
+reference plugin. You can also query the one dataset already bound to this
+region directly, rather than relying only on a description of it — see
+"Investigate before you write" below.
+**Not in context:** other regions' own JSON, the registry.
 **Output:** one `PluginScaffold`.
 
 Runs when Stage C decides a design's structure cannot be expressed by any
 registered viz type. Your job is a plugin that renders **the design as drawn** —
 not an approximation.
 
-## You can see the section you are building
+## The goal is pixel-perfect, not close
 
-An image is attached: the design, cropped to this region with a small margin.
-**Read it before you write anything.** It is the specification. The JSON
-description beside it is a summary of the same thing written by another stage,
-and where the two disagree, the image wins.
+A human placing your finished build beside the design, at the same size,
+should not be able to tell which is which on any element this crop shows —
+not "recognisably the same component," not "the right idea." Every dimension
+a crop can be measured against is in scope: corner radius, border colour and
+weight, padding, the gap between elements, font size and weight, icon size
+and placement, where a value sits against its label, how much whitespace
+sits above a title, exact fill colours. Reasoning about all of these at once,
+carefully, before writing a line, is the point of the effort this stage runs
+at — spend it on measuring the crop, not on the parts of the component that
+were never in question.
 
-Take from it what prose cannot carry: corner radius, border colour and weight,
-padding inside the card, the gap between elements, font sizes and weights and
-the ratio between them, exact fill colours, icon size, whether a value is
-aligned against its label or under it, how much whitespace sits above a title.
-Those are the difference between a component that resembles the design and one
-that matches it.
+## You can see the section you are building — and the page around it
 
-If no image is attached the crop could not be made; say so in `review_notes`
-and build from the description alone.
+Two images are attached: the whole design, and the design cropped to this
+region with a small margin. **Read both before you write anything.** The
+crop is still the specification for this region's own exact detail — read it
+the way you always have, and where it disagrees with the JSON description
+beside it, the crop wins.
 
-## Three fields in the region carry the brief
+The whole design is new context, for a narrower and different job: checking
+this region against the page's *own* repeated treatment. A card's radius, its
+border weight, the type scale a value and its label use, the palette — these
+are almost never decided per-section, they are the one choice a design makes
+once and repeats everywhere, and the crop alone cannot tell you that a corner
+you're eyeballing at 7px is the same 8px every other card on the page uses.
+Use the full design to settle exactly that kind of question, never to
+re-derive a detail the crop already shows you clearly — the crop is the
+higher-resolution, closer read of this region itself, and stays authoritative
+for it.
 
-The region JSON is long. These three are the ones that decide whether this
-plugin is right, so read them before the rest:
+Take from the crop what prose cannot carry: corner radius, border colour and
+weight, padding inside the card, the gap between elements, font sizes and
+weights and the ratio between them, exact fill colours, icon size, whether a
+value is aligned against its label or under it, how much whitespace sits
+above a title. Those are the difference between a component that resembles
+the design and one that matches it.
+
+If no crop is attached it could not be made; say so in `review_notes` and
+build from the description alone. The whole design may still be attached even
+then — use it for the page-wide checks above, not as a substitute for the
+missing close-up detail.
+
+## Investigate before you write
+
+Two tools are available to you: `get_dataset_info`, which returns the real
+columns and metrics of one dataset, and `execute_sql`, which runs a small,
+read-only, LIMIT-bounded `SELECT`. Both are scoped to exactly one dataset —
+the one already bound to this region, `binding.dataset_id` — and neither can
+reach any other. This is not a survey of the instance; it is a way to check,
+against the real data, the handful of things the brief below leaves
+ambiguous before you commit code to them.
+
+Use them the way you use the crop: to settle a question prose cannot answer
+on its own, not to re-derive something the brief already states plainly.
+Before writing `buildQuery.ts`, `controlPanel.ts` or `transformProps.ts`,
+check anything genuinely uncertain — does a column whose name implies a
+percentage actually hold one, or a fraction; does a precomputed delta or
+change column the binding seems to name actually exist, and do its values
+look sane rather than null or zero across every row; what a date column's
+real grain and format are before you build a formatter or a widening
+expression around it; what a filter's real distinct values or real min/max
+bounds are before you draw a calendar or a dropdown around them. A handful of
+targeted checks, the same restraint this codebase asks for its other search
+budgets — check only what is genuinely uncertain, and once you have the
+answer, do not run the same query again to confirm it a second time.
+
+The principle is the same one that governs the crop: when a real, observed
+answer disagrees with what the binding *claims* about itself, the observed
+answer wins. A binding's own description is what the pipeline believed
+before anyone looked at live data; a column's actual contents are the data
+itself.
+
+If a tool call fails, or the dataset genuinely has nothing more to reveal
+about the question you asked, say so in `review_notes` and proceed from the
+binding's own description rather than blocking on it.
+
+## Four fields in the region carry the brief
+
+The region JSON is long. These four are the ones that decide *what* this
+plugin is right to build, so read them before the rest — what you verify
+with the tools above is a fifth source of truth, settling *how* to build it
+correctly once these have told you what it is:
 
 - **`unusual_treatment`** — what the observer saw that a charting library
   does not normally do: labels above bars instead of in the axis gutter, a
@@ -46,6 +115,15 @@ plugin is right, so read them before the rest:
 - **`frame`** — for a section that holds others, what its own chrome does to
   them: `tabs` switches between them, `toggle` redraws the same area a
   different way, `none` shows them together.
+- **`axis_formats`** — for a region that draws an axis or a series, one entry
+  per axis naming its real `kind` (`date | category | number`), its exact
+  drawn `pattern`, and any `prefix`/`suffix`. Build every axis and series
+  formatter from this, not from what a date or a number normally looks like
+  to you — a formatter guessed at rather than read off the design is how an
+  axis ends up printing something like `0NaN` on real data instead of the
+  month it was given. **Name which entries you used in `review_notes`.** When
+  the region draws an axis or series and `axis_formats` is empty, say so in
+  `review_notes` rather than silently guessing the shape.
 
 ## The package already exists
 
@@ -112,19 +190,31 @@ how it looks:
   `NativeFilter` and it has no entry, no scope, and its value silently reaches
   *every* chart on the page. That is not a hypothetical: it is how one month's
   data ended up across a whole dashboard.
-  **Commit on the button, or on change — the design decides which.** Where an
-  Apply (or Search, or Go) button is drawn, hold every selection in local state
-  and call `setDataMask` **once**, when it is pressed: one refresh for three
-  changed dropdowns is the reason the design has the button. Keep it disabled
-  while nothing is pending, and make it visible that what is on screen is not
-  yet applied. Where no such button is drawn, each control calls `setDataMask`
-  as it changes and the dashboard follows immediately — do not invent a timer or
-  a batch, and do not add a button the design does not show.
+  **Commit on the button, or on change — the design decides which.** Stage C
+  is required to say which way it goes in `decision.rationale` (it read the
+  same band you did, plus the fuller context around it). Check `rationale`
+  first: where it states a commit mode plainly, treat that as settled and
+  build to it rather than re-deriving the answer from the crop a second time —
+  two independent readings of the same evidence can disagree, and only one of
+  them can be built. Fall back to reading the region's own Apply/Search/Go
+  button, or the lack of one, only when `rationale` is silent on commit mode or
+  genuinely ambiguous about it. Where an Apply (or Search, or Go) button is
+  drawn, hold every selection in local state and call `setDataMask` **once**,
+  when it is pressed: one refresh for three changed dropdowns is the reason the
+  design has the button. Keep it disabled while nothing is pending, and make it
+  visible that what is on screen is not yet applied. Where no such button is
+  drawn, each control calls `setDataMask` as it changes and the dashboard
+  follows immediately — do not invent a timer or a batch, and do not add a
+  button the design does not show.
   A **date or time range** filter is bound to a one-row dataset carrying
   `range_start` and `range_end`. Query those two values, render a calendar whose
   selectable span is exactly that window — a date outside it returns nothing, so
   offering it is offering an empty dashboard — and open on the range the design
-  displays. Push the selection as a `time_range` in `extraFormData`. Show the
+  displays. Check the real bounds with `execute_sql` before you finalize the
+  calendar logic, rather than trusting the bound view's description of them
+  blind — a `range_end` that is stale, or a grain finer or coarser than the
+  name implies, is exactly the kind of thing that only shows up once you
+  query it. Push the selection as a `time_range` in `extraFormData`. Show the
   bounds while the query is in flight rather than an empty field: the control is
   drawn before its own data arrives.
   **Push `time_range` and nothing else.** Do not also emit an explicit
@@ -136,6 +226,20 @@ how it looks:
   whose dataset has no column by that name, and those queries fail.
 - **`table`** — cells that are drawn rather than written: ratio bars,
   sparklines, trend arrows, chips, expandable hierarchy rows.
+- **`map`** — values plotted at named geographic locations. Render with
+  `datamaps` (`import Datamap from "datamaps/dist/datamaps.all.min"`), not a
+  hand-drawn landmass — it is already a real dependency (Superset's own
+  stock `legacy-plugin-chart-world-map` depends on it), and generated for you:
+  a `map` plugin's `package.json` already lists it, there is nothing to add.
+  Key data by ISO alpha-3 country code and call `map.updateChoropleth(...)`
+  for a choropleth; use the reference plugin's projection helper rather than
+  Datamap's own default, which crops both poles into the same frame as the
+  populated world. Read a real Superset colour scheme through
+  `getSequentialSchemeRegistry()` rather than inventing a gradient.
+  **Datamaps bundles its own D3 (v3) and does not export it as a module** —
+  reach it as `(Datamap as any).d3`, never `import * as d3 from "d3"`, which
+  resolves to whatever D3 major version this checkout carries and is a
+  different, incompatible API.
 
 ### A series and a headline are two queries, never one
 
@@ -145,6 +249,48 @@ one query cannot serve both. A dashboard date range set to one month leaves a
 sparkline with one point and a "vs. last month" delta with nothing to compare
 against. This is not a rare edge: it is what happens the first time anyone uses
 the date control the design draws.
+
+**Before you touch a series at all, look at the binding you were handed —
+then check it for real.** Its `dimensions`/`measures` sometimes already name
+a column that is the comparison, not a value to be compared — something the
+upstream data already computed as a period-over-period figure, spelled
+however that stage chose to spell it: `pct_change`, `mom_growth`,
+`yoy_delta`, `change_vs_prior`, `wow_change`, and the like are all the same
+shape wearing a different name. Read the field names for that shape rather
+than a fixed list to match literally — a real precomputed change column can
+be spelled a dozen reasonable ways, and the point is recognizing what it
+*is*, not grep-matching a keyword. Where a name looks like this shape, use
+`execute_sql` to confirm it before you build around it: that it truly holds a
+delta and not, say, a running total or a flag, and that its values look sane
+across a handful of rows rather than uniformly null or zero. If it checks
+out, your job is display, not arithmetic: read that column and show it. Do
+not recompute it from a series, and do not treat its presence as optional
+context — a number already computed upstream and confirmed against real rows
+is a fact, and a number you derive yourself from a shape you're guessing at
+is an approximation of one, and only one of those is safe to hand to a
+reviewer without a caveat. The same check applies to the date column you are
+about to build a query or a formatter around: confirm its actual grain and
+format with `get_dataset_info` or a small `execute_sql` before you commit to
+the widening technique below, rather than assuming it matches
+`axis_formats` or the binding's own label for it.
+
+Only when no such column exists does the "derive it yourself" technique below
+apply, and it is a fallback, not a first resort — it exists for the case
+where the binding truly gives you nothing but a raw series and a headline.
+One real run showed exactly what happens when this order is skipped: four
+KPI cards, each with a differently-shaped underlying series, all rendered the
+same wrong delta, because the plugin split each card's own series at its
+midpoint and compared the halves instead of first checking whether a real
+delta column was sitting right there in the binding. The technique itself
+wasn't the defect — every card happening to share one growth shape made a
+midpoint split produce the same number regardless of category, and nothing
+caught it because nothing had first ruled out the column that would have
+made the split unnecessary — and this is exactly the kind of thing a single
+`execute_sql` check would have caught before any code was written. When you
+do fall back to deriving your own comparison, say so plainly in
+`review_notes` — name it as a self-computed approximation, not a precomputed
+fact, so a reviewer looking at the number later knows it is an estimate and
+not something the data already asserted.
 
 So a plugin that draws a series **must**:
 
@@ -169,18 +315,40 @@ So a plugin that draws a series **must**:
   absent, pass `No filter` through for the series too and let it read whatever
   history exists.
 - **Read them back by position** in `transformProps`: `queriesData[0]` is the
-  headline, `queriesData[1]` is the series. Derive any period-over-period delta
-  from the **series**, never from the headline query, which may hold one row.
+  headline, `queriesData[1]` is the series. Where no precomputed change column
+  was found in the binding, derive any period-over-period delta from the
+  **series**, never from the headline query, which may hold one row — and say
+  in `review_notes` that the delta is self-computed, not read directly.
 
 This is the pattern core uses for time comparison, where a second context is
 built from a form data clone with `extra_form_data.time_range` overridden. You
 are widening rather than dropping it; the mechanism is the same.
-- **`navigation`** — breadcrumbs and drill headers, which move the dashboard
-  between states rather than plotting data.
+- **`navigation`** — breadcrumbs and drill headers, which move the *embedding*
+  application to a different page or drill level rather than plotting data or
+  filtering this dashboard. It reaches for `window.parent.postMessage`, not
+  `setDataMask`: `setDataMask` changes what other charts on this page query,
+  which is the `filter_widget` mechanism, and is the wrong tool when nothing
+  on this page is meant to react. Resolve the parent's origin from
+  `document.referrer` rather than posting to `*` — a wrong origin is dropped
+  silently, and that failure never surfaces on its own. A crumb that should
+  *also* filter this dashboard combines both mechanisms; it does not use one
+  in place of the other.
 
 Where your archetype is not `viz`, production code for it is appended below the
 reference plugin. Reproduce that mechanism; the styling around it is not the
 point.
+
+**An exemplar exists only where Superset itself hides something you cannot
+derive** — that `setDataMask` and not `postMessage` is what reaches other
+charts, that a filter without `InteractiveChart` reaches no scope table, that
+Datamaps bundles its own D3 and is already a real dependency. Nothing here is
+a catalogue of buildable designs, and its absence is not a blocker: a design
+this stage has never been shown a matching plugin for — an expandable
+hierarchy row, a calendar heatmap, a Sankey — is ordinary component work you
+are expected to write with the same judgment and the same tools
+(`get_dataset_info`, `execute_sql`) as everything else here. Reach for an
+exemplar's mechanism when your design actually needs it, never as permission
+to attempt the rest.
 
 A control panel entry's `type` may be a **React component**, not just a stock
 control. Use that when the design needs configuration stock controls cannot
@@ -201,6 +369,31 @@ catchable by reading the code back.
   `number`.** `row_limit: formData.row_limit ?? DEFAULT_ROW_LIMIT` does not
   type-check. Convert it — `Number(formData.row_limit) || DEFAULT_ROW_LIMIT` —
   and never reach for `as any`, which this stage rejects outright.
+
+## Every control can arrive empty
+
+A saved chart skips the control panel's validators, and a plugin shared by
+several regions is configured for siblings that read less than the region it
+was written from. So a control marked required in `controlPanel.ts` can still
+reach `transformProps` as `null`, `undefined` or `""`. `getMetricLabel` throws
+on an empty metric, and one chart that throws puts an error overlay across the
+whole dashboard — this has shipped, from a tile whose second measure was empty.
+
+- **Read every metric control through `src/adapters/optionalMetrics.ts`**,
+  which the skeleton writes for you: `presentMetrics([...])` in `buildQuery`,
+  `metricValue(row, metric)` or `metricLabelOrNull(metric)` in
+  `transformProps`. Never pass a form-data value to `getMetricLabel` yourself.
+- **Handle every control not marked `validateNonEmpty` as possibly absent** in
+  both `buildQuery` and `transformProps`: a metric, a column, a text, a colour,
+  a number. Default it, skip it, or leave its slot out — never assume it is
+  there.
+- **Draw a partial card, never throw.** A tile with no second measure draws its
+  first value and omits the sub-line; a series with no rows draws the empty
+  state.
+- **Require a metric only when the component can draw nothing without it.**
+  `...sharedControls.metric` is `validateNonEmpty` by default, so a secondary
+  measure — a sub-line value, a comparison, a second figure — sets
+  `validators: []` explicitly.
 
 ## House rules for this codebase
 
@@ -239,7 +432,10 @@ These are not style preferences; a plugin that breaks them fails review.
 ## Fidelity is the point
 
 This plugin exists because the design could not be matched otherwise, so match
-it exactly:
+it exactly. Shape, placement and size are checked mechanically after this
+plugin is built and rendered — a measured drift from the design's own crop is
+scored `critical` regardless of anything else about the build — so get them
+right here rather than leaving them for that check to catch:
 
 - Reproduce the observed layout — where labels sit relative to values, what is
   above versus beside what.
@@ -285,6 +481,37 @@ it exactly:
   fall back to a theme token (`theme.colorPrimary`) when it is unset, and let
   stage D write the design system's hex into the chart's saved params. Fidelity
   is preserved and the source stays themeable.
+- **A KPI or card archetype the region names a specific icon or colour for
+  needs both a colour control and an icon control wide enough to cover it** —
+  not the fallback theme token alone. One plugin of this shape is typically
+  shared across several regions with the same layout and different branding
+  (a spend total, then one card per provider): each chart instance sets its
+  own colour and icon through its own saved `params`, but only if the control
+  panel exposes somewhere to put them. A fixed enum of generic icon names
+  (`coins`, `cloud`, `database`...) with no entry matching what the design
+  actually draws is the same fidelity loss as no icon control at all.
+  **Where `region.observed` or `region.unusual_treatment` names a specific
+  brand or logo (AWS, GCP, Azure, and the like), the icon control must give a
+  way to actually represent it** — an enum alone, however long, cannot; a new
+  provider added after this plugin ships would still have nowhere to go. Two
+  mechanisms are legitimate, and the design decides which:
+  - An **image/URL control** — a plain `TextControl` (see `customColors` in
+    the reference plugin's `controlPanel.tsx` for the shape: freeform text
+    read straight through to the component, no closed `choices`) holding an
+    SVG or image URL, rendered as the icon. This is the general case: it
+    covers a brand not on any list, including one added after this plugin
+    ships.
+  - A **closed set of literal brand icons**, only when the design itself shows
+    a closed, known set — "AWS or GCP or Azure" drawn as a small fixed switcher
+    with no fourth option implied. Even here, add an escape hatch (a "custom"
+    choice backed by the same URL field above) rather than assuming the set
+    never grows.
+  A fixed enum of generic icon names with no image/URL option anywhere in the
+  control panel is not a stylistic gap here — it is checked. Stage F's own
+  validator flags a control panel that names a specific brand and offers only
+  a closed generic-icon enum with no way to add the real logo; treat this the
+  same as the other rules in this document that the validator, not just this
+  prose, holds you to.
 - Keep the component driven by `transformProps` output; do no data shaping in
   the component.
 
@@ -338,7 +565,11 @@ like it.
 
 `params_hint` is the `params` a chart of this viz type needs — the control names
 you defined and the values this region requires. Stage D uses it, since the
-control panel does not exist on disk until your files are written.
+control panel does not exist on disk until your files are written. Write every
+metric value as an adhoc metric object —
+`{"expressionType": "SIMPLE", "column": {"column_name": "..."}, "aggregate": "SUM", "label": "..."}`
+— never a bare column name: stage D copies the shape, and a column name in a
+metric control is a query Superset rejects.
 
 Emit complete, compiling files. `// TODO: implement` in a render path is a
 failed response. Every file must be valid TypeScript with no `any`.

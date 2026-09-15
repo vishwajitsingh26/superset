@@ -122,6 +122,9 @@ def _compile_verdict(log: pathlib.Path, offset: int, deadline: float) -> dict[st
 # `<path>(line,col): error TSxxxx: <message>` -- one line per fault, unlike
 # webpack's multi-line `ERROR in` blocks.
 _TSC_ERROR = re.compile(r"^(\S+?)\((\d+),\d+\): error (TS\d+: .*)$", re.M)
+# Applied to a diagnostic's first line and to its elaboration separately, so
+# a long type in the first cannot crowd out the property the second names.
+DETAIL_LIMIT = 600
 # A cold type-check of the whole frontend. Slower than reading a log, and the
 # only check that runs whether or not anyone is willing to restart a dev
 # server.
@@ -133,14 +136,79 @@ def typecheck_errors(output: str) -> list[dict[str, str]]:
 
     Same `{file, detail}` as `compile_errors`, so one repair path serves both
     and a caller never has to know which checker produced a fault.
+
+    A diagnostic's indented lines are part of it. For an assignment to a
+    library type the first line only says the whole object is wrong; the
+    elaboration below names the nested property and the type it wanted, which
+    is the one fact the smallest fix depends on.
     """
-    return [
-        {
-            "file": match.group(1),
-            "detail": f"line {match.group(2)}: {match.group(3)}"[:600],
-        }
-        for match in _TSC_ERROR.finditer(output)
-    ]
+    errors: list[dict[str, str]] = []
+    elaboration: list[str] = []
+    inside = False
+
+    def close() -> None:
+        if errors and elaboration:
+            errors[-1]["detail"] += "\n" + "\n".join(elaboration)[:DETAIL_LIMIT]
+        elaboration.clear()
+
+    for line in output.splitlines():
+        if match := _TSC_ERROR.match(line):
+            close()
+            detail = f"line {match.group(2)}: {match.group(3)}"
+            errors.append({"file": match.group(1), "detail": detail[:DETAIL_LIMIT]})
+            inside = True
+        elif inside and line.strip() and line[:1] in (" ", "\t"):
+            elaboration.append(line.rstrip())
+        else:
+            # An unindented or blank line ends the diagnostic.
+            close()
+            inside = False
+    close()
+    return errors
+
+
+# `line 117: TS6133: 'x' is declared ...` -- the detail `typecheck_errors` writes.
+_DETAIL = re.compile(r"^line (\d+): (TS\d+): (.*)$", re.S)
+# webpack's `ERROR in` names a file with its position appended.
+_POSITION_SUFFIX = re.compile(r":\d+(?::\d+)?$")
+
+
+def error_location(detail: str) -> tuple[int, str, str] | None:
+    """The line, code and message of one type-check error, when it names them."""
+    if match := _DETAIL.match(detail or ""):
+        return int(match.group(1)), match.group(2), match.group(3)
+    return None
+
+
+def plugin_file(error_file: str, directory: str) -> str | None:
+    """The repo-relative plugin file a compiler error names, or None.
+
+    `tsc` runs in `superset-frontend`, so it reports
+    `plugins/plugin-chart-x/src/a.tsx` for the file the pipeline wrote at
+    `superset-frontend/plugins/plugin-chart-x/src/a.tsx`; webpack prefixes
+    `./` and appends the position. Matched on the directory's own segment,
+    so a sibling whose name extends this one's is not mistaken for it.
+    """
+    leaf = directory.rstrip("/").rsplit("/", 1)[-1]
+    path = _POSITION_SUFFIX.sub("", (error_file or "").replace("\\", "/"))
+    match = re.search(rf"(?:^|/){re.escape(leaf)}/(.+)$", path)
+    if not leaf or not match:
+        return None
+    remainder = match.group(1)
+    if ".." in remainder.split("/"):
+        return None
+    return f"{directory.rstrip('/')}/{remainder}"
+
+
+def errors_by_file(
+    errors: list[dict[str, str]], directory: str
+) -> dict[str, list[dict[str, str]]]:
+    """The errors that fall in one plugin, grouped by the plugin file they name."""
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for error in errors:
+        if path := plugin_file(error.get("file") or "", directory):
+            grouped.setdefault(path, []).append(error)
+    return grouped
 
 
 def typecheck(repo_root: str | pathlib.Path) -> dict[str, Any]:

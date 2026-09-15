@@ -177,6 +177,15 @@ GET_CHART_CAPABILITIES: ToolSpec = {
 
 STAGE_C_TOOLS: list[ToolSpec] = [LIST_CHARTS, GET_CHART_INFO, GET_CHART_CAPABILITIES]
 
+# Stage F's scaffold loop. Scoped to the one dataset already bound to the
+# region it is writing -- `get_dataset_info` confirms that dataset's real
+# columns (and returns the `database_id` `execute_sql` needs), and
+# `execute_sql` lets the model verify a query actually returns what it is
+# about to build `buildQuery.ts` around, rather than assuming the binding's
+# own description is exact. Neither tool can reach a dataset other than the
+# one it is handed: this is a verification budget, not a search.
+STAGE_F_TOOLS: list[ToolSpec] = [GET_DATASET_INFO, EXECUTE_SQL]
+
 
 def render_catalog(tools: list[ToolSpec]) -> str:
     """Render a tool catalogue as prompt text."""
